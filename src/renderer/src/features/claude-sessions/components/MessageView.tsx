@@ -29,7 +29,7 @@ export function MessageView({ m }: { m: SessionMessage }) {
 	const sdk = m.content as SdkLike;
 	if (m.role === "assistant") return <AssistantMessage sdk={sdk} />;
 	if (m.role === "user") return <UserMessage sdk={sdk} />;
-	if (m.role === "system") return <SystemDivider label="Session initialized" />;
+	if (m.role === "system") return null;
 	if (m.role === "result") return null;
 	return null;
 }
@@ -337,33 +337,6 @@ function RawBlock({ block }: { block: ContentBlock }) {
 				{JSON.stringify(block, null, 2)}
 			</pre>
 		</details>
-	);
-}
-
-function SystemDivider({ label }: { label: string }) {
-	return (
-		<div
-			style={{
-				display: "flex",
-				alignItems: "center",
-				gap: 12,
-				margin: "20px auto",
-				maxWidth: 760,
-				color: T.textFaint,
-			}}
-		>
-			<div style={{ flex: 1, height: 0.5, background: T.border }} />
-			<div
-				style={{
-					fontSize: 11.5,
-					fontFamily: T.mono,
-					letterSpacing: 0.5,
-				}}
-			>
-				{label}
-			</div>
-			<div style={{ flex: 1, height: 0.5, background: T.border }} />
-		</div>
 	);
 }
 

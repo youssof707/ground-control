@@ -3,6 +3,7 @@ import { SessionManager } from "../sessions/SessionManager";
 import { PermissionBroker } from "../sessions/PermissionBroker";
 import { NotificationManager } from "./notifications";
 import type {
+	SessionMode,
 	StartSessionInput,
 	UserTurn,
 } from "../../shared/schemas/claude_session";
@@ -33,6 +34,11 @@ export function registerSessionsHandlers(): SessionManager {
 	);
 	ipcMain.handle("session:resume", (_e, sessionId: string) =>
 		manager.resume(sessionId),
+	);
+	ipcMain.handle(
+		"session:setMode",
+		(_e, payload: { sessionId: string; mode: SessionMode }) =>
+			manager.setMode(payload.sessionId, payload.mode),
 	);
 	ipcMain.handle("sessions:list", () => sessionStore.listSessions());
 	ipcMain.on("notifications:setUnreadCount", (_e, count: number) => {

@@ -14,7 +14,7 @@ export default function MainApp() {
 	useSessionsBootstrap();
 	useNotificationRouter();
 	useDockUnreadBadge();
-	const [inboxOpen, setInboxOpen] = useState(false);
+	const [inboxOpen, setInboxOpen] = useState(true);
 	return (
 		<div
 			style={{

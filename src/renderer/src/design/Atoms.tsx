@@ -1,5 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { T } from "./tokens";
+import type { SessionMode } from "@shared/claude-sessions/types";
 
 // ─── StatusPill ──────────────────────────────────────────────────────────────
 
@@ -170,6 +171,139 @@ export function BranchChip({ name }: { name: string }) {
 			<span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
 				{copied ? "Copied" : name}
 			</span>
+		</button>
+	);
+}
+
+// ─── ModeChip ────────────────────────────────────────────────────────────────
+
+const MODE_LABEL: Record<SessionMode, string> = {
+	plan: "Plan",
+	acceptEdits: "Auto-edit",
+};
+
+function modeColors(mode: SessionMode): {
+	color: string;
+	bg: string;
+	border: string;
+} {
+	if (mode === "plan") {
+		return { color: T.info, bg: T.infoSoft, border: T.infoBorder };
+	}
+	return { color: T.warn, bg: T.warnSoft, border: T.warnBorder };
+}
+
+/** Read-only chip showing a session's current mode. */
+export function ModeChip({ mode }: { mode: SessionMode }) {
+	const c = modeColors(mode);
+	return (
+		<div
+			style={{
+				display: "inline-flex",
+				alignItems: "center",
+				height: 22,
+				padding: "0 9px",
+				borderRadius: 11,
+				background: c.bg,
+				border: `0.5px solid ${c.border}`,
+				color: c.color,
+				fontSize: 11.5,
+				fontWeight: 500,
+				whiteSpace: "nowrap",
+			}}
+		>
+			{MODE_LABEL[mode]}
+		</div>
+	);
+}
+
+// ─── ModeToggle ──────────────────────────────────────────────────────────────
+
+/**
+ * Segmented two-state toggle for session mode. Intentionally subdued — no
+ * status color, just neutral text. Lives in the composer footer so it sits
+ * close to where the user types; it should read as a setting, not a status
+ * pill. Optimistic — the caller is expected to flip the local store
+ * immediately and reconcile on error.
+ */
+export function ModeToggle({
+	mode,
+	onChange,
+	disabled,
+}: {
+	mode: SessionMode;
+	onChange: (next: SessionMode) => void;
+	disabled?: boolean;
+}) {
+	return (
+		<div
+			role="group"
+			aria-label="Session mode"
+			style={{
+				display: "inline-flex",
+				alignItems: "center",
+				height: 24,
+				padding: 2,
+				borderRadius: 8,
+				background: "transparent",
+				border: `0.5px solid ${T.borderSoft}`,
+				opacity: disabled ? 0.6 : 1,
+			}}
+		>
+			<ModeToggleButton
+				active={mode === "plan"}
+				disabled={disabled}
+				onClick={() => mode !== "plan" && onChange("plan")}
+				title="Plan mode: Claude won't make edits, just researches and plans."
+			>
+				Plan
+			</ModeToggleButton>
+			<ModeToggleButton
+				active={mode === "acceptEdits"}
+				disabled={disabled}
+				onClick={() => mode !== "acceptEdits" && onChange("acceptEdits")}
+				title="Auto-edit mode: file edits run without asking. Other tools still prompt."
+			>
+				Auto-edit
+			</ModeToggleButton>
+		</div>
+	);
+}
+
+function ModeToggleButton({
+	active,
+	disabled,
+	onClick,
+	title,
+	children,
+}: {
+	active: boolean;
+	disabled?: boolean;
+	onClick: () => void;
+	title: string;
+	children: ReactNode;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			disabled={disabled}
+			title={title}
+			style={{
+				height: 20,
+				padding: "0 8px",
+				borderRadius: 6,
+				border: "0.5px solid transparent",
+				background: active ? T.surfaceHi : "transparent",
+				color: active ? T.text : T.textFaint,
+				fontSize: 11.5,
+				fontWeight: active ? 500 : 400,
+				cursor: disabled ? "default" : "pointer",
+				whiteSpace: "nowrap",
+				transition: "background 0.12s, color 0.12s",
+			}}
+		>
+			{children}
 		</button>
 	);
 }

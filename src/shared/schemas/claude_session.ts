@@ -12,6 +12,14 @@ export const SessionStatusSchema = z.enum([
 ]);
 export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 
+// Two app-level modes a session can be in. Maps to Claude Agent SDK
+// permission modes at the boundary:
+//   "plan"        → SDK "plan"        (read-only research / planning)
+//   "acceptEdits" → SDK "acceptEdits" (file edits auto-approved; other
+//                                      tools still route through the broker)
+export const SessionModeSchema = z.enum(["plan", "acceptEdits"]);
+export type SessionMode = z.infer<typeof SessionModeSchema>;
+
 export const SessionMessageRoleSchema = z.enum([
 	"user",
 	"assistant",
@@ -115,6 +123,11 @@ export const ClaudeSessionSchema = z.object({
 	/** Underlying Claude Agent SDK session id, captured from the SDK's
 	 * first message that carries one. Required to resume after a restart. */
 	sdkSessionId: z.string().optional(),
+	/** App-level permission mode for the session. Every session is always
+	 * in exactly one of these states; new sessions default to "plan". The
+	 * Zod default also backfills pre-existing rows on disk that predate
+	 * this field. */
+	mode: SessionModeSchema.default("plan"),
 });
 export type ClaudeSession = z.infer<typeof ClaudeSessionSchema>;
 
@@ -136,5 +149,6 @@ export const StartSessionInputSchema = z.object({
 	title: z.string(),
 	prompt: z.string().optional(),
 	cwd: z.string(),
+	mode: SessionModeSchema.optional(),
 });
 export type StartSessionInput = z.infer<typeof StartSessionInputSchema>;

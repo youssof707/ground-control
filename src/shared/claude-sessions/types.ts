@@ -7,6 +7,7 @@ export type {
 	ClaudeSession,
 	ClaudeSessionFull,
 	SessionStatus,
+	SessionMode,
 	SessionMessage,
 	SessionMessageRole,
 	StartSessionInput,

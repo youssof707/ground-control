@@ -19,6 +19,7 @@ import type {
 	ClaudeSession,
 	ClaudeSessionFull,
 	SessionMessage,
+	SessionMode,
 	StartSessionInput,
 	UserContentBlock,
 } from "../../shared/schemas/claude_session";
@@ -107,6 +108,10 @@ function logSdkErrors(sessionId: string, msg: SDKMessage): void {
 	}
 }
 
+function sdkPermissionModeFor(mode: SessionMode): "plan" | "acceptEdits" {
+	return mode === "plan" ? "plan" : "acceptEdits";
+}
+
 function deriveTitle(text: string, maxLen = 60): string {
 	const cleaned = text.replace(/\s+/g, " ").trim();
 	if (!cleaned) return "";
@@ -161,6 +166,10 @@ export class SessionManager {
 			createdAt: Date.now(),
 			branch,
 			startCommit,
+			// Every session is created in one of the two app-level modes.
+			// New sessions default to "plan"; the renderer can pre-pick a mode
+			// in StartSessionInput if it ever wants to.
+			mode: input.mode ?? "plan",
 		};
 
 		const fullForPersist: ClaudeSessionFull = { ...session, messages: [] };
@@ -213,6 +222,10 @@ export class SessionManager {
 			branch,
 			startCommit,
 			sdkSessionId: persisted.sdkSessionId,
+			// Persisted mode wins on resume. Pre-existing rows without a
+			// mode field were backfilled to "plan" by the Zod schema default
+			// when the store loaded them.
+			mode: persisted.mode,
 		};
 
 		await sessionStore.updateSession(persisted.id, {
@@ -318,7 +331,11 @@ export class SessionManager {
 		try {
 			const options: Options = {
 				cwd,
-				permissionMode: "default",
+				// Map our 2-state app mode to the SDK's permissionMode.
+				// "plan"        → SDK "plan"        (no edits, planning only)
+				// "acceptEdits" → SDK "acceptEdits" (file edits auto-approved;
+				//                                    other tools still hit the broker)
+				permissionMode: sdkPermissionModeFor(session.mode),
 				pathToClaudeCodeExecutable: resolveClaudeBinary(),
 				canUseTool: (toolName, toolInput) =>
 					this.broker.ask({ sessionId: id, toolName, input: toolInput }),
@@ -444,6 +461,34 @@ export class SessionManager {
 
 	finish(sessionId: string) {
 		this.sessions.get(sessionId)?.finish();
+	}
+
+	/**
+	 * Switch a session between the two app-level modes. Works whether or not
+	 * the session is currently running:
+	 *   - Running: tells the SDK to change permissionMode live, then persists
+	 *     and broadcasts. SDK call is best-effort — if it throws we still
+	 *     persist (worst case: next message-turn applies the new mode).
+	 *   - Not running: just persists. Next resume picks up the new mode.
+	 *
+	 * Pending permission requests are intentionally NOT auto-resolved on
+	 * switch — the user can decide on whatever is already on screen.
+	 */
+	async setMode(sessionId: string, mode: SessionMode): Promise<void> {
+		const entry = this.sessions.get(sessionId);
+		if (entry) {
+			if (entry.session.mode === mode) return;
+			entry.session.mode = mode;
+			try {
+				await entry.queryRef.current?.setPermissionMode(
+					sdkPermissionModeFor(mode),
+				);
+			} catch (err) {
+				console.error("[ccw] setPermissionMode failed:", err);
+			}
+		}
+		await sessionStore.updateSession(sessionId, { mode });
+		this.send("session:patch", { sessionId, mode });
 	}
 
 	async interrupt(sessionId: string) {

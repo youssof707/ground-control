@@ -2,6 +2,7 @@ import type {
 	ClaudeSession,
 	ClaudeSessionFull,
 	PermissionDecision,
+	SessionMode,
 	StartSessionInput,
 	UserTurn,
 } from "../shared/schemas/claude_session";
@@ -15,6 +16,10 @@ declare global {
 			finishSession: (sessionId: string) => Promise<void>;
 			interruptSession: (sessionId: string) => Promise<void>;
 			resumeSession: (sessionId: string) => Promise<void>;
+			setSessionMode: (
+				sessionId: string,
+				mode: SessionMode,
+			) => Promise<void>;
 			respondPermission: (decision: PermissionDecision) => void;
 			listSessions: () => Promise<ClaudeSessionFull[]>;
 			deleteSession: (sessionId: string) => Promise<void>;

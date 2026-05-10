@@ -1,11 +1,12 @@
 import { useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import type {
+	SessionMode,
 	UserContentBlock,
 	UserImageMediaType,
 } from "@shared/claude-sessions/types";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { T } from "../../../design/tokens";
-import { Kbd } from "../../../design/Atoms";
+import { Kbd, ModeToggle } from "../../../design/Atoms";
 
 interface Props {
 	sessionId: string;
@@ -36,6 +37,32 @@ export function ImagePasteTextarea({ sessionId, disabled }: Props) {
 	const [images, setImages] = useState<PendingImage[]>([]);
 	const [sending, setSending] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [modeSwitching, setModeSwitching] = useState(false);
+	// Subscribe to mode so the toggle reflects live SDK / IPC updates (e.g.
+	// `session:patch` broadcasts after a successful setMode in the main process).
+	const mode = useSessionsStore(
+		(s) => s.sessions[sessionId]?.mode ?? "plan",
+	);
+	const status = useSessionsStore((s) => s.sessions[sessionId]?.status);
+	const isRunning = status === "running";
+
+	const changeMode = async (next: SessionMode) => {
+		if (modeSwitching || mode === next) return;
+		// Optimistic flip; revert on IPC failure. The main process broadcasts
+		// the canonical value back via session:patch on success.
+		useSessionsStore.getState().upsertSession({ id: sessionId, mode: next });
+		setModeSwitching(true);
+		try {
+			await window.claude.setSessionMode(sessionId, next);
+		} catch (err) {
+			useSessionsStore
+				.getState()
+				.upsertSession({ id: sessionId, mode });
+			console.error("Failed to change session mode", err);
+		} finally {
+			setModeSwitching(false);
+		}
+	};
 
 	const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
 		const items = Array.from(e.clipboardData.items);
@@ -250,10 +277,16 @@ export function ImagePasteTextarea({ sessionId, disabled }: Props) {
 						<span>for newline · paste images directly</span>
 					</span>
 					<div style={{ flex: 1 }} />
+					<ModeToggle
+						mode={mode}
+						onChange={(next) => void changeMode(next)}
+						disabled={modeSwitching}
+					/>
 					<button
 						onClick={send}
 						disabled={disabled || sending || !canSend}
 						className="btn btn-primary"
+						style={isRunning ? { opacity: 0.55, cursor: "default" } : undefined}
 					>
 						{sending ? "…" : "Send"}
 						{!sending ? (

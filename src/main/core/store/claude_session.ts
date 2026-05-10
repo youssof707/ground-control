@@ -109,6 +109,7 @@ export type SessionPatch = Partial<
 		| "startCommit"
 		| "diff"
 		| "sdkSessionId"
+		| "mode"
 	>
 >;
 

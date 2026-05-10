@@ -155,6 +155,25 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 		setDeleteError(null);
 	};
 
+	// Clicking the "Sessions" breadcrumb (back). If this session has never
+	// received a message, treat it as discarded scratch space and delete it
+	// on the way out rather than leaving an empty husk in the list.
+	const handleLeave = async (e: React.MouseEvent<HTMLAnchorElement>) => {
+		e.preventDefault();
+		if (session && session.messages.length === 0) {
+			try {
+				await window.claude.deleteSession(sessionId);
+				removeSession(sessionId);
+			} catch (err) {
+				// If the cleanup fails, fall through and navigate anyway —
+				// stranding the user on this screen would be worse than
+				// leaving an empty session behind.
+				console.error("Failed to delete empty session on leave", err);
+			}
+		}
+		navigate("/");
+	};
+
 	if (!session) {
 		return (
 			<div className="page">
@@ -201,6 +220,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 				>
 					<Link
 						to="/"
+						onClick={handleLeave}
 						style={{
 							display: "inline-flex",
 							alignItems: "center",

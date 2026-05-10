@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import { electronAPI } from "@electron-toolkit/preload";
 import type {
 	PermissionDecision,
+	SessionMode,
 	StartSessionInput,
 	UserTurn,
 } from "../shared/schemas/claude_session";
@@ -21,6 +22,8 @@ const claude = {
 		ipcRenderer.invoke("session:interrupt", sessionId),
 	resumeSession: (sessionId: string) =>
 		ipcRenderer.invoke("session:resume", sessionId),
+	setSessionMode: (sessionId: string, mode: SessionMode) =>
+		ipcRenderer.invoke("session:setMode", { sessionId, mode }),
 	respondPermission: (decision: PermissionDecision) =>
 		ipcRenderer.send("permission:respond", decision),
 	listSessions: () => ipcRenderer.invoke("sessions:list"),
