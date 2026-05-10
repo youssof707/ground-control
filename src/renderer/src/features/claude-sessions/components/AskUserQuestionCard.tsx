@@ -247,13 +247,12 @@ function QuestionField({
 	onToggle: (label: string) => void;
 	onOtherChange: (text: string) => void;
 }) {
-	const cols = q.options.length >= 4 ? 4 : 3;
 	return (
 		<div style={{ paddingBottom: 8 }}>
 			<div
 				style={{
-					display: "grid",
-					gridTemplateColumns: `repeat(${cols}, 1fr)`,
+					display: "flex",
+					flexDirection: "column",
 					gap: 8,
 				}}
 			>

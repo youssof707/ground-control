@@ -35,6 +35,9 @@ export function registerSessionsHandlers(): SessionManager {
 		manager.resume(sessionId),
 	);
 	ipcMain.handle("sessions:list", () => sessionStore.listSessions());
+	ipcMain.on("notifications:setUnreadCount", (_e, count: number) => {
+		notifications.setUnreadCount(typeof count === "number" ? count : 0);
+	});
 	ipcMain.handle(
 		"dialog:pickFolder",
 		async (

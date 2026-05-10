@@ -4,7 +4,11 @@ import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import type { FastifyInstance } from "fastify";
 import { startServer, FASTIFY_PORT } from "./server";
 import { flush as flushStore } from "./core/store/write_queue";
-import { initialize as initializeClaudeSessionStore } from "./core/store/claude_session";
+import {
+	initialize as initializeClaudeSessionStore,
+	listSessions,
+	deleteSession,
+} from "./core/store/claude_session";
 import { registerSessionsHandlers } from "./ipc/sessionsHandlers";
 import type { SessionManager } from "./sessions/SessionManager";
 import * as windows from "./windows";
@@ -15,7 +19,6 @@ let isQuitting = false;
 let confirmedQuit = false;
 
 const preloadPath = join(__dirname, "../preload/index.mjs");
-const devIconPath = join(__dirname, "../../build/icon.png");
 
 function createWindow(): BrowserWindow {
 	const offset = windows.count() * 24;
@@ -26,7 +29,6 @@ function createWindow(): BrowserWindow {
 		y: offset > 0 ? offset : undefined,
 		show: false,
 		title: "Ground Control",
-		...(is.dev ? { icon: devIconPath } : {}),
 		webPreferences: {
 			preload: preloadPath,
 			sandbox: false,
@@ -86,10 +88,6 @@ function buildMenu(): Electron.Menu {
 app.whenReady().then(async () => {
 	electronApp.setAppUserModelId("com.anthropic.ground-control");
 
-	if (is.dev && process.platform === "darwin") {
-		app.dock?.setIcon(devIconPath);
-	}
-
 	app.on("browser-window-created", (_, window) => {
 		optimizer.watchWindowShortcuts(window);
 	});
@@ -103,6 +101,12 @@ app.whenReady().then(async () => {
 		console.error(`[ccw] failed to initialize store at ${dataDir}:`, err);
 		app.exit(1);
 		return;
+	}
+
+	for (const s of listSessions()) {
+		if (s.messages.length === 0) {
+			await deleteSession(s.id);
+		}
 	}
 
 	try {

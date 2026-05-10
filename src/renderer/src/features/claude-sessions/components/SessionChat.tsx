@@ -12,8 +12,23 @@ import { BranchChip, StatusPill } from "../../../design/Atoms";
 export function SessionChat({ sessionId }: { sessionId: string }) {
 	const session = useSessionsStore((s) => s.sessions[sessionId]);
 	const upsertSession = useSessionsStore((s) => s.upsertSession);
+	const allSessions = useSessionsStore((s) => s.sessions);
+	const sessionOrder = useSessionsStore((s) => s.order);
+	const lastReadAt = useReadStore((s) => s.lastReadAt);
 	const queue = usePermissionsStore((s) => s.queue);
 	const pending = queue.filter((q) => q.sessionId === sessionId);
+	const hasAnyUnread = sessionOrder.some((id) => {
+		const sess = allSessions[id];
+		if (!sess) return false;
+		let lastIncoming = 0;
+		for (let i = sess.messages.length - 1; i >= 0; i--) {
+			if (sess.messages[i].role === "assistant") {
+				lastIncoming = sess.messages[i].ts;
+				break;
+			}
+		}
+		return lastIncoming > 0 && lastIncoming > (lastReadAt[id] ?? 0);
+	});
 	const [interrupting, setInterrupting] = useState(false);
 	const [resuming, setResuming] = useState(false);
 	const [resumeError, setResumeError] = useState<string | null>(null);
@@ -175,6 +190,18 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 							/>
 						</svg>
 						Sessions
+						{hasAnyUnread ? (
+							<span
+								title="Unread sessions"
+								style={{
+									width: 7,
+									height: 7,
+									borderRadius: "50%",
+									background: T.accent,
+									flexShrink: 0,
+								}}
+							/>
+						) : null}
 					</Link>
 					{editingTitle ? (
 						<input

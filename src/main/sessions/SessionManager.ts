@@ -50,6 +50,63 @@ function extractSdkSessionId(msg: SDKMessage): string | undefined {
 	return typeof sid === "string" ? sid : undefined;
 }
 
+function stringifyToolResultContent(content: unknown): string {
+	if (typeof content === "string") return content;
+	if (Array.isArray(content)) {
+		return content
+			.map((b) => {
+				if (b && typeof b === "object" && "text" in b) {
+					return String((b as { text: unknown }).text ?? "");
+				}
+				return JSON.stringify(b);
+			})
+			.join("\n");
+	}
+	try {
+		return JSON.stringify(content);
+	} catch {
+		return String(content);
+	}
+}
+
+function logSdkErrors(sessionId: string, msg: SDKMessage): void {
+	if (msg.type === "result") {
+		const r = msg as unknown as {
+			is_error?: boolean;
+			subtype?: string;
+			result?: unknown;
+		};
+		if (r.is_error || (r.subtype && r.subtype !== "success")) {
+			console.error(
+				`[session ${sessionId}] result error subtype=${r.subtype ?? "unknown"}`,
+				r.result ?? r,
+			);
+		}
+		return;
+	}
+	if (msg.type === "user") {
+		const inner = (msg as unknown as { message?: { content?: unknown } })
+			.message?.content;
+		if (!Array.isArray(inner)) return;
+		for (const block of inner) {
+			if (!block || typeof block !== "object") continue;
+			const b = block as {
+				type?: string;
+				is_error?: boolean;
+				tool_use_id?: string;
+				content?: unknown;
+			};
+			if (b.type !== "tool_result") continue;
+			const text = stringifyToolResultContent(b.content);
+			if (b.is_error || /<tool_use_error>|InputValidationError/.test(text)) {
+				console.error(
+					`[session ${sessionId}] tool_result error tool_use_id=${b.tool_use_id ?? "?"}\n${text}`,
+				);
+			}
+		}
+	}
+}
+
 function deriveTitle(text: string, maxLen = 60): string {
 	const cleaned = text.replace(/\s+/g, " ").trim();
 	if (!cleaned) return "";
@@ -274,6 +331,8 @@ export class SessionManager {
 			queryRef.current = q;
 			for await (const msg of q) {
 				if (abort.signal.aborted) break;
+
+				logSdkErrors(id, msg);
 
 				if (!sdkIdCaptured) {
 					const sid = extractSdkSessionId(msg);

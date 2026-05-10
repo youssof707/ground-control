@@ -30,6 +30,8 @@ const claude = {
 		ipcRenderer.invoke("session:rename", { sessionId, title }),
 	pickFolder: (opts?: { defaultPath?: string }) =>
 		ipcRenderer.invoke("dialog:pickFolder", opts ?? {}),
+	setUnreadCount: (count: number) =>
+		ipcRenderer.send("notifications:setUnreadCount", count),
 	on: (channel: string, fn: (payload: unknown) => void) => {
 		const listener = (_e: IpcRendererEvent, payload: unknown) => fn(payload);
 		ipcRenderer.on(channel, listener);

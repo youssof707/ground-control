@@ -4,6 +4,8 @@ import * as windows from "../windows";
 
 export class NotificationManager {
 	private warnedNoSupport = false;
+	private pendingCount = 0;
+	private unreadCount = 0;
 
 	notifyPermissionRequest(req: PermissionRequest, sessionTitle?: string) {
 		if (!Notification.isSupported()) {
@@ -53,8 +55,19 @@ export class NotificationManager {
 	}
 
 	setPendingCount(count: number) {
+		this.pendingCount = count;
+		this.applyBadge();
+	}
+
+	setUnreadCount(count: number) {
+		this.unreadCount = Math.max(0, count);
+		this.applyBadge();
+	}
+
+	private applyBadge() {
 		if (process.platform !== "darwin") return;
-		app.dock?.setBadge(count > 0 ? String(count) : "");
+		const total = this.pendingCount + this.unreadCount;
+		app.dock?.setBadge(total > 0 ? String(total) : "");
 	}
 }
 

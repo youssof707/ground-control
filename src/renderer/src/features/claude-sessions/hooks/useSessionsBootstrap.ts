@@ -54,6 +54,7 @@ export function useSessionsBootstrap() {
 					sessionId: string;
 					message: SessionMessage;
 				};
+				logMessageErrors(sessionId, message);
 				appendMessage(sessionId, message);
 			}),
 			window.claude.on("session:done", (p) => {
@@ -98,4 +99,69 @@ export function useSessionsBootstrap() {
 		enqueuePermission,
 		removePermission,
 	]);
+}
+
+function stringifyToolResultContent(content: unknown): string {
+	if (typeof content === "string") return content;
+	if (Array.isArray(content)) {
+		return content
+			.map((b) => {
+				if (b && typeof b === "object" && "text" in b) {
+					return String((b as { text: unknown }).text ?? "");
+				}
+				try {
+					return JSON.stringify(b);
+				} catch {
+					return String(b);
+				}
+			})
+			.join("\n");
+	}
+	try {
+		return JSON.stringify(content);
+	} catch {
+		return String(content);
+	}
+}
+
+function logMessageErrors(sessionId: string, message: SessionMessage): void {
+	const sdk = message.content as {
+		type?: string;
+		is_error?: boolean;
+		subtype?: string;
+		result?: unknown;
+		message?: { content?: unknown };
+	};
+	if (!sdk || typeof sdk !== "object") return;
+
+	if (sdk.type === "result") {
+		if (sdk.is_error || (sdk.subtype && sdk.subtype !== "success")) {
+			console.error(
+				`[ccw][session ${sessionId}] result error subtype=${sdk.subtype ?? "unknown"}`,
+				sdk.result ?? sdk,
+			);
+		}
+		return;
+	}
+
+	if (sdk.type === "user") {
+		const inner = sdk.message?.content;
+		if (!Array.isArray(inner)) return;
+		for (const block of inner) {
+			if (!block || typeof block !== "object") continue;
+			const b = block as {
+				type?: string;
+				is_error?: boolean;
+				tool_use_id?: string;
+				content?: unknown;
+			};
+			if (b.type !== "tool_result") continue;
+			const text = stringifyToolResultContent(b.content);
+			if (b.is_error || /<tool_use_error>|InputValidationError/.test(text)) {
+				console.error(
+					`[ccw][session ${sessionId}] tool_result error tool_use_id=${b.tool_use_id ?? "?"}\n${text}`,
+				);
+			}
+		}
+	}
 }

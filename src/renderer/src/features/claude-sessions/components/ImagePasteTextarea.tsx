@@ -113,7 +113,7 @@ export function ImagePasteTextarea({ sessionId, disabled }: Props) {
 	};
 
 	const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-		if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+		if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
 			e.preventDefault();
 			void send();
 		}
@@ -243,9 +243,11 @@ export function ImagePasteTextarea({ sessionId, disabled }: Props) {
 							gap: 6,
 						}}
 					>
-						<Kbd>⌘</Kbd>
 						<Kbd>↵</Kbd>
-						<span>to send · paste images directly</span>
+						<span>to send ·</span>
+						<Kbd>⇧</Kbd>
+						<Kbd>↵</Kbd>
+						<span>for newline · paste images directly</span>
 					</span>
 					<div style={{ flex: 1 }} />
 					<button

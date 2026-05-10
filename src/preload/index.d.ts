@@ -20,6 +20,7 @@ declare global {
 			deleteSession: (sessionId: string) => Promise<void>;
 			renameSession: (sessionId: string, title: string) => Promise<void>;
 			pickFolder: (opts?: { defaultPath?: string }) => Promise<string | null>;
+			setUnreadCount: (count: number) => void;
 			on: (channel: string, fn: (payload: unknown) => void) => () => void;
 		};
 	}

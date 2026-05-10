@@ -2,7 +2,13 @@ import { Link, NavLink } from "react-router-dom";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { T } from "../../../design/tokens";
 
-export function AppNav() {
+export function AppNav({
+	inboxOpen,
+	onToggleInbox,
+}: {
+	inboxOpen: boolean;
+	onToggleInbox: () => void;
+}) {
 	const count = usePermissionsStore((s) => s.queue.length);
 
 	return (
@@ -49,8 +55,64 @@ export function AppNav() {
 				}}
 			/>
 			<Tab to="/" label="Sessions" />
-			<Tab to="/inbox" label="Inbox" badge={count} />
+			<div style={{ flex: 1 }} />
+			<InboxToggle active={inboxOpen} badge={count} onClick={onToggleInbox} />
 		</nav>
+	);
+}
+
+function InboxToggle({
+	active,
+	badge,
+	onClick,
+}: {
+	active: boolean;
+	badge: number;
+	onClick: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			aria-pressed={active}
+			style={{
+				display: "inline-flex",
+				alignItems: "center",
+				gap: 8,
+				padding: "6px 12px",
+				borderRadius: 8,
+				fontSize: 13,
+				fontWeight: 500,
+				color: active ? T.text : T.textMute,
+				background: active ? T.surface : "transparent",
+				boxShadow: active ? `inset 0 0 0 0.5px ${T.border}` : "none",
+				border: "none",
+				cursor: "pointer",
+			}}
+		>
+			<span>Inbox</span>
+			{badge > 0 ? (
+				<span
+					style={{
+						minWidth: 18,
+						height: 18,
+						padding: "0 6px",
+						borderRadius: 9,
+						background: active ? T.accent : T.accentSoft,
+						color: active ? T.accentInk : T.accent,
+						fontSize: 11,
+						fontWeight: 600,
+						display: "inline-flex",
+						alignItems: "center",
+						justifyContent: "center",
+						fontFamily: T.mono,
+						letterSpacing: "-0.2px",
+					}}
+				>
+					{badge}
+				</span>
+			) : null}
+		</button>
 	);
 }
 
