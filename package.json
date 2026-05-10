@@ -1,6 +1,6 @@
 {
 	"name": "ground-control",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"description": "Electron+React shell scaffolded from the Andrea architecture reference",
 	"main": "./out/main/index.js",
 	"author": "",
