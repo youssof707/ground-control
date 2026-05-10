@@ -86,6 +86,9 @@ export const PermissionDecisionSchema = z.discriminatedUnion("behavior", [
 		requestId: z.string(),
 		behavior: z.literal("allow"),
 		updatedInput: z.record(z.string(), z.unknown()).optional(),
+		// When true, auto-allow future requests for the same tool name for the
+		// remainder of this app session (no persistence across restarts).
+		remember: z.boolean().optional(),
 	}),
 	z.object({
 		requestId: z.string(),

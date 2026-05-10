@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useReadStore } from "../stores/useReadStore";
+import { ConfirmModal } from "../../../components/ConfirmModal";
 import { PermissionCard } from "./PermissionCard";
 import { ImagePasteTextarea } from "./ImagePasteTextarea";
 import { MessageView } from "./MessageView";
@@ -10,8 +11,10 @@ import { T } from "../../../design/tokens";
 import { BranchChip, StatusPill } from "../../../design/Atoms";
 
 export function SessionChat({ sessionId }: { sessionId: string }) {
+	const navigate = useNavigate();
 	const session = useSessionsStore((s) => s.sessions[sessionId]);
 	const upsertSession = useSessionsStore((s) => s.upsertSession);
+	const removeSession = useSessionsStore((s) => s.removeSession);
 	const allSessions = useSessionsStore((s) => s.sessions);
 	const sessionOrder = useSessionsStore((s) => s.order);
 	const lastReadAt = useReadStore((s) => s.lastReadAt);
@@ -20,6 +23,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	const hasAnyUnread = sessionOrder.some((id) => {
 		const sess = allSessions[id];
 		if (!sess) return false;
+		if (sess.status === "running") return false;
 		let lastIncoming = 0;
 		for (let i = sess.messages.length - 1; i >= 0; i--) {
 			if (sess.messages[i].role === "assistant") {
@@ -35,6 +39,9 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	const [editingTitle, setEditingTitle] = useState(false);
 	const [titleDraft, setTitleDraft] = useState("");
 	const titleInputRef = useRef<HTMLInputElement>(null);
+	const [pendingDelete, setPendingDelete] = useState(false);
+	const [deleting, setDeleting] = useState(false);
+	const [deleteError, setDeleteError] = useState<string | null>(null);
 
 	const isOpen =
 		session?.status === "running" ||
@@ -119,6 +126,33 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 		} finally {
 			setResuming(false);
 		}
+	};
+
+	const requestDelete = () => {
+		setDeleteError(null);
+		setPendingDelete(true);
+	};
+
+	const confirmDelete = async () => {
+		if (deleting) return;
+		setDeleting(true);
+		setDeleteError(null);
+		try {
+			await window.claude.deleteSession(sessionId);
+			removeSession(sessionId);
+			setPendingDelete(false);
+			navigate("/");
+		} catch (err) {
+			setDeleteError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setDeleting(false);
+		}
+	};
+
+	const cancelDelete = () => {
+		if (deleting) return;
+		setPendingDelete(false);
+		setDeleteError(null);
 	};
 
 	if (!session) {
@@ -342,6 +376,14 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 							{resuming ? "Resuming…" : "Resume"}
 						</button>
 					) : null}
+					<button
+						className="btn btn-destructive"
+						onClick={requestDelete}
+						disabled={deleting}
+						title="Delete this session from the app."
+					>
+						{deleting ? "Deleting…" : "Delete session"}
+					</button>
 					{session.diff ? (
 						<Link to={`/sessions/${sessionId}/diff`} className="btn">
 							<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -428,6 +470,24 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 			) : null}
 
 			{canChat ? <ImagePasteTextarea sessionId={sessionId} /> : null}
+
+			<ConfirmModal
+				open={pendingDelete}
+				title="Delete session?"
+				message={
+					<>
+						Remove <strong>{session.title}</strong> from this app. Claude Code's
+						own session history (in <code>~/.claude</code>) is not affected.
+					</>
+				}
+				confirmLabel="Delete"
+				cancelLabel="Cancel"
+				destructive
+				busy={deleting}
+				error={deleteError}
+				onConfirm={confirmDelete}
+				onCancel={cancelDelete}
+			/>
 		</div>
 	);
 }
@@ -456,8 +516,8 @@ function ActivityChip({
 		bg = T.dangerSoft;
 		prefix = "stalled";
 	} else if (deltaSec >= 30) {
-		color = T.warn;
-		bg = T.warnSoft;
+		color = T.neutral;
+		bg = T.neutralSoft;
 		prefix = "quiet";
 	}
 

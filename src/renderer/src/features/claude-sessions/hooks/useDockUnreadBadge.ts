@@ -19,6 +19,7 @@ export function useDockUnreadBadge() {
 	const unreadCount = sessionsOrder.reduce((acc, id) => {
 		const sess = sessionsMap[id];
 		if (!sess) return acc;
+		if (sess.status === "running") return acc;
 		const lastIncoming = lastIncomingMessageTs(sess);
 		if (lastIncoming > 0 && lastIncoming > (lastReadAt[id] ?? 0)) {
 			return acc + 1;

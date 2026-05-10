@@ -66,7 +66,10 @@ export class NotificationManager {
 
 	private applyBadge() {
 		if (process.platform !== "darwin") return;
-		const total = this.pendingCount + this.unreadCount;
+		// Dock badge only reflects items waiting for user attention
+		// (pending permission requests). Unread assistant messages are
+		// surfaced in-app via AppNav, not on the dock.
+		const total = this.pendingCount;
 		app.dock?.setBadge(total > 0 ? String(total) : "");
 	}
 }

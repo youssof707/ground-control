@@ -27,14 +27,10 @@ export function SessionsList() {
 	const [deleteError, setDeleteError] = useState<string | null>(null);
 	const [deleting, setDeleting] = useState(false);
 
-	const runningCount = order.filter(
-		(id) => sessions[id].status === "running",
-	).length;
-	const waitingCount = new Set(queue.map((q) => q.sessionId)).size;
-
 	const sortedOrder = useMemo(() => {
 		return [...order].sort(
-			(a, b) => lastActivity(sessions[b]) - lastActivity(sessions[a]),
+			(a, b) =>
+				(sessions[b]?.createdAt ?? 0) - (sessions[a]?.createdAt ?? 0),
 		);
 	}, [order, sessions]);
 
@@ -116,10 +112,6 @@ export function SessionsList() {
 						}}
 					>
 						<Stat n={order.length} label="total" />
-						<Sep />
-						<Stat n={runningCount} label="running" dot={T.ok} />
-						<Sep />
-						<Stat n={waitingCount} label="waiting" dot={T.accent} />
 					</div>
 				</div>
 				<div style={{ display: "flex", gap: 8 }}>
@@ -251,7 +243,8 @@ function Row({
 		(s) => s.lastReadAt[session.id] ?? 0,
 	);
 	const lastIncomingTs = lastIncomingMessageTs(session);
-	const unread = lastIncomingTs > lastReadAt;
+	const unread =
+		session.status !== "running" && lastIncomingTs > lastReadAt;
 	return (
 		<div
 			style={{
@@ -463,18 +456,6 @@ function Stat({ n, label, dot }: { n: number; label: string; dot?: string }) {
 	);
 }
 
-function Sep() {
-	return (
-		<span
-			style={{
-				width: 3,
-				height: 3,
-				borderRadius: "50%",
-				background: T.border,
-			}}
-		/>
-	);
-}
 
 function folderName(path: string): string {
 	const trimmed = path.replace(/\/+$/, "");
@@ -498,11 +479,6 @@ function lastConversationMessage(
 		if (m.role === "user" || m.role === "assistant") return m;
 	}
 	return undefined;
-}
-
-function lastActivity(session: ClaudeSessionFull): number {
-	const last = lastConversationMessage(session);
-	return last?.ts ?? session.finishedAt ?? session.createdAt;
 }
 
 function deriveSummary(session: ClaudeSessionFull): string {

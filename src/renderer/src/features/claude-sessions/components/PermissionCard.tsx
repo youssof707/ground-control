@@ -24,6 +24,14 @@ function DefaultPermissionCard({ req }: { req: PermissionRequest }) {
 		});
 		remove(req.requestId);
 	};
+	const allowAlways = () => {
+		window.claude.respondPermission({
+			requestId: req.requestId,
+			behavior: "allow",
+			remember: true,
+		});
+		remove(req.requestId);
+	};
 	const deny = (message: string) => {
 		window.claude.respondPermission({
 			requestId: req.requestId,
@@ -157,6 +165,13 @@ function DefaultPermissionCard({ req }: { req: PermissionRequest }) {
 					</button>
 					<button className="btn btn-primary" onClick={allow}>
 						Allow
+					</button>
+					<button
+						className="btn btn-primary"
+						onClick={allowAlways}
+						title={`Auto-allow all future ${req.toolName} requests for the rest of this app session`}
+					>
+						Always allow {req.toolName}
 					</button>
 				</div>
 			)}

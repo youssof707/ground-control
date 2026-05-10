@@ -15,6 +15,9 @@ export class PermissionBroker {
 		string,
 		{ request: PermissionRequest; resolve: Resolver }
 	>();
+	// Tool names the user has chosen to always allow for the lifetime of this
+	// app process. Not persisted — clearing the set requires restarting the app.
+	private alwaysAllowTools = new Set<string>();
 
 	constructor(
 		private notifications: NotificationManager,
@@ -30,6 +33,13 @@ export class PermissionBroker {
 		toolName: string;
 		input: Record<string, unknown>;
 	}): Promise<PermissionResult> {
+		if (this.alwaysAllowTools.has(args.toolName)) {
+			return Promise.resolve({
+				behavior: "allow",
+				updatedInput: args.input,
+			});
+		}
+
 		const requestId = randomUUID();
 		const request: PermissionRequest = {
 			requestId,
@@ -74,6 +84,9 @@ export class PermissionBroker {
 		this.syncBadge();
 		windows.broadcast("permission:resolved", { requestId: d.requestId });
 		if (d.behavior === "allow") {
+			if (d.remember) {
+				this.alwaysAllowTools.add(entry.request.toolName);
+			}
 			entry.resolve({
 				behavior: "allow",
 				updatedInput: d.updatedInput ?? entry.request.input,

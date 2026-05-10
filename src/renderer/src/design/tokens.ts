@@ -28,6 +28,10 @@ export const T = {
 	warnSoft: "oklch(0.80 0.12 80 / 0.14)",
 	warnBorder: "oklch(0.80 0.12 80 / 0.40)",
 
+	neutral: "oklch(0.72 0.008 70)",
+	neutralSoft: "oklch(0.72 0.008 70 / 0.14)",
+	neutralBorder: "oklch(0.72 0.008 70 / 0.40)",
+
 	danger: "oklch(0.70 0.18 25)",
 	dangerSoft: "oklch(0.70 0.18 25 / 0.14)",
 	dangerBorder: "oklch(0.70 0.18 25 / 0.40)",

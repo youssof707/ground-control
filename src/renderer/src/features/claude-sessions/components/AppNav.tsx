@@ -1,6 +1,17 @@
-import { Link, NavLink } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
+import { useSessionsStore } from "../stores/useSessionsStore";
+import { useReadStore } from "../stores/useReadStore";
 import { T } from "../../../design/tokens";
+import type { ClaudeSessionFull } from "@shared/claude-sessions/types";
+
+function lastIncomingMessageTs(session: ClaudeSessionFull): number {
+	for (let i = session.messages.length - 1; i >= 0; i--) {
+		const m = session.messages[i];
+		if (m.role === "assistant") return m.ts;
+	}
+	return 0;
+}
 
 export function AppNav({
 	inboxOpen,
@@ -9,7 +20,27 @@ export function AppNav({
 	inboxOpen: boolean;
 	onToggleInbox: () => void;
 }) {
-	const count = usePermissionsStore((s) => s.queue.length);
+	const queue = usePermissionsStore((s) => s.queue);
+	const sessionsMap = useSessionsStore((s) => s.sessions);
+	const sessionsOrder = useSessionsStore((s) => s.order);
+	const lastReadAt = useReadStore((s) => s.lastReadAt);
+
+	const runningCount = sessionsOrder.filter(
+		(id) => sessionsMap[id]?.status === "running",
+	).length;
+
+	const waitingCount = new Set(queue.map((q) => q.sessionId)).size;
+
+	const unreadCount = sessionsOrder.reduce((acc, id) => {
+		const sess = sessionsMap[id];
+		if (!sess) return acc;
+		if (sess.status === "running") return acc;
+		const lastIncoming = lastIncomingMessageTs(sess);
+		if (lastIncoming > 0 && lastIncoming > (lastReadAt[id] ?? 0)) {
+			return acc + 1;
+		}
+		return acc;
+	}, 0);
 
 	return (
 		<nav
@@ -51,12 +82,42 @@ export function AppNav({
 					width: 1,
 					height: 18,
 					background: T.border,
-					marginRight: 8,
+					marginRight: 14,
 				}}
 			/>
-			<Tab to="/" label="Sessions" />
+			<div
+				style={{
+					display: "flex",
+					gap: 14,
+					alignItems: "center",
+					fontSize: 13,
+					color: T.textDim,
+				}}
+			>
+				<Stat
+					n={runningCount}
+					label="running"
+					dot={runningCount > 0 ? T.ok : undefined}
+				/>
+				<Sep />
+				<Stat
+					n={unreadCount}
+					label="unread"
+					dot={unreadCount > 0 ? T.accent : undefined}
+				/>
+				<Sep />
+				<Stat
+					n={waitingCount}
+					label="waiting"
+					dot={waitingCount > 0 ? T.warn : undefined}
+				/>
+			</div>
 			<div style={{ flex: 1 }} />
-			<InboxToggle active={inboxOpen} badge={count} onClick={onToggleInbox} />
+			<InboxToggle
+				active={inboxOpen}
+				badge={queue.length}
+				onClick={onToggleInbox}
+			/>
 		</nav>
 	);
 }
@@ -116,60 +177,43 @@ function InboxToggle({
 	);
 }
 
-function Tab({
-	to,
-	label,
-	badge,
-}: {
-	to: string;
-	label: string;
-	badge?: number;
-}) {
+function Stat({ n, label, dot }: { n: number; label: string; dot?: string }) {
 	return (
-		<NavLink
-			to={to}
-			end
-			style={({ isActive }) => ({
-				display: "inline-flex",
-				alignItems: "center",
-				gap: 8,
-				padding: "6px 12px",
-				borderRadius: 8,
-				fontSize: 13,
-				fontWeight: 500,
-				color: isActive ? T.text : T.textMute,
-				background: isActive ? T.surface : "transparent",
-				boxShadow: isActive ? `inset 0 0 0 0.5px ${T.border}` : "none",
-				textDecoration: "none",
-			})}
-		>
-			{({ isActive }) => (
-				<>
-					<span>{label}</span>
-					{badge && badge > 0 ? (
-						<span
-							style={{
-								minWidth: 18,
-								height: 18,
-								padding: "0 6px",
-								borderRadius: 9,
-								background: isActive ? T.accent : T.accentSoft,
-								color: isActive ? T.accentInk : T.accent,
-								fontSize: 11,
-								fontWeight: 600,
-								display: "inline-flex",
-								alignItems: "center",
-								justifyContent: "center",
-								fontFamily: T.mono,
-								letterSpacing: "-0.2px",
-							}}
-						>
-							{badge}
-						</span>
-					) : null}
-				</>
-			)}
-		</NavLink>
+		<div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+			{dot ? (
+				<span
+					style={{
+						width: 6,
+						height: 6,
+						borderRadius: "50%",
+						background: dot,
+					}}
+				/>
+			) : null}
+			<span
+				style={{
+					fontFamily: T.mono,
+					color: T.text,
+					fontWeight: 500,
+				}}
+			>
+				{n}
+			</span>
+			<span style={{ color: T.textMute }}>{label}</span>
+		</div>
+	);
+}
+
+function Sep() {
+	return (
+		<span
+			style={{
+				width: 3,
+				height: 3,
+				borderRadius: "50%",
+				background: T.border,
+			}}
+		/>
 	);
 }
 

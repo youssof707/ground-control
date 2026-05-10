@@ -1,7 +1,8 @@
 import Fastify, { FastifyInstance } from "fastify";
 import fastifyCors from "@fastify/cors";
 
-export const FASTIFY_PORT = 41739;
+export const FASTIFY_PORT =
+	process.env.NODE_ENV === "development" ? 41740 : 41739;
 const HOST = "127.0.0.1";
 
 const RENDERER_ORIGINS: ReadonlyArray<string> = [
