@@ -5,7 +5,16 @@ import {
 	type SDKMessage,
 	type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import { app } from "electron";
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
+
+function resolveClaudeBinary(): string {
+	const pkg = `@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}`;
+	const ext = process.platform === "win32" ? "claude.exe" : "claude";
+	const root = app.getAppPath().replace(/app\.asar(?!\.unpacked)/, "app.asar.unpacked");
+	return join(root, "node_modules", pkg, ext);
+}
 import type {
 	ClaudeSession,
 	ClaudeSessionFull,
@@ -253,6 +262,7 @@ export class SessionManager {
 			const options: Options = {
 				cwd,
 				permissionMode: "default",
+				pathToClaudeCodeExecutable: resolveClaudeBinary(),
 				canUseTool: (toolName, toolInput) =>
 					this.broker.ask({ sessionId: id, toolName, input: toolInput }),
 				...(cfg.resumeSdkSessionId

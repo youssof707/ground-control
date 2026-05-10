@@ -33,7 +33,10 @@
       "Bash(grep -oE \"spawn\\\\\\([^\\)]{1,80}\\\\\\)|spawnSync\\\\\\([^\\)]{1,80}\\\\\\)|execFile\\\\\\([^\\)]{1,80}\\\\\\)\" /Users/youssof/.claude/projects/-Users-youssof-Working-Files-Code-claude-code-wrapper/12adf544-9bd4-46e7-bf51-f518feddf20d/tool-results/b735dleir.txt)",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(k, '->', v.get\\('status'\\), '|', v.get\\('error', '\\(no error\\)'\\)\\) for k,v in d['items'].items\\(\\)]\")",
       "Read(//Applications/Ground Control.app/Contents/Resources/app.asar.unpacked/node_modules/@anthropic-ai/**)",
-      "Read(//Applications/Ground Control.app/Contents/Resources/**)"
+      "Read(//Applications/Ground Control.app/Contents/Resources/**)",
+      "Bash(python3 -c ' *)",
+      "Bash(stat -f \"%m %N\" \"/Applications/Ground Control.app\" \"/Applications/Ground Control.app/Contents/Resources/app.asar.unpacked\" 2>&1 && \\\\ *)",
+      "Read(//Applications/Ground Control.app/**)"
     ]
   }
 }
