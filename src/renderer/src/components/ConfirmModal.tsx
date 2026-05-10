@@ -38,11 +38,7 @@ export function ConfirmModal({
 	if (!open) return null;
 
 	return (
-		<div
-			className="modal-backdrop"
-			onClick={onCancel}
-			role="presentation"
-		>
+		<div className="modal-backdrop" onClick={onCancel} role="presentation">
 			<div
 				className="modal-card"
 				onClick={(e) => e.stopPropagation()}
@@ -62,7 +58,7 @@ export function ConfirmModal({
 						{cancelLabel}
 					</button>
 					<button
-						className={`btn ${destructive ? "btn-destructive" : ""}`}
+						className={`btn ${destructive ? "btn-destructive" : "btn-primary"}`}
 						onClick={onConfirm}
 						disabled={busy}
 						autoFocus

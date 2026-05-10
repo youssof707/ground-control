@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from "electron";
+import { ipcMain } from "electron";
 import { SessionManager } from "../sessions/SessionManager";
 import { PermissionBroker } from "../sessions/PermissionBroker";
 import { NotificationManager } from "./notifications";
@@ -8,17 +8,14 @@ import type {
 } from "../../shared/schemas/claude_session";
 import * as sessionStore from "../core/store/claude_session";
 
-export function registerSessionsHandlers(
-	getWin: () => BrowserWindow | null,
-): SessionManager {
-	const notifications = new NotificationManager(getWin);
+export function registerSessionsHandlers(): SessionManager {
+	const notifications = new NotificationManager();
 	let manager: SessionManager;
 	const broker = new PermissionBroker(
-		getWin,
 		notifications,
 		(sessionId) => manager?.getSession(sessionId)?.title,
 	);
-	manager = new SessionManager(getWin, broker);
+	manager = new SessionManager(broker);
 
 	ipcMain.handle("session:start", (_e, input: StartSessionInput) => manager.run(input));
 	ipcMain.handle("session:cancel", (_e, sessionId: string) => {
@@ -38,10 +35,11 @@ export function registerSessionsHandlers(
 	);
 	ipcMain.handle("sessions:list", () => sessionStore.listSessions());
 	ipcMain.handle("session:delete", async (_e, sessionId: string) => {
+		// If the session is still alive, cancel it first. The live loop will
+		// wind down on its own; its late writes are no-ops because the store
+		// row is gone.
 		if (manager.getSession(sessionId)) {
-			throw new Error(
-				"Cancel the session before deleting it (it's still active).",
-			);
+			manager.cancel(sessionId);
 		}
 		await sessionStore.deleteSession(sessionId);
 	});

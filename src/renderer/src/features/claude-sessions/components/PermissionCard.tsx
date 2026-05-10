@@ -3,6 +3,7 @@ import type { PermissionRequest } from "@shared/claude-sessions/types";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { AskUserQuestionCard } from "./AskUserQuestionCard";
 import { ToolPreview } from "./ToolPreview";
+import { T } from "../../../design/tokens";
 
 export function PermissionCard({ req }: { req: PermissionRequest }) {
 	if (req.toolName === "AskUserQuestion") {
@@ -35,37 +36,62 @@ function DefaultPermissionCard({ req }: { req: PermissionRequest }) {
 	return (
 		<div
 			style={{
-				border: "1px solid #e5e5ea",
-				borderLeft: "3px solid #f5a623",
-				borderRadius: 8,
-				padding: 12,
-				margin: "8px 0",
-				background: "#fff",
-				display: "flex",
-				flexDirection: "column",
-				gap: 10,
+				borderRadius: 10,
+				background: T.surface,
+				border: `0.5px solid ${T.accentBorder}`,
+				overflow: "hidden",
 			}}
 		>
 			<div
 				style={{
+					padding: "12px 16px",
 					display: "flex",
 					alignItems: "center",
-					gap: 8,
-					fontSize: 13,
+					gap: 10,
+					borderBottom: `0.5px solid ${T.borderSoft}`,
 				}}
 			>
-				<span>🔧</span>
-				<strong>{req.toolName}</strong>
-				<span style={{ fontSize: 12, color: "#86868b" }}>wants to run</span>
+				<div
+					style={{
+						width: 22,
+						height: 22,
+						borderRadius: 6,
+						background: T.accentSoft,
+						border: `0.5px solid ${T.accentBorder}`,
+						display: "inline-flex",
+						alignItems: "center",
+						justifyContent: "center",
+						color: T.accent,
+						fontSize: 12,
+					}}
+				>
+					🔧
+				</div>
+				<div style={{ fontSize: 12.5, color: T.text }}>
+					<span style={{ color: T.textDim, marginRight: 6 }}>
+						Tool request:
+					</span>
+					<strong style={{ fontFamily: T.mono }}>{req.toolName}</strong>
+				</div>
 			</div>
 
-			<ToolPreview
-				toolName={req.toolName}
-				input={req.input as Record<string, unknown>}
-			/>
+			<div style={{ padding: "14px 16px" }}>
+				<ToolPreview
+					toolName={req.toolName}
+					input={req.input as Record<string, unknown>}
+				/>
+			</div>
 
 			{showDenyReason ? (
-				<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+				<div
+					style={{
+						padding: "12px 16px",
+						borderTop: `0.5px solid ${T.borderSoft}`,
+						display: "flex",
+						flexDirection: "column",
+						gap: 8,
+					}}
+				>
 					<input
 						autoFocus
 						value={denyReason}
@@ -79,9 +105,11 @@ function DefaultPermissionCard({ req }: { req: PermissionRequest }) {
 						}}
 						style={{
 							fontSize: 13,
-							padding: "6px 10px",
-							border: "1px solid #d2d2d7",
-							borderRadius: 6,
+							padding: "8px 12px",
+							borderRadius: 8,
+							background: T.surfaceLow,
+							border: `0.5px solid ${T.border}`,
+							outline: "none",
 						}}
 					/>
 					<div
@@ -93,26 +121,30 @@ function DefaultPermissionCard({ req }: { req: PermissionRequest }) {
 								setShowDenyReason(false);
 								setDenyReason("");
 							}}
-							style={{ fontSize: 12 }}
 						>
 							Cancel
 						</button>
 						<button
-							className="btn"
+							className="btn btn-destructive"
 							onClick={() => denyReason.trim() && deny(denyReason.trim())}
 							disabled={!denyReason.trim()}
-							style={{ fontSize: 12 }}
 						>
 							Send denial
 						</button>
 					</div>
 				</div>
 			) : (
-				<div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+				<div
+					style={{
+						padding: "10px 16px",
+						display: "flex",
+						justifyContent: "flex-end",
+						gap: 8,
+					}}
+				>
 					<button
 						className="btn"
 						onClick={() => setShowDenyReason(true)}
-						style={{ fontSize: 12 }}
 						title="Deny with a reason that gets sent back to Claude"
 					>
 						Deny…
@@ -120,20 +152,10 @@ function DefaultPermissionCard({ req }: { req: PermissionRequest }) {
 					<button
 						className="btn"
 						onClick={() => deny("Denied by user")}
-						style={{ fontSize: 12 }}
 					>
 						Deny
 					</button>
-					<button
-						className="btn"
-						onClick={allow}
-						style={{
-							fontSize: 12,
-							background: "#1d1d1f",
-							color: "#fff",
-							borderColor: "#1d1d1f",
-						}}
-					>
+					<button className="btn btn-primary" onClick={allow}>
 						Allow
 					</button>
 				</div>

@@ -115,11 +115,14 @@ export type SessionPatch = Partial<
 export async function updateSession(
 	id: string,
 	patch: SessionPatch,
-): Promise<ClaudeSessionFull> {
+): Promise<ClaudeSessionFull | null> {
 	assertInitialized();
 	return enqueue(async () => {
 		const current = db.items[id];
-		if (!current) throw new Error(`Session not found: ${id}`);
+		// Tolerate missing rows: an active session can be deleted concurrently;
+		// late updates from its winding-down loop should silently no-op rather
+		// than blow up.
+		if (!current) return null;
 		const merged = { ...current, ...patch };
 		const validated = ClaudeSessionFullSchema.parse(merged);
 		db.items[id] = validated;

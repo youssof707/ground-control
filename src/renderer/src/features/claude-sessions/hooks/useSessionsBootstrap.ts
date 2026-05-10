@@ -43,6 +43,12 @@ export function useSessionsBootstrap() {
 				setStatus(sessionId, status);
 				if (diff !== undefined) upsertSession({ id: sessionId, diff });
 			}),
+			window.claude.on("session:patch", (p) => {
+				const { sessionId, ...patch } = p as {
+					sessionId: string;
+				} & Record<string, unknown>;
+				upsertSession({ id: sessionId, ...patch });
+			}),
 			window.claude.on("session:message", (p) => {
 				const { sessionId, message } = p as {
 					sessionId: string;

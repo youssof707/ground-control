@@ -5,6 +5,8 @@ import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { PermissionCard } from "./PermissionCard";
 import { ImagePasteTextarea } from "./ImagePasteTextarea";
 import { MessageView } from "./MessageView";
+import { T } from "../../../design/tokens";
+import { BranchChip, StatusPill } from "../../../design/Atoms";
 
 export function SessionChat({ sessionId }: { sessionId: string }) {
 	const session = useSessionsStore((s) => s.sessions[sessionId]);
@@ -14,18 +16,16 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	const [resuming, setResuming] = useState(false);
 	const [resumeError, setResumeError] = useState<string | null>(null);
 
-	const scrollRef = useRef<HTMLDivElement>(null);
-	const stickToBottom = useRef(true);
-	const messageCount = session?.messages.length ?? 0;
-	const pendingCount = pending.length;
-
 	const isOpen =
 		session?.status === "running" ||
 		session?.status === "idle" ||
 		session?.status === "awaiting_permission";
 
-	// Tick once a second while the session is open so the activity
-	// indicator stays live without depending on store updates.
+	const scrollRef = useRef<HTMLDivElement>(null);
+	const stickToBottom = useRef(true);
+	const messageCount = session?.messages.length ?? 0;
+	const pendingCount = pending.length;
+
 	const [, setTick] = useState(0);
 	useEffect(() => {
 		if (!isOpen) return;
@@ -42,8 +42,8 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	const onScroll = () => {
 		const el = scrollRef.current;
 		if (!el) return;
-		const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-		stickToBottom.current = distanceFromBottom < 80;
+		const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+		stickToBottom.current = distance < 80;
 	};
 
 	const stop = async () => {
@@ -80,111 +80,153 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 		);
 	}
 
+	const effectiveStatus =
+		pending.length > 0 ? "awaiting_permission" : session.status;
+
 	return (
 		<div
 			style={{
 				display: "flex",
 				flexDirection: "column",
 				height: "100%",
+				background: T.win,
 			}}
 		>
-			<header
+			{/* Breadcrumb header */}
+			<div
 				style={{
-					padding: "12px 16px",
-					borderBottom: "1px solid #e5e5ea",
-					background: "#fff",
+					height: 50,
+					flexShrink: 0,
+					borderBottom: `0.5px solid ${T.border}`,
 					display: "flex",
 					alignItems: "center",
-					justifyContent: "space-between",
-					gap: 12,
+					gap: 14,
+					padding: "0 18px",
+					background: T.win,
 				}}
 			>
-				<div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-					<Link to="/" style={{ fontSize: 13 }}>
-						← All sessions
-					</Link>
-					<div style={{ fontWeight: 600 }}>{session.title}</div>
-					<div style={{ fontSize: 12, color: "#86868b" }}>
-						{session.id.slice(0, 8)} · {session.status}
-					</div>
-					{isOpen ? (
-						<ActivityChip
-							session={session}
-							hasPending={pending.length > 0}
-							status={session.status}
+				<Link
+					to="/"
+					style={{
+						display: "inline-flex",
+						alignItems: "center",
+						gap: 6,
+						fontSize: 12.5,
+						color: T.textDim,
+						textDecoration: "none",
+						padding: "5px 9px",
+						borderRadius: 7,
+						border: `0.5px solid ${T.border}`,
+					}}
+				>
+					<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+						<path
+							d="M7 3l-3 3 3 3"
+							stroke="currentColor"
+							strokeWidth="1.4"
+							strokeLinecap="round"
+							strokeLinejoin="round"
 						/>
-					) : null}
-					{session.branch ? (
-						<div
-							style={{
-								fontSize: 12,
-								fontFamily: "monospace",
-								color: "#1d1d1f",
-								background: "#ececef",
-								padding: "2px 8px",
-								borderRadius: 4,
-							}}
-							title="Branch checked out when this session started"
-						>
-							{session.branch}
-						</div>
-					) : null}
+					</svg>
+					Sessions
+				</Link>
+				<div
+					style={{
+						fontSize: 14,
+						fontWeight: 600,
+						color: T.text,
+						overflow: "hidden",
+						textOverflow: "ellipsis",
+						whiteSpace: "nowrap",
+						maxWidth: 320,
+					}}
+				>
+					{session.title}
 				</div>
-				<div style={{ display: "flex", gap: 8 }}>
-					{session.status === "running" ? (
-						<button
-							className="btn"
-							onClick={stop}
-							disabled={interrupting}
-							style={{ fontSize: 13 }}
-							title="Stop Claude's current response. The session stays open — you can keep sending messages."
-						>
-							{interrupting ? "Stopping…" : "Stop"}
-						</button>
-					) : null}
-					{!isOpen && session.sdkSessionId ? (
-						<button
-							className="btn"
-							onClick={resume}
-							disabled={resuming}
-							style={{ fontSize: 13 }}
-							title="Resume this session and keep talking with the same context."
-						>
-							{resuming ? "Resuming…" : "Resume"}
-						</button>
-					) : null}
-					{session.diff ? (
-						<Link
-							to={`/sessions/${sessionId}/diff`}
-							className="btn"
-							style={{ fontSize: 13, textDecoration: "none" }}
-						>
-							View diff
-						</Link>
-					) : null}
-				</div>
-			</header>
+				<span
+					style={{
+						fontFamily: T.mono,
+						fontSize: 11.5,
+						color: T.textFaint,
+					}}
+				>
+					{session.id.slice(0, 8)}
+				</span>
+				<StatusPill status={effectiveStatus} />
+				{session.branch ? <BranchChip name={session.branch} /> : null}
+				{isOpen ? (
+					<ActivityChip session={session} hasPending={pending.length > 0} />
+				) : null}
+				<div style={{ flex: 1 }} />
 
+				{session.status === "running" ? (
+					<button
+						className="btn"
+						onClick={stop}
+						disabled={interrupting}
+						title="Stop Claude's current response. The session stays open — you can keep sending messages."
+					>
+						{interrupting ? "Stopping…" : "Stop"}
+					</button>
+				) : null}
+				{!isOpen && session.sdkSessionId ? (
+					<button
+						className="btn"
+						onClick={resume}
+						disabled={resuming}
+						title="Resume this session and keep talking with the same context."
+					>
+						{resuming ? "Resuming…" : "Resume"}
+					</button>
+				) : null}
+				{session.diff ? (
+					<Link to={`/sessions/${sessionId}/diff`} className="btn">
+						<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+							<path
+								d="M3 2h5v5M3 7l5-5"
+								stroke="currentColor"
+								strokeWidth="1.4"
+								strokeLinecap="round"
+							/>
+						</svg>
+						View diff
+					</Link>
+				) : null}
+			</div>
+
+			{/* Transcript */}
 			<div
 				ref={scrollRef}
 				onScroll={onScroll}
 				style={{
 					flex: 1,
 					overflow: "auto",
-					padding: 16,
-					display: "flex",
-					flexDirection: "column",
-					gap: 8,
+					padding: "28px 0 18px",
+					minHeight: 0,
 				}}
 			>
-				{session.messages.length === 0 && pending.length === 0 ? (
-					<div className="message">Waiting for first message…</div>
-				) : (
-					session.messages.map((m) => <MessageView key={m.id} m={m} />)
-				)}
-				{pending.map((p) => (
-					<PermissionCard key={p.requestId} req={p} />
-				))}
+				<div style={{ maxWidth: 760, margin: "0 auto", padding: "0 32px" }}>
+					{session.messages.length === 0 && pending.length === 0 ? (
+						<div className="message">Waiting for first message…</div>
+					) : (
+						session.messages.map((m) => <MessageView key={m.id} m={m} />)
+					)}
+					{pending.length > 0 ? (
+						<div
+							style={{
+								maxWidth: 760,
+								margin: "20px auto",
+								display: "flex",
+								flexDirection: "column",
+								gap: 12,
+							}}
+						>
+							{pending.map((p) => (
+								<PermissionCard key={p.requestId} req={p} />
+							))}
+						</div>
+					) : null}
+				</div>
 			</div>
 
 			{resumeError ? (
@@ -195,6 +237,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					{resumeError}
 				</div>
 			) : null}
+
 			{isOpen ? <ImagePasteTextarea sessionId={sessionId} /> : null}
 		</div>
 	);
@@ -203,26 +246,12 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 function ActivityChip({
 	session,
 	hasPending,
-	status,
 }: {
-	session: { messages: { ts: number }[]; createdAt: number };
+	session: { messages: { ts: number }[]; createdAt: number; status: string };
 	hasPending: boolean;
-	status: string;
 }) {
-	if (hasPending) {
-		return (
-			<Chip color="#b07d00" bg="#fff8e6">
-				● awaiting permission
-			</Chip>
-		);
-	}
-	if (status === "idle") {
-		return (
-			<Chip color="#6e6e73" bg="#ececef">
-				○ waiting for input
-			</Chip>
-		);
-	}
+	if (hasPending) return null;
+	if (session.status === "idle") return null;
 
 	const last =
 		session.messages.length > 0
@@ -230,53 +259,43 @@ function ActivityChip({
 			: session.createdAt;
 	const deltaSec = Math.max(0, Math.floor((Date.now() - last) / 1000));
 
-	let color = "#2e8b3a";
-	let bg = "#e9f5eb";
+	let color: string = T.ok;
+	let bg: string = T.okSoft;
 	let prefix = "active";
 	if (deltaSec >= 120) {
-		color = "#c92a2a";
-		bg = "#fdecec";
-		prefix = "no activity for";
+		color = T.danger;
+		bg = T.dangerSoft;
+		prefix = "stalled";
 	} else if (deltaSec >= 30) {
-		color = "#b07d00";
-		bg = "#fff8e6";
+		color = T.warn;
+		bg = T.warnSoft;
 		prefix = "quiet";
 	}
 
 	return (
-		<Chip color={color} bg={bg}>
-			● {prefix} {formatDelta(deltaSec)}
-		</Chip>
-	);
-}
-
-function Chip({
-	color,
-	bg,
-	children,
-}: {
-	color: string;
-	bg: string;
-	children: React.ReactNode;
-}) {
-	return (
 		<div
 			style={{
-				fontSize: 12,
-				color,
+				display: "inline-flex",
+				alignItems: "center",
+				gap: 6,
+				height: 22,
+				padding: "0 9px",
+				borderRadius: 11,
 				background: bg,
-				padding: "2px 8px",
-				borderRadius: 999,
+				border: `0.5px solid ${color}`,
+				color,
+				fontSize: 11.5,
+				fontFamily: T.mono,
 				fontVariantNumeric: "tabular-nums",
 			}}
 		>
-			{children}
+			{prefix} {formatDelta(deltaSec)}
 		</div>
 	);
 }
 
 function formatDelta(sec: number): string {
-	if (sec < 5) return "just now";
+	if (sec < 5) return "now";
 	if (sec < 60) return `${sec}s`;
 	if (sec < 3600) return `${Math.floor(sec / 60)}m ${sec % 60}s`;
 	return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;

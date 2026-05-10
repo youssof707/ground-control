@@ -1,4 +1,5 @@
 import { InlineDiff } from "./DiffRender";
+import { T } from "../../../design/tokens";
 
 interface EditInput {
 	file_path?: string;
@@ -41,6 +42,21 @@ interface GlobInput {
 	pattern?: string;
 	path?: string;
 }
+
+const codeBlockStyle: React.CSSProperties = {
+	margin: 0,
+	padding: "10px 12px",
+	background: T.bg,
+	color: T.text,
+	border: `0.5px solid ${T.border}`,
+	borderRadius: 8,
+	fontSize: 12.5,
+	maxHeight: 320,
+	overflow: "auto",
+	whiteSpace: "pre-wrap",
+	wordBreak: "break-word",
+	fontFamily: T.mono,
+};
 
 export function ToolPreview({
 	toolName,
@@ -112,23 +128,7 @@ function WritePreview({ input }: { input: WriteInput }) {
 	return (
 		<div>
 			<PathRow path={path} suffix={`${content.split("\n").length} lines`} />
-			<pre
-				style={{
-					margin: 0,
-					padding: 10,
-					background: "#1d1d1f",
-					color: "#f5f5f7",
-					borderRadius: 6,
-					fontSize: 12,
-					maxHeight: 320,
-					overflow: "auto",
-					whiteSpace: "pre",
-					fontFamily:
-						"ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
-				}}
-			>
-				{content}
-			</pre>
+			<pre style={codeBlockStyle}>{content}</pre>
 		</div>
 	);
 }
@@ -137,30 +137,13 @@ function BashPreview({ input }: { input: BashInput }) {
 	return (
 		<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
 			{input.description ? (
-				<div style={{ fontSize: 13, color: "#515154" }}>
+				<div style={{ fontSize: 13, color: T.textDim }}>
 					{input.description}
 				</div>
 			) : null}
-			<pre
-				style={{
-					margin: 0,
-					padding: "10px 12px",
-					background: "#1d1d1f",
-					color: "#f5f5f7",
-					borderRadius: 6,
-					fontSize: 12.5,
-					maxHeight: 240,
-					overflow: "auto",
-					whiteSpace: "pre-wrap",
-					wordBreak: "break-word",
-					fontFamily:
-						"ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
-				}}
-			>
-				$ {input.command ?? ""}
-			</pre>
+			<pre style={codeBlockStyle}>$ {input.command ?? ""}</pre>
 			{input.run_in_background || input.timeout ? (
-				<div style={{ fontSize: 11, color: "#86868b" }}>
+				<div style={{ fontSize: 11, color: T.textFaint, fontFamily: T.mono }}>
 					{input.run_in_background ? "background · " : ""}
 					{input.timeout ? `timeout ${input.timeout}ms` : ""}
 				</div>
@@ -180,10 +163,10 @@ function ReadPreview({ input }: { input: ReadInput }) {
 function GrepPreview({ input }: { input: GrepInput }) {
 	return (
 		<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-			<div style={{ fontSize: 13, fontFamily: "monospace" }}>
+			<div style={{ fontSize: 13, fontFamily: T.mono, color: T.text }}>
 				/{input.pattern ?? ""}/
 			</div>
-			<div style={{ fontSize: 12, color: "#86868b" }}>
+			<div style={{ fontSize: 12, color: T.textMute, fontFamily: T.mono }}>
 				{input.path ?? "(cwd)"}
 				{input.glob ? ` · ${input.glob}` : ""}
 				{input.output_mode ? ` · mode: ${input.output_mode}` : ""}
@@ -195,37 +178,20 @@ function GrepPreview({ input }: { input: GrepInput }) {
 function GlobPreview({ input }: { input: GlobInput }) {
 	return (
 		<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-			<div style={{ fontSize: 13, fontFamily: "monospace" }}>
+			<div style={{ fontSize: 13, fontFamily: T.mono, color: T.text }}>
 				{input.pattern ?? ""}
 			</div>
 			{input.path ? (
-				<div style={{ fontSize: 12, color: "#86868b" }}>{input.path}</div>
+				<div style={{ fontSize: 12, color: T.textMute, fontFamily: T.mono }}>
+					{input.path}
+				</div>
 			) : null}
 		</div>
 	);
 }
 
 function DefaultPreview({ input }: { input: Record<string, unknown> }) {
-	return (
-		<pre
-			style={{
-				margin: 0,
-				padding: 10,
-				background: "#fff",
-				border: "1px solid #e5e5ea",
-				borderRadius: 6,
-				fontSize: 12,
-				maxHeight: 240,
-				overflow: "auto",
-				whiteSpace: "pre-wrap",
-				wordBreak: "break-word",
-				fontFamily:
-					"ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
-			}}
-		>
-			{JSON.stringify(input, null, 2)}
-		</pre>
-	);
+	return <pre style={codeBlockStyle}>{JSON.stringify(input, null, 2)}</pre>;
 }
 
 function PathRow({ path, suffix }: { path: string; suffix?: string }) {
@@ -233,9 +199,8 @@ function PathRow({ path, suffix }: { path: string; suffix?: string }) {
 		<div
 			style={{
 				fontSize: 12,
-				fontFamily:
-					"ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
-				color: "#1d1d1f",
+				fontFamily: T.mono,
+				color: T.text,
 				marginBottom: 8,
 				display: "flex",
 				alignItems: "center",
@@ -245,7 +210,7 @@ function PathRow({ path, suffix }: { path: string; suffix?: string }) {
 		>
 			<span>{path}</span>
 			{suffix ? (
-				<span style={{ color: "#86868b", fontSize: 11 }}>{suffix}</span>
+				<span style={{ color: T.textFaint, fontSize: 11 }}>{suffix}</span>
 			) : null}
 		</div>
 	);

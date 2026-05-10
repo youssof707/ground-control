@@ -6,14 +6,24 @@ import { SessionChat } from "./features/claude-sessions/components/SessionChat";
 import { DiffViewer } from "./features/claude-sessions/components/DiffViewer";
 import { InboxPage } from "./features/claude-sessions/components/InboxPage";
 import { AppNav } from "./features/claude-sessions/components/AppNav";
+import { T } from "./design/tokens";
 
 export default function MainApp() {
 	useSessionsBootstrap();
 	useNotificationRouter();
 	return (
-		<div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
+		<div
+			style={{
+				display: "flex",
+				flexDirection: "column",
+				height: "100vh",
+				background: T.win,
+				color: T.text,
+				fontFamily: T.sans,
+			}}
+		>
 			<AppNav />
-			<div style={{ flex: 1, overflow: "auto" }}>
+			<div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
 				<Routes>
 					<Route path="/" element={<SessionsList />} />
 					<Route path="/inbox" element={<InboxPage />} />

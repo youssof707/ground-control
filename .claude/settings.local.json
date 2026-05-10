@@ -10,7 +10,17 @@
       "Bash(sed -n '570,620p' \"/Users/youssof/Working Files/Code/claude-code-wrapper/node_modules/@anthropic-ai/claude-agent-sdk/sdk-tools.d.ts\")",
       "Bash(sed -n '2530,2580p' \"/Users/youssof/Working Files/Code/claude-code-wrapper/node_modules/@anthropic-ai/claude-agent-sdk/sdk-tools.d.ts\")",
       "Bash(sed -n '2693,2730p' \"/Users/youssof/Working Files/Code/claude-code-wrapper/node_modules/@anthropic-ai/claude-agent-sdk/sdk-tools.d.ts\")",
-      "Bash(sed -n '2117,2145p' \"/Users/youssof/Working Files/Code/claude-code-wrapper/node_modules/@anthropic-ai/claude-agent-sdk/sdk-tools.d.ts\")"
+      "Bash(sed -n '2117,2145p' \"/Users/youssof/Working Files/Code/claude-code-wrapper/node_modules/@anthropic-ai/claude-agent-sdk/sdk-tools.d.ts\")",
+      "WebFetch(domain:claude.ai)",
+      "WebFetch(domain:api.anthropic.com)",
+      "Bash(mkdir -p /tmp/ccw-design)",
+      "Read(//tmp/**)",
+      "Bash(rm -rf ./*)",
+      "Bash(tar -xzf /Users/youssof/.claude/projects/-Users-youssof-Working-Files-Code-claude-code-wrapper/4a85757e-46b3-4ef9-9634-cb4a69f8a38b/tool-results/webfetch-1778396992697-ehhnol.bin)",
+      "Bash(tar -tzf /Users/youssof/.claude/projects/-Users-youssof-Working-Files-Code-claude-code-wrapper/4a85757e-46b3-4ef9-9634-cb4a69f8a38b/tool-results/webfetch-1778396992697-ehhnol.bin)",
+      "Bash(tar -xzf /Users/youssof/.claude/projects/-Users-youssof-Working-Files-Code-claude-code-wrapper/4a85757e-46b3-4ef9-9634-cb4a69f8a38b/tool-results/webfetch-1778396992697-ehhnol.bin -C /tmp/ccw-design)",
+      "Bash(wc -l /tmp/ccw-design/claude-code/project/*.html /tmp/ccw-design/claude-code/project/*.jsx)",
+      "Read(//private/tmp/ccw-design/claude-code/project/**)"
     ]
   }
 }

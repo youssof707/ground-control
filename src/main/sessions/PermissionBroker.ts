@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { BrowserWindow, ipcMain } from "electron";
+import { ipcMain } from "electron";
 import type { PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import type {
 	PermissionDecision,
 	PermissionRequest,
 } from "../../shared/claude-sessions/types";
 import { NotificationManager } from "../ipc/notifications";
+import * as windows from "../windows";
 
 type Resolver = (result: PermissionResult) => void;
 
@@ -16,7 +17,6 @@ export class PermissionBroker {
 	>();
 
 	constructor(
-		private getWin: () => BrowserWindow | null,
 		private notifications: NotificationManager,
 		private getSessionTitle: (sessionId: string) => string | undefined,
 	) {
@@ -42,14 +42,13 @@ export class PermissionBroker {
 		return new Promise<PermissionResult>((resolve) => {
 			this.pending.set(requestId, { request, resolve });
 			this.syncBadge();
-			const win = this.getWin();
-			if (!win || win.isDestroyed()) {
+			if (windows.count() === 0) {
 				this.pending.delete(requestId);
 				this.syncBadge();
 				resolve({ behavior: "deny", message: "No window available" });
 				return;
 			}
-			win.webContents.send("permission:request", request);
+			windows.broadcast("permission:request", request);
 			this.notifications.notifyPermissionRequest(
 				request,
 				this.getSessionTitle(args.sessionId),
@@ -62,6 +61,7 @@ export class PermissionBroker {
 			if (entry.request.sessionId === sessionId) {
 				this.pending.delete(id);
 				entry.resolve({ behavior: "deny", message: reason });
+				windows.broadcast("permission:resolved", { requestId: id });
 			}
 		}
 		this.syncBadge();
@@ -72,6 +72,7 @@ export class PermissionBroker {
 		if (!entry) return;
 		this.pending.delete(d.requestId);
 		this.syncBadge();
+		windows.broadcast("permission:resolved", { requestId: d.requestId });
 		if (d.behavior === "allow") {
 			entry.resolve({
 				behavior: "allow",

@@ -1,9 +1,8 @@
-import { Notification, app, BrowserWindow } from "electron";
+import { Notification, app } from "electron";
 import type { PermissionRequest } from "../../shared/claude-sessions/types";
+import * as windows from "../windows";
 
 export class NotificationManager {
-	constructor(private getWin: () => BrowserWindow | null) {}
-
 	notifyPermissionRequest(req: PermissionRequest, sessionTitle?: string) {
 		const n = new Notification({
 			title: `Claude wants to run ${req.toolName}`,
@@ -13,11 +12,8 @@ export class NotificationManager {
 		});
 
 		n.on("click", () => {
-			const win = this.getWin();
-			if (!win || win.isDestroyed()) return;
-			if (win.isMinimized()) win.restore();
-			win.show();
-			win.focus();
+			const win = windows.showAndFocusAny();
+			if (!win) return;
 			win.webContents.send("notification:clicked", {
 				type: "permission",
 				requestId: req.requestId,

@@ -1,5 +1,6 @@
 import type { SessionMessage } from "@shared/claude-sessions/types";
 import { MarkdownText } from "./MarkdownText";
+import { T } from "../../../design/tokens";
 
 interface SdkLike {
 	type?: string;
@@ -28,20 +29,32 @@ export function MessageView({ m }: { m: SessionMessage }) {
 	const sdk = m.content as SdkLike;
 	if (m.role === "assistant") return <AssistantMessage sdk={sdk} />;
 	if (m.role === "user") return <UserMessage sdk={sdk} />;
-	if (m.role === "system") return <SystemNote text="session initialized" />;
-	return <ResultNote sdk={sdk} />;
+	if (m.role === "system") return <SystemDivider label="Session initialized" />;
+	return <ResultDivider sdk={sdk} />;
 }
 
 function AssistantMessage({ sdk }: { sdk: SdkLike }) {
 	const blocks = (sdk.message?.content as ContentBlock[] | undefined) ?? [];
+	if (blocks.length === 0) return null;
 	return (
-		<div style={{ maxWidth: 760 }}>
-			<RoleLabel>Claude</RoleLabel>
+		<div
+			style={{
+				display: "flex",
+				gap: 14,
+				marginBottom: 22,
+				maxWidth: 760,
+				marginLeft: "auto",
+				marginRight: "auto",
+			}}
+		>
+			<Avatar />
 			<div
 				style={{
-					display: "flex",
-					flexDirection: "column",
-					gap: 8,
+					flex: 1,
+					minWidth: 0,
+					fontSize: 14,
+					color: T.text,
+					lineHeight: 1.6,
 				}}
 			>
 				{blocks.map((b, i) => {
@@ -49,7 +62,7 @@ function AssistantMessage({ sdk }: { sdk: SdkLike }) {
 						return <MarkdownText key={i} text={b.text ?? ""} />;
 					}
 					if (b.type === "tool_use") {
-						return <ToolUseCard key={i} block={b} />;
+						return <ToolUsePill key={i} block={b} />;
 					}
 					return <RawBlock key={i} block={b} />;
 				})}
@@ -64,88 +77,153 @@ function UserMessage({ sdk }: { sdk: SdkLike }) {
 
 	if (isToolResult) {
 		return (
-			<div style={{ maxWidth: 760 }}>
-				{blocks.map((b, i) => (
-					<ToolResultCard key={i} block={b} />
-				))}
+			<div
+				style={{
+					display: "flex",
+					gap: 14,
+					marginBottom: 14,
+					maxWidth: 760,
+					marginLeft: "auto",
+					marginRight: "auto",
+				}}
+			>
+				<div style={{ width: 28, flexShrink: 0 }} />
+				<div style={{ flex: 1, minWidth: 0 }}>
+					{blocks.map((b, i) => (
+						<ToolResultPill key={i} block={b} />
+					))}
+				</div>
 			</div>
 		);
 	}
 
 	return (
-		<div style={{ display: "flex", justifyContent: "flex-end" }}>
+		<div
+			style={{
+				display: "flex",
+				justifyContent: "flex-end",
+				marginBottom: 18,
+				maxWidth: 760,
+				marginLeft: "auto",
+				marginRight: "auto",
+			}}
+		>
 			<div
 				style={{
-					maxWidth: 760,
-					background: "#e8f0fe",
-					border: "1px solid #cfe0ff",
-					borderRadius: 10,
-					padding: "8px 12px",
+					maxWidth: "78%",
+					padding: "12px 16px",
+					borderRadius: 14,
+					background: T.surface,
+					border: `0.5px solid ${T.border}`,
+					fontSize: 14,
+					color: T.text,
+					lineHeight: 1.55,
+					display: "flex",
+					flexDirection: "column",
+					gap: 8,
 				}}
 			>
-				<RoleLabel>You</RoleLabel>
-				<div
-					style={{
-						display: "flex",
-						flexDirection: "column",
-						gap: 8,
-					}}
-				>
-					{blocks.map((b, i) => {
-						if (b.type === "text") {
-							return (
-								<div key={i} style={{ whiteSpace: "pre-wrap", fontSize: 14 }}>
-									{b.text}
-								</div>
-							);
-						}
-						if (b.type === "image" && b.source?.data) {
-							return (
-								<img
-									key={i}
-									src={`data:${b.source.media_type ?? "image/png"};base64,${b.source.data}`}
-									alt=""
-									style={{
-										maxWidth: 280,
-										maxHeight: 280,
-										borderRadius: 6,
-										border: "1px solid #cfe0ff",
-										objectFit: "contain",
-									}}
-								/>
-							);
-						}
-						return <RawBlock key={i} block={b} />;
-					})}
-				</div>
+				{blocks.map((b, i) => {
+					if (b.type === "text") {
+						return (
+							<div key={i} style={{ whiteSpace: "pre-wrap" }}>
+								{b.text}
+							</div>
+						);
+					}
+					if (b.type === "image" && b.source?.data) {
+						return (
+							<img
+								key={i}
+								src={`data:${b.source.media_type ?? "image/png"};base64,${b.source.data}`}
+								alt=""
+								style={{
+									maxWidth: 280,
+									maxHeight: 280,
+									borderRadius: 8,
+									border: `0.5px solid ${T.border}`,
+									objectFit: "contain",
+								}}
+							/>
+						);
+					}
+					return <RawBlock key={i} block={b} />;
+				})}
 			</div>
 		</div>
 	);
 }
 
-function ToolUseCard({ block }: { block: ContentBlock }) {
+function Avatar() {
+	return (
+		<div
+			style={{
+				width: 28,
+				height: 28,
+				borderRadius: 8,
+				flexShrink: 0,
+				background: T.accentSoft,
+				border: `0.5px solid ${T.accentBorder}`,
+				display: "inline-flex",
+				alignItems: "center",
+				justifyContent: "center",
+				color: T.accent,
+				fontFamily: T.mono,
+				fontSize: 13,
+				fontWeight: 700,
+			}}
+		>
+			C
+		</div>
+	);
+}
+
+function ToolUsePill({ block }: { block: ContentBlock }) {
 	const summary = summarizeToolInput(block);
 	return (
 		<details
 			style={{
-				border: "1px solid #e5e5ea",
-				borderRadius: 6,
-				background: "#fafafa",
-				padding: "6px 10px",
-				fontSize: 13,
+				marginBottom: 6,
+				borderRadius: 8,
+				background: T.surfaceLow,
+				border: `0.5px solid ${T.borderSoft}`,
+				padding: "8px 12px",
+				fontFamily: T.mono,
+				fontSize: 12.5,
 			}}
 		>
-			<summary style={{ cursor: "pointer", userSelect: "none" }}>
-				<span style={{ marginRight: 6 }}>🔧</span>
-				<strong>{block.name ?? "tool"}</strong>
+			<summary
+				style={{
+					cursor: "pointer",
+					listStyle: "none",
+					display: "flex",
+					alignItems: "center",
+					gap: 10,
+				}}
+			>
+				<span
+					style={{
+						fontSize: 10.5,
+						fontWeight: 600,
+						padding: "2px 7px",
+						borderRadius: 4,
+						background: T.surfaceHi,
+						color: T.textDim,
+						letterSpacing: 0.4,
+						textTransform: "uppercase",
+						fontFamily: T.sans,
+					}}
+				>
+					{block.name ?? "tool"}
+				</span>
 				{summary ? (
 					<span
 						style={{
-							marginLeft: 8,
-							color: "#6e6e73",
-							fontFamily:
-								"ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
-							fontSize: 12,
+							color: T.textDim,
+							overflow: "hidden",
+							textOverflow: "ellipsis",
+							whiteSpace: "nowrap",
+							flex: 1,
 						}}
 					>
 						{summary}
@@ -158,10 +236,10 @@ function ToolUseCard({ block }: { block: ContentBlock }) {
 					fontSize: 12,
 					whiteSpace: "pre-wrap",
 					wordBreak: "break-word",
-					fontFamily:
-						"ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
+					fontFamily: T.mono,
 					maxHeight: 320,
 					overflow: "auto",
+					color: T.textDim,
 				}}
 			>
 				{JSON.stringify(block.input ?? {}, null, 2)}
@@ -170,33 +248,53 @@ function ToolUseCard({ block }: { block: ContentBlock }) {
 	);
 }
 
-function ToolResultCard({ block }: { block: ContentBlock }) {
+function ToolResultPill({ block }: { block: ContentBlock }) {
 	const isError = block.is_error === true;
 	const text = stringifyToolResult(block.content);
 	const truncated = text.length > 240 ? text.slice(0, 240) + "…" : text;
 	return (
 		<details
 			style={{
-				border: "1px solid",
-				borderColor: isError ? "#f5c2c2" : "#e5e5ea",
-				borderRadius: 6,
-				background: isError ? "#fdecec" : "#fafafa",
-				padding: "6px 10px",
-				fontSize: 13,
+				marginBottom: 6,
+				borderRadius: 8,
+				background: isError ? T.dangerSoft : T.surfaceLow,
+				border: `0.5px solid ${isError ? T.dangerBorder : T.borderSoft}`,
+				padding: "8px 12px",
+				fontFamily: T.mono,
+				fontSize: 12.5,
 			}}
 		>
-			<summary style={{ cursor: "pointer", userSelect: "none" }}>
-				<span style={{ marginRight: 6 }}>{isError ? "⚠️" : "✓"}</span>
-				<span style={{ color: isError ? "#c92a2a" : "#515154" }}>
-					tool result
+			<summary
+				style={{
+					cursor: "pointer",
+					listStyle: "none",
+					display: "flex",
+					alignItems: "center",
+					gap: 10,
+				}}
+			>
+				<span
+					style={{
+						fontSize: 10.5,
+						fontWeight: 600,
+						padding: "2px 7px",
+						borderRadius: 4,
+						background: isError ? T.dangerSoft : T.surfaceHi,
+						color: isError ? T.danger : T.textDim,
+						letterSpacing: 0.4,
+						textTransform: "uppercase",
+						fontFamily: T.sans,
+					}}
+				>
+					{isError ? "error" : "result"}
 				</span>
 				<span
 					style={{
-						marginLeft: 8,
-						color: "#6e6e73",
-						fontFamily:
-							"ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
-						fontSize: 12,
+						color: T.textDim,
+						overflow: "hidden",
+						textOverflow: "ellipsis",
+						whiteSpace: "nowrap",
+						flex: 1,
 					}}
 				>
 					{truncated.replace(/\n/g, " ⏎ ")}
@@ -208,10 +306,10 @@ function ToolResultCard({ block }: { block: ContentBlock }) {
 					fontSize: 12,
 					whiteSpace: "pre-wrap",
 					wordBreak: "break-word",
-					fontFamily:
-						"ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
+					fontFamily: T.mono,
 					maxHeight: 320,
 					overflow: "auto",
+					color: T.textDim,
 				}}
 			>
 				{text}
@@ -223,7 +321,7 @@ function ToolResultCard({ block }: { block: ContentBlock }) {
 function RawBlock({ block }: { block: ContentBlock }) {
 	return (
 		<details>
-			<summary style={{ fontSize: 12, color: "#86868b", cursor: "pointer" }}>
+			<summary style={{ fontSize: 12, color: T.textMute, cursor: "pointer" }}>
 				{block.type ?? "block"}
 			</summary>
 			<pre
@@ -231,8 +329,8 @@ function RawBlock({ block }: { block: ContentBlock }) {
 					fontSize: 12,
 					whiteSpace: "pre-wrap",
 					wordBreak: "break-word",
-					fontFamily:
-						"ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
+					fontFamily: T.mono,
+					color: T.textDim,
 				}}
 			>
 				{JSON.stringify(block, null, 2)}
@@ -241,39 +339,34 @@ function RawBlock({ block }: { block: ContentBlock }) {
 	);
 }
 
-function ResultNote({ sdk }: { sdk: SdkLike }) {
+function ResultDivider({ sdk }: { sdk: SdkLike }) {
 	const subtype = sdk.subtype ?? "result";
-	return <SystemNote text={`turn ended (${subtype})`} />;
+	return <SystemDivider label={`Turn ended · ${subtype}`} />;
 }
 
-function SystemNote({ text }: { text: string }) {
+function SystemDivider({ label }: { label: string }) {
 	return (
 		<div
 			style={{
-				fontSize: 11,
-				color: "#86868b",
-				textAlign: "center",
-				fontStyle: "italic",
-				padding: "2px 0",
+				display: "flex",
+				alignItems: "center",
+				gap: 12,
+				margin: "20px auto",
+				maxWidth: 760,
+				color: T.textFaint,
 			}}
 		>
-			{text}
-		</div>
-	);
-}
-
-function RoleLabel({ children }: { children: React.ReactNode }) {
-	return (
-		<div
-			style={{
-				fontSize: 11,
-				textTransform: "uppercase",
-				letterSpacing: "0.04em",
-				color: "#86868b",
-				marginBottom: 4,
-			}}
-		>
-			{children}
+			<div style={{ flex: 1, height: 0.5, background: T.border }} />
+			<div
+				style={{
+					fontSize: 11.5,
+					fontFamily: T.mono,
+					letterSpacing: 0.5,
+				}}
+			>
+				{label}
+			</div>
+			<div style={{ flex: 1, height: 0.5, background: T.border }} />
 		</div>
 	);
 }

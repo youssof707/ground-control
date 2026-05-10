@@ -6,7 +6,6 @@ import {
 	type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
-import { BrowserWindow } from "electron";
 import type {
 	ClaudeSession,
 	ClaudeSessionFull,
@@ -17,6 +16,7 @@ import type {
 import { PermissionBroker } from "./PermissionBroker";
 import { getCurrentBranch, getDiffSinceCommit, getHeadCommit } from "./git";
 import * as sessionStore from "../core/store/claude_session";
+import * as windows from "../windows";
 
 interface RunningEntry {
 	session: ClaudeSession;
@@ -41,13 +41,24 @@ function extractSdkSessionId(msg: SDKMessage): string | undefined {
 	return typeof sid === "string" ? sid : undefined;
 }
 
+function deriveTitle(text: string, maxLen = 60): string {
+	const cleaned = text.replace(/\s+/g, " ").trim();
+	if (!cleaned) return "";
+	if (cleaned.length <= maxLen) return cleaned;
+	return cleaned.slice(0, maxLen - 1) + "…";
+}
+
+function firstTextFromBlocks(blocks: UserContentBlock[]): string {
+	for (const b of blocks) {
+		if (b.type === "text" && b.text.trim().length > 0) return b.text;
+	}
+	return "";
+}
+
 export class SessionManager {
 	private sessions = new Map<string, RunningEntry>();
 
-	constructor(
-		private getWin: () => BrowserWindow | null,
-		private broker: PermissionBroker,
-	) {}
+	constructor(private broker: PermissionBroker) {}
 
 	getSession(id: string): ClaudeSession | undefined {
 		return this.sessions.get(id)?.session;
@@ -68,9 +79,12 @@ export class SessionManager {
 			getHeadCommit(input.cwd),
 		]);
 		const hasInitialPrompt = !!input.prompt && input.prompt.trim().length > 0;
+		const derivedTitle = hasInitialPrompt
+			? deriveTitle(input.prompt as string)
+			: "";
 		const session: ClaudeSession = {
 			id,
-			title: input.title,
+			title: derivedTitle || input.title,
 			prompt: input.prompt ?? "",
 			cwd: input.cwd,
 			status: hasInitialPrompt ? "running" : "idle",
@@ -325,6 +339,23 @@ export class SessionManager {
 	pushUserMessage(sessionId: string, blocks: UserContentBlock[]) {
 		const entry = this.sessions.get(sessionId);
 		if (!entry) throw new Error(`No active session ${sessionId}`);
+
+		// If this is the first user input on a session that started without an
+		// initial prompt, derive a meaningful title from the message text.
+		const persisted = sessionStore.getSession(sessionId);
+		const hasNoMessages = !!persisted && persisted.messages.length === 0;
+		const hasNoPriorPrompt =
+			!entry.session.prompt || entry.session.prompt.trim().length === 0;
+		if (hasNoMessages && hasNoPriorPrompt) {
+			const text = firstTextFromBlocks(blocks);
+			const title = deriveTitle(text);
+			if (title && title !== entry.session.title) {
+				entry.session.title = title;
+				this.send("session:patch", { sessionId, title });
+				void sessionStore.updateSession(sessionId, { title });
+			}
+		}
+
 		entry.pushTurn(blocks);
 
 		// Persist the user message so it survives restart even though the SDK
@@ -370,8 +401,6 @@ export class SessionManager {
 	}
 
 	private send(channel: string, payload: unknown) {
-		const win = this.getWin();
-		if (!win || win.isDestroyed()) return;
-		win.webContents.send(channel, payload);
+		windows.broadcast(channel, payload);
 	}
 }

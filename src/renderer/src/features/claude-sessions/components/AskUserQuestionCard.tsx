@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { PermissionRequest } from "@shared/claude-sessions/types";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
+import { T } from "../../../design/tokens";
 
 interface OptionDef {
 	label: string;
@@ -23,6 +24,7 @@ export function AskUserQuestionCard({ req }: { req: PermissionRequest }) {
 	const remove = usePermissionsStore((s) => s.remove);
 	const input = req.input as unknown as AskUserQuestionInput;
 	const questions = input.questions ?? [];
+	const isMulti = questions.length > 1;
 
 	const [answers, setAnswers] = useState<Record<string, string[]>>({});
 	const [other, setOther] = useState<Record<string, string>>({});
@@ -87,188 +89,374 @@ export function AskUserQuestionCard({ req }: { req: PermissionRequest }) {
 		remove(req.requestId);
 	};
 
+	const single = questions.length === 1 ? questions[0] : null;
+
 	return (
 		<div
 			style={{
-				border: "2px solid #f5a623",
 				borderRadius: 10,
-				padding: 14,
-				margin: "8px 0",
-				background: "#fff8e6",
-				display: "flex",
-				flexDirection: "column",
-				gap: 14,
+				background: T.surface,
+				border: `0.5px solid ${T.accentBorder}`,
+				overflow: "hidden",
 			}}
 		>
-			<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-				<span style={{ fontSize: 16 }}>❓</span>
-				<div style={{ fontSize: 13, fontWeight: 600 }}>
-					Claude is asking{questions.length > 1 ? ` ${questions.length} questions` : ""}
+			{/* Header */}
+			<div
+				style={{
+					padding: "12px 16px",
+					display: "flex",
+					alignItems: "center",
+					gap: 10,
+					borderBottom: `0.5px solid ${T.borderSoft}`,
+				}}
+			>
+				<QuestionIcon />
+				<div style={{ fontSize: 12.5, fontWeight: 500, color: T.text }}>
+					Claude is asking
 				</div>
+				{isMulti ? (
+					<TagPill muted>{questions.length} questions</TagPill>
+				) : single ? (
+					<TagPill>{single.header}</TagPill>
+				) : null}
 			</div>
 
-			{questions.map((q) => {
-				const chosen = answers[q.question] ?? [];
-				return (
+			{/* Body */}
+			<div style={{ padding: "16px 16px 4px" }}>
+				{single ? (
+					<>
+						<div
+							style={{
+								fontSize: 14.5,
+								fontWeight: 500,
+								color: T.text,
+								letterSpacing: "-0.1px",
+								marginBottom: 12,
+							}}
+						>
+							{single.question}
+						</div>
+						<QuestionField
+							q={single}
+							chosen={answers[single.question] ?? []}
+							other={other[single.question] ?? ""}
+							onToggle={(label) => toggle(single, label)}
+							onOtherChange={(text) =>
+								setOther((p) => ({ ...p, [single.question]: text }))
+							}
+						/>
+					</>
+				) : (
 					<div
-						key={q.question}
 						style={{
-							background: "#fff",
-							border: "1px solid #f0d68b",
-							borderRadius: 8,
-							padding: 12,
 							display: "flex",
 							flexDirection: "column",
-							gap: 10,
+							gap: 16,
+							paddingBottom: 8,
 						}}
 					>
-						<div>
-							<div
-								style={{
-									display: "inline-block",
-									fontSize: 10,
-									fontWeight: 600,
-									letterSpacing: "0.04em",
-									textTransform: "uppercase",
-									color: "#9a6700",
-									background: "#fff8c5",
-									padding: "2px 6px",
-									borderRadius: 4,
-									marginBottom: 6,
-								}}
-							>
-								{q.header}
-							</div>
-							<div style={{ fontSize: 14, fontWeight: 500 }}>{q.question}</div>
-							{q.multiSelect ? (
+						{questions.map((q, i) => (
+							<div key={q.question}>
 								<div
-									style={{ fontSize: 11, color: "#86868b", marginTop: 2 }}
-								>
-									Select one or more
-								</div>
-							) : null}
-						</div>
-
-						<div
-							style={{ display: "flex", flexDirection: "column", gap: 6 }}
-						>
-							{q.options.map((opt) => {
-								const selected = chosen.includes(opt.label);
-								return (
-									<OptionButton
-										key={opt.label}
-										selected={selected}
-										onClick={() => toggle(q, opt.label)}
-									>
-										<div style={{ fontWeight: 600, fontSize: 13 }}>
-											{opt.label}
-										</div>
-										<div
-											style={{
-												fontSize: 12,
-												color: "#515154",
-												marginTop: 2,
-											}}
-										>
-											{opt.description}
-										</div>
-										{selected && opt.preview ? (
-											<pre
-												style={{
-													marginTop: 6,
-													fontSize: 11,
-													padding: 8,
-													background: "#f5f5f7",
-													borderRadius: 4,
-													whiteSpace: "pre-wrap",
-													wordBreak: "break-word",
-													fontFamily:
-														"ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
-												}}
-											>
-												{opt.preview}
-											</pre>
-										) : null}
-									</OptionButton>
-								);
-							})}
-							<OptionButton
-								selected={chosen.includes("__other__")}
-								onClick={() => toggle(q, "__other__")}
-							>
-								<div style={{ fontWeight: 600, fontSize: 13 }}>Other…</div>
-							</OptionButton>
-							{chosen.includes("__other__") ? (
-								<input
-									autoFocus
-									value={other[q.question] ?? ""}
-									onChange={(e) =>
-										setOther((p) => ({
-											...p,
-											[q.question]: e.target.value,
-										}))
-									}
-									placeholder="Type your answer…"
 									style={{
-										fontSize: 13,
-										padding: "6px 10px",
-										border: "1px solid #d2d2d7",
-										borderRadius: 6,
-										marginTop: 4,
+										fontSize: 11,
+										fontWeight: 600,
+										color: T.accent,
+										letterSpacing: 1,
+										textTransform: "uppercase",
+										marginBottom: 6,
+										display: "flex",
+										alignItems: "center",
+										gap: 8,
 									}}
+								>
+									<span
+										style={{
+											fontFamily: T.mono,
+											color: T.textDim,
+											background: T.surfaceLow,
+											border: `0.5px solid ${T.border}`,
+											padding: "1px 6px",
+											borderRadius: 4,
+										}}
+									>
+										{i + 1}
+									</span>
+									<span
+										style={{
+											color: T.text,
+											textTransform: "none",
+											letterSpacing: 0,
+											fontSize: 13,
+											fontWeight: 500,
+										}}
+									>
+										{q.question}
+									</span>
+								</div>
+								<QuestionField
+									q={q}
+									chosen={answers[q.question] ?? []}
+									other={other[q.question] ?? ""}
+									onToggle={(label) => toggle(q, label)}
+									onOtherChange={(text) =>
+										setOther((p) => ({ ...p, [q.question]: text }))
+									}
 								/>
-							) : null}
-						</div>
+							</div>
+						))}
 					</div>
-				);
-			})}
+				)}
+			</div>
 
-			<div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-				<button onClick={skip} className="btn" style={{ fontSize: 13 }}>
+			{/* Footer */}
+			<div
+				style={{
+					padding: "10px 16px",
+					display: "flex",
+					alignItems: "center",
+					justifyContent: "flex-end",
+					gap: 8,
+				}}
+			>
+				<button className="btn" onClick={skip} disabled={submitting}>
 					Skip
 				</button>
 				<button
+					className="btn btn-primary"
 					onClick={submit}
 					disabled={!allAnswered || submitting}
-					className="btn"
-					style={{
-						fontSize: 13,
-						background: allAnswered ? "#1d1d1f" : "#d2d2d7",
-						color: "#fff",
-						borderColor: allAnswered ? "#1d1d1f" : "#d2d2d7",
-					}}
 				>
-					Submit
+					{submitting ? "…" : "Submit"}
 				</button>
 			</div>
 		</div>
 	);
 }
 
-function OptionButton({
-	selected,
-	onClick,
-	children,
+function QuestionField({
+	q,
+	chosen,
+	other,
+	onToggle,
+	onOtherChange,
 }: {
+	q: QuestionDef;
+	chosen: string[];
+	other: string;
+	onToggle: (label: string) => void;
+	onOtherChange: (text: string) => void;
+}) {
+	const cols = q.options.length >= 4 ? 4 : 3;
+	return (
+		<div style={{ paddingBottom: 8 }}>
+			<div
+				style={{
+					display: "grid",
+					gridTemplateColumns: `repeat(${cols}, 1fr)`,
+					gap: 8,
+				}}
+			>
+				{q.options.map((opt) => (
+					<InlineOption
+						key={opt.label}
+						title={opt.label}
+						desc={opt.description}
+						preview={opt.preview}
+						selected={chosen.includes(opt.label)}
+						onPick={() => onToggle(opt.label)}
+					/>
+				))}
+				<InlineOption
+					title="Other…"
+					desc="Type your own answer below."
+					selected={chosen.includes("__other__")}
+					onPick={() => onToggle("__other__")}
+				/>
+			</div>
+			{chosen.includes("__other__") ? (
+				<div
+					style={{
+						marginTop: 10,
+						padding: "10px 12px",
+						borderRadius: 8,
+						background: T.accentSoft,
+						border: `0.5px solid ${T.accentBorder}`,
+						display: "flex",
+						alignItems: "flex-start",
+						gap: 10,
+					}}
+				>
+					<span
+						style={{
+							fontSize: 10.5,
+							fontWeight: 600,
+							color: T.accent,
+							letterSpacing: 1,
+							textTransform: "uppercase",
+							marginTop: 6,
+						}}
+					>
+						Other
+					</span>
+					<textarea
+						autoFocus
+						value={other}
+						onChange={(e) => onOtherChange(e.target.value)}
+						rows={2}
+						placeholder="Type your answer…"
+						style={{
+							flex: 1,
+							resize: "none",
+							background: "transparent",
+							border: "none",
+							outline: "none",
+							color: T.text,
+							fontFamily: T.sans,
+							fontSize: 13,
+							lineHeight: 1.5,
+							padding: "4px 0",
+						}}
+					/>
+				</div>
+			) : null}
+		</div>
+	);
+}
+
+function InlineOption({
+	title,
+	desc,
+	preview,
+	selected,
+	onPick,
+}: {
+	title: string;
+	desc: string;
+	preview?: string;
 	selected: boolean;
-	onClick: () => void;
-	children: React.ReactNode;
+	onPick: () => void;
 }) {
 	return (
-		<button
-			onClick={onClick}
+		<div
+			onClick={onPick}
 			style={{
-				textAlign: "left",
-				padding: "8px 12px",
-				borderRadius: 6,
-				border: `1.5px solid ${selected ? "#1d1d1f" : "#e5e5ea"}`,
-				background: selected ? "#f0f0f2" : "#fff",
+				padding: "10px 12px",
+				borderRadius: 8,
+				background: selected ? T.accentSoft : T.surfaceLow,
+				border: `0.5px solid ${selected ? T.accentBorder : T.border}`,
 				cursor: "pointer",
-				font: "inherit",
-				color: "inherit",
+				display: "flex",
+				alignItems: "flex-start",
+				gap: 10,
+			}}
+		>
+			<div
+				style={{
+					width: 14,
+					height: 14,
+					borderRadius: "50%",
+					marginTop: 2,
+					flexShrink: 0,
+					border: `1.5px solid ${selected ? T.accent : T.border}`,
+					display: "inline-flex",
+					alignItems: "center",
+					justifyContent: "center",
+				}}
+			>
+				{selected ? (
+					<div
+						style={{
+							width: 6,
+							height: 6,
+							borderRadius: "50%",
+							background: T.accent,
+						}}
+					/>
+				) : null}
+			</div>
+			<div style={{ minWidth: 0, flex: 1 }}>
+				<div
+					style={{
+						fontSize: 12.5,
+						fontWeight: 500,
+						color: T.text,
+						marginBottom: 2,
+					}}
+				>
+					{title}
+				</div>
+				<div style={{ fontSize: 11.5, color: T.textMute, lineHeight: 1.4 }}>
+					{desc}
+				</div>
+				{selected && preview ? (
+					<pre
+						style={{
+							marginTop: 6,
+							marginBottom: 0,
+							fontSize: 11,
+							padding: 8,
+							background: T.surfaceLow,
+							borderRadius: 4,
+							whiteSpace: "pre-wrap",
+							wordBreak: "break-word",
+							fontFamily: T.mono,
+							color: T.textDim,
+						}}
+					>
+						{preview}
+					</pre>
+				) : null}
+			</div>
+		</div>
+	);
+}
+
+function QuestionIcon() {
+	return (
+		<div
+			style={{
+				width: 22,
+				height: 22,
+				borderRadius: 6,
+				background: T.accentSoft,
+				border: `0.5px solid ${T.accentBorder}`,
+				display: "inline-flex",
+				alignItems: "center",
+				justifyContent: "center",
+				color: T.accent,
+				fontFamily: T.mono,
+				fontSize: 12,
+				fontWeight: 700,
+			}}
+		>
+			?
+		</div>
+	);
+}
+
+function TagPill({
+	children,
+	muted,
+}: {
+	children: React.ReactNode;
+	muted?: boolean;
+}) {
+	return (
+		<span
+			style={{
+				fontSize: 10.5,
+				fontWeight: 600,
+				color: muted ? T.textDim : T.accent,
+				letterSpacing: muted ? 0.6 : 1.2,
+				textTransform: "uppercase",
+				padding: "3px 7px",
+				borderRadius: 4,
+				background: muted ? T.surfaceLow : T.accentSoft,
+				border: `0.5px solid ${muted ? T.border : T.accentBorder}`,
 			}}
 		>
 			{children}
-		</button>
+		</span>
 	);
 }

@@ -4,6 +4,8 @@ import type {
 	UserImageMediaType,
 } from "@shared/claude-sessions/types";
 import { useSessionsStore } from "../stores/useSessionsStore";
+import { T } from "../../../design/tokens";
+import { Kbd } from "../../../design/Atoms";
 
 interface Props {
 	sessionId: string;
@@ -84,9 +86,6 @@ export function ImagePasteTextarea({ sessionId, disabled }: Props) {
 		setError(null);
 		try {
 			await window.claude.sendUserMessage({ sessionId, blocks });
-			// Optimistic append — main process also persists this same shape so
-			// it survives restart. The message id we use here is renderer-only;
-			// after restart, main's persisted copy will have its own id.
 			useSessionsStore.getState().appendMessage(sessionId, {
 				id: crypto.randomUUID(),
 				role: "user",
@@ -112,103 +111,154 @@ export function ImagePasteTextarea({ sessionId, disabled }: Props) {
 		}
 	};
 
+	const canSend = !!(text.trim() || images.length > 0);
+
 	return (
 		<div
 			style={{
-				borderTop: "1px solid #e5e5ea",
-				background: "#fff",
-				padding: 12,
-				display: "flex",
-				flexDirection: "column",
-				gap: 8,
+				flexShrink: 0,
+				padding: "14px 32px 18px",
+				borderTop: `0.5px solid ${T.border}`,
+				background: T.win,
 			}}
 		>
-			{images.length > 0 ? (
-				<div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-					{images.map((img, i) => (
-						<div key={i} style={{ position: "relative" }}>
-							<img
-								src={img.previewUrl}
-								alt=""
-								style={{
-									height: 64,
-									width: 64,
-									objectFit: "cover",
-									borderRadius: 6,
-									border: "1px solid #e5e5ea",
-								}}
-							/>
-							<button
-								onClick={() => removeImage(i)}
-								title="Remove"
-								style={{
-									position: "absolute",
-									top: -6,
-									right: -6,
-									width: 20,
-									height: 20,
-									borderRadius: "50%",
-									border: "none",
-									background: "#1d1d1f",
-									color: "#fff",
-									fontSize: 12,
-									cursor: "pointer",
-									lineHeight: 1,
-								}}
-							>
-								×
-							</button>
-						</div>
-					))}
-				</div>
-			) : null}
+			<div
+				style={{
+					maxWidth: 760,
+					margin: "0 auto",
+					borderRadius: 12,
+					border: `0.5px solid ${T.border}`,
+					background: T.surface,
+					padding: 12,
+					boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+				}}
+			>
+				{images.length > 0 ? (
+					<div
+						style={{
+							display: "flex",
+							gap: 6,
+							flexWrap: "wrap",
+							marginBottom: 10,
+						}}
+					>
+						{images.map((img, i) => (
+							<div key={i} style={{ position: "relative" }}>
+								<img
+									src={img.previewUrl}
+									alt=""
+									style={{
+										height: 64,
+										width: 64,
+										objectFit: "cover",
+										borderRadius: 6,
+										border: `0.5px solid ${T.border}`,
+									}}
+								/>
+								<button
+									onClick={() => removeImage(i)}
+									title="Remove"
+									style={{
+										position: "absolute",
+										top: -6,
+										right: -6,
+										width: 20,
+										height: 20,
+										borderRadius: "50%",
+										border: "none",
+										background: T.text,
+										color: T.bg,
+										fontSize: 12,
+										cursor: "pointer",
+										lineHeight: 1,
+									}}
+								>
+									×
+								</button>
+							</div>
+						))}
+					</div>
+				) : null}
 
-			{error ? (
-				<div
-					className="message message-error"
-					style={{ padding: 8, fontSize: 12 }}
-				>
-					{error}
-				</div>
-			) : null}
+				{error ? (
+					<div
+						className="message message-error"
+						style={{
+							padding: 8,
+							fontSize: 12,
+							marginBottom: 10,
+							textAlign: "left",
+						}}
+					>
+						{error}
+					</div>
+				) : null}
 
-			<div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
 				<textarea
 					value={text}
 					onChange={(e) => setText(e.target.value)}
 					onPaste={onPaste}
 					onKeyDown={onKeyDown}
 					disabled={disabled || sending}
-					placeholder="Type or paste an image…"
+					placeholder="Reply to Claude…"
 					style={{
-						flex: 1,
-						minHeight: 60,
-						padding: 8,
-						border: "1px solid #e5e5ea",
-						borderRadius: 6,
+						width: "100%",
+						minHeight: 44,
 						resize: "vertical",
-						fontFamily: "inherit",
-						fontSize: 13,
+						background: "transparent",
+						border: "none",
+						outline: "none",
+						color: T.text,
+						fontFamily: T.sans,
+						fontSize: 14,
+						lineHeight: 1.5,
+						padding: 0,
 					}}
 				/>
-				<button
-					onClick={send}
-					disabled={disabled || sending || (!text.trim() && images.length === 0)}
-					className="btn"
+
+				<div
 					style={{
-						background: "#1d1d1f",
-						color: "#fff",
-						borderColor: "#1d1d1f",
-						alignSelf: "stretch",
-						minWidth: 72,
+						display: "flex",
+						alignItems: "center",
+						gap: 8,
+						marginTop: 10,
+						paddingTop: 10,
+						borderTop: `0.5px solid ${T.borderSoft}`,
 					}}
 				>
-					{sending ? "…" : "Send"}
-				</button>
-			</div>
-
-			<div style={{ fontSize: 11, color: "#86868b" }}>
-				⌘/Ctrl+Enter to send · paste images directly
+					<span
+						style={{
+							fontSize: 11.5,
+							color: T.textFaint,
+							display: "inline-flex",
+							alignItems: "center",
+							gap: 6,
+						}}
+					>
+						<Kbd>⌘</Kbd>
+						<Kbd>↵</Kbd>
+						<span>to send · paste images directly</span>
+					</span>
+					<div style={{ flex: 1 }} />
+					<button
+						onClick={send}
+						disabled={disabled || sending || !canSend}
+						className="btn btn-primary"
+					>
+						{sending ? "…" : "Send"}
+						{!sending ? (
+							<svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+								<path
+									d="M2 6h8M7 3l3 3-3 3"
+									stroke="currentColor"
+									strokeWidth="1.6"
+									strokeLinecap="round"
+									strokeLinejoin="round"
+								/>
+							</svg>
+						) : null}
+					</button>
+				</div>
 			</div>
 		</div>
 	);

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, Menu } from "electron";
 import { join } from "path";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import type { FastifyInstance } from "fastify";
@@ -7,8 +7,8 @@ import { flush as flushStore } from "./core/store/write_queue";
 import { initialize as initializeClaudeSessionStore } from "./core/store/claude_session";
 import { registerSessionsHandlers } from "./ipc/sessionsHandlers";
 import type { SessionManager } from "./sessions/SessionManager";
+import * as windows from "./windows";
 
-let mainWindow: BrowserWindow | null = null;
 let server: FastifyInstance | null = null;
 let sessionManager: SessionManager | null = null;
 let isQuitting = false;
@@ -16,10 +16,13 @@ let confirmedQuit = false;
 
 const preloadPath = join(__dirname, "../preload/index.mjs");
 
-function createMainWindow(): BrowserWindow {
+function createWindow(): BrowserWindow {
+	const offset = windows.count() * 24;
 	const win = new BrowserWindow({
 		width: 1200,
 		height: 800,
+		x: offset > 0 ? offset : undefined,
+		y: offset > 0 ? offset : undefined,
 		show: false,
 		title: "Claude Code Wrapper",
 		webPreferences: {
@@ -32,10 +35,13 @@ function createMainWindow(): BrowserWindow {
 	win.on("ready-to-show", () => win.show());
 
 	win.on("close", (event) => {
-		if (!isQuitting) {
-			event.preventDefault();
-			win.hide();
-		}
+		if (isQuitting) return;
+		// Keep the app alive when the last window is closed by hiding instead
+		// of destroying — so the dock icon can re-show it on macOS. Other
+		// windows close normally.
+		if (windows.count() > 1) return;
+		event.preventDefault();
+		win.hide();
 	});
 
 	if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
@@ -44,7 +50,35 @@ function createMainWindow(): BrowserWindow {
 		win.loadFile(join(__dirname, "../renderer/index.html"));
 	}
 
+	windows.register(win);
 	return win;
+}
+
+function buildMenu(): Electron.Menu {
+	const isMac = process.platform === "darwin";
+	const template: Electron.MenuItemConstructorOptions[] = [
+		...(isMac
+			? ([{ role: "appMenu" }] as Electron.MenuItemConstructorOptions[])
+			: []),
+		{
+			label: "File",
+			submenu: [
+				{
+					label: "New Window",
+					accelerator: "CommandOrControl+N",
+					click: () => {
+						createWindow();
+					},
+				},
+				{ type: "separator" },
+				isMac ? { role: "close" } : { role: "quit" },
+			],
+		},
+		{ role: "editMenu" },
+		{ role: "viewMenu" },
+		{ role: "windowMenu" },
+	];
+	return Menu.buildFromTemplate(template);
 }
 
 app.whenReady().then(async () => {
@@ -53,6 +87,8 @@ app.whenReady().then(async () => {
 	app.on("browser-window-created", (_, window) => {
 		optimizer.watchWindowShortcuts(window);
 	});
+
+	Menu.setApplicationMenu(buildMenu());
 
 	const dataDir = join(app.getPath("userData"), "data");
 	try {
@@ -76,17 +112,18 @@ app.whenReady().then(async () => {
 		return;
 	}
 
-	mainWindow = createMainWindow();
+	sessionManager = registerSessionsHandlers();
 
-	sessionManager = registerSessionsHandlers(() => mainWindow);
+	createWindow();
 
 	console.log("[ccw] ANTHROPIC_API_KEY set:", !!process.env.ANTHROPIC_API_KEY);
 
 	app.on("activate", () => {
-		if (mainWindow) {
-			mainWindow.show();
+		const existing = windows.getPrimary();
+		if (existing) {
+			windows.showAndFocusAny();
 		} else if (BrowserWindow.getAllWindows().length === 0) {
-			mainWindow = createMainWindow();
+			createWindow();
 		}
 	});
 });
@@ -115,8 +152,9 @@ app.on("before-quit", async (event) => {
 		defaultId: 0,
 		cancelId: 0,
 	};
-	const result = mainWindow
-		? await dialog.showMessageBox(mainWindow, opts)
+	const focused = windows.getPrimary();
+	const result = focused
+		? await dialog.showMessageBox(focused, opts)
 		: await dialog.showMessageBox(opts);
 
 	if (result.response === 1) {

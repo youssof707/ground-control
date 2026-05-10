@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { DiffPage } from "./DiffRender";
+import { T } from "../../../design/tokens";
+import { BranchChip } from "../../../design/Atoms";
 
 export function DiffViewer({ sessionId }: { sessionId: string }) {
 	const session = useSessionsStore((s) => s.sessions[sessionId]);
@@ -14,8 +16,30 @@ export function DiffViewer({ sessionId }: { sessionId: string }) {
 	}
 
 	const headerLink = (
-		<Link to={`/sessions/${sessionId}`} style={{ fontSize: 13 }}>
-			← Back to chat
+		<Link
+			to={`/sessions/${sessionId}`}
+			style={{
+				display: "inline-flex",
+				alignItems: "center",
+				gap: 6,
+				fontSize: 12.5,
+				color: T.textDim,
+				textDecoration: "none",
+				padding: "5px 9px",
+				borderRadius: 7,
+				border: `0.5px solid ${T.border}`,
+			}}
+		>
+			<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+				<path
+					d="M7 3l-3 3 3 3"
+					stroke="currentColor"
+					strokeWidth="1.4"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+				/>
+			</svg>
+			Back to chat
 		</Link>
 	);
 
@@ -58,28 +82,38 @@ export function DiffViewer({ sessionId }: { sessionId: string }) {
 				display: "flex",
 				flexDirection: "column",
 				height: "100%",
+				background: T.win,
 			}}
 		>
 			<header
 				style={{
-					padding: "12px 16px",
-					borderBottom: "1px solid #e5e5ea",
-					background: "#fff",
+					padding: "12px 18px",
+					borderBottom: `0.5px solid ${T.border}`,
+					display: "flex",
+					alignItems: "center",
+					gap: 14,
 				}}
 			>
-				<div style={{ marginBottom: 4 }}>{headerLink}</div>
-				<div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-					<h1 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>
-						{session.title}
-					</h1>
-					<div style={{ fontSize: 12, color: "#86868b" }}>
-						{session.branch ?? "(no branch)"} · diff since{" "}
-						<code>{session.startCommit.slice(0, 8)}</code>
-					</div>
+				{headerLink}
+				<div
+					style={{
+						fontSize: 14,
+						fontWeight: 600,
+						color: T.text,
+						maxWidth: 320,
+						overflow: "hidden",
+						textOverflow: "ellipsis",
+						whiteSpace: "nowrap",
+					}}
+				>
+					{session.title}
+				</div>
+				{session.branch ? <BranchChip name={session.branch} /> : null}
+				<div style={{ fontSize: 12, color: T.textFaint, fontFamily: T.mono }}>
+					diff since {session.startCommit.slice(0, 8)}
 				</div>
 			</header>
-
-			<div style={{ flex: 1, overflow: "auto", padding: 16 }}>
+			<div style={{ flex: 1, overflow: "auto", padding: 16, minHeight: 0 }}>
 				<DiffPage diffText={session.diff} />
 			</div>
 		</div>
