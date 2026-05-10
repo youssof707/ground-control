@@ -1,0 +1,20 @@
+{
+	"extends": "@electron-toolkit/tsconfig/tsconfig.web.json",
+	"include": [
+		"src/renderer/src/**/*",
+		"src/renderer/src/**/*.tsx",
+		"src/preload/*.d.ts",
+		"src/shared/**/*"
+	],
+	"compilerOptions": {
+		"composite": true,
+		"outDir": "out/types/web",
+		"tsBuildInfoFile": "out/types/web.tsbuildinfo",
+		"emitDeclarationOnly": true,
+		"jsx": "react-jsx",
+		"paths": {
+			"@shared/*": ["./src/shared/*"],
+			"@renderer/*": ["./src/renderer/src/*"]
+		}
+	}
+}

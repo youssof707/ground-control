@@ -1,0 +1,21 @@
+appId: com.anthropic.claude-code-wrapper
+productName: ClaudeCodeWrapper
+asar: true
+directories:
+  buildResources: build
+files:
+  - "!**/.vscode/*"
+  - "!src/*"
+  - "!electron.vite.config.{js,ts,mjs,cjs}"
+  - "!{tsconfig,tsconfig.node,tsconfig.web}.json"
+  - "!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}"
+mac:
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+  category: public.app-category.productivity
+  identity: null
+dmg:
+  artifactName: ${name}-${version}-${arch}.${ext}
