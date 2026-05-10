@@ -1,6 +1,8 @@
 appId: com.anthropic.ground-control
 productName: Ground Control
 asar: true
+asarUnpack:
+  - "node_modules/@anthropic-ai/claude-agent-sdk-*/**"
 directories:
   buildResources: build
 files:
@@ -14,7 +16,6 @@ mac:
     - target: dmg
       arch:
         - arm64
-        - x64
   category: public.app-category.productivity
   identity: null
 dmg:
