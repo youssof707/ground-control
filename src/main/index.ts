@@ -15,6 +15,7 @@ let isQuitting = false;
 let confirmedQuit = false;
 
 const preloadPath = join(__dirname, "../preload/index.mjs");
+const devIconPath = join(__dirname, "../../build/icon.png");
 
 function createWindow(): BrowserWindow {
 	const offset = windows.count() * 24;
@@ -25,6 +26,7 @@ function createWindow(): BrowserWindow {
 		y: offset > 0 ? offset : undefined,
 		show: false,
 		title: "Ground Control",
+		...(is.dev ? { icon: devIconPath } : {}),
 		webPreferences: {
 			preload: preloadPath,
 			sandbox: false,
@@ -83,6 +85,10 @@ function buildMenu(): Electron.Menu {
 
 app.whenReady().then(async () => {
 	electronApp.setAppUserModelId("com.anthropic.ground-control");
+
+	if (is.dev && process.platform === "darwin") {
+		app.dock?.setIcon(devIconPath);
+	}
 
 	app.on("browser-window-created", (_, window) => {
 		optimizer.watchWindowShortcuts(window);

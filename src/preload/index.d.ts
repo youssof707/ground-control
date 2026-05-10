@@ -18,6 +18,7 @@ declare global {
 			respondPermission: (decision: PermissionDecision) => void;
 			listSessions: () => Promise<ClaudeSessionFull[]>;
 			deleteSession: (sessionId: string) => Promise<void>;
+			renameSession: (sessionId: string, title: string) => Promise<void>;
 			pickFolder: (opts?: { defaultPath?: string }) => Promise<string | null>;
 			on: (channel: string, fn: (payload: unknown) => void) => () => void;
 		};

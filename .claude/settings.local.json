@@ -1,6 +1,7 @@
 {
   "permissions": {
     "allow": [
+      "Bash",
       "Bash(npm i *)",
       "Bash(npm run *)",
       "Bash(npx tsc *)",
@@ -36,7 +37,9 @@
       "Read(//Applications/Ground Control.app/Contents/Resources/**)",
       "Bash(python3 -c ' *)",
       "Bash(stat -f \"%m %N\" \"/Applications/Ground Control.app\" \"/Applications/Ground Control.app/Contents/Resources/app.asar.unpacked\" 2>&1 && \\\\ *)",
-      "Read(//Applications/Ground Control.app/**)"
+      "Read(//Applications/Ground Control.app/**)",
+      "Skill(update-config)",
+      "Skill(update-config:*)"
     ]
   }
 }

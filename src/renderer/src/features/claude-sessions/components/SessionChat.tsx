@@ -11,11 +11,15 @@ import { BranchChip, StatusPill } from "../../../design/Atoms";
 
 export function SessionChat({ sessionId }: { sessionId: string }) {
 	const session = useSessionsStore((s) => s.sessions[sessionId]);
+	const upsertSession = useSessionsStore((s) => s.upsertSession);
 	const queue = usePermissionsStore((s) => s.queue);
 	const pending = queue.filter((q) => q.sessionId === sessionId);
 	const [interrupting, setInterrupting] = useState(false);
 	const [resuming, setResuming] = useState(false);
 	const [resumeError, setResumeError] = useState<string | null>(null);
+	const [editingTitle, setEditingTitle] = useState(false);
+	const [titleDraft, setTitleDraft] = useState("");
+	const titleInputRef = useRef<HTMLInputElement>(null);
 
 	const isOpen =
 		session?.status === "running" ||
@@ -59,6 +63,33 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 			await window.claude.interruptSession(sessionId);
 		} finally {
 			setInterrupting(false);
+		}
+	};
+
+	const beginEditTitle = () => {
+		setTitleDraft(session?.title ?? "");
+		setEditingTitle(true);
+		// Focus + select on next tick once the input is mounted.
+		setTimeout(() => {
+			titleInputRef.current?.focus();
+			titleInputRef.current?.select();
+		}, 0);
+	};
+
+	const commitTitle = async () => {
+		if (!session) return;
+		const next = titleDraft.trim();
+		setEditingTitle(false);
+		if (!next || next === session.title) return;
+		const previous = session.title;
+		// Optimistic update — server will broadcast a patch back, but updating
+		// locally first avoids a flicker.
+		upsertSession({ id: sessionId, title: next });
+		try {
+			await window.claude.renameSession(sessionId, next);
+		} catch (err) {
+			upsertSession({ id: sessionId, title: previous });
+			console.error("Failed to rename session", err);
 		}
 	};
 
@@ -145,20 +176,105 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 						</svg>
 						Sessions
 					</Link>
-					<div
-						style={{
-							fontSize: 14,
-							fontWeight: 600,
-							color: T.text,
-							overflow: "hidden",
-							textOverflow: "ellipsis",
-							whiteSpace: "nowrap",
-							maxWidth: 320,
-							flexShrink: 0,
-						}}
-					>
-						{session.title}
-					</div>
+					{editingTitle ? (
+						<input
+							ref={titleInputRef}
+							value={titleDraft}
+							onChange={(e) => setTitleDraft(e.target.value)}
+							onBlur={() => {
+								void commitTitle();
+							}}
+							onKeyDown={(e) => {
+								if (e.key === "Enter") {
+									e.preventDefault();
+									void commitTitle();
+								} else if (e.key === "Escape") {
+									e.preventDefault();
+									setEditingTitle(false);
+								}
+							}}
+							maxLength={200}
+							style={{
+								fontSize: 14,
+								fontWeight: 600,
+								color: T.text,
+								background: T.surface,
+								border: `0.5px solid ${T.border}`,
+								borderRadius: 6,
+								padding: "3px 7px",
+								outline: "none",
+								maxWidth: 320,
+								minWidth: 120,
+								flexShrink: 0,
+								fontFamily: "inherit",
+							}}
+						/>
+					) : (
+						<div
+							className="session-title"
+							style={{
+								display: "inline-flex",
+								alignItems: "center",
+								gap: 6,
+								fontSize: 14,
+								fontWeight: 600,
+								color: T.text,
+								maxWidth: 360,
+								flexShrink: 0,
+								minWidth: 0,
+							}}
+						>
+							<span
+								title={session.title}
+								style={{
+									overflow: "hidden",
+									textOverflow: "ellipsis",
+									whiteSpace: "nowrap",
+								}}
+							>
+								{session.title}
+							</span>
+							<button
+								type="button"
+								onClick={beginEditTitle}
+								title="Rename session"
+								aria-label="Rename session"
+								className="session-title-edit"
+								style={{
+									display: "inline-flex",
+									alignItems: "center",
+									justifyContent: "center",
+									width: 22,
+									height: 22,
+									padding: 0,
+									borderRadius: 5,
+									border: "none",
+									background: "transparent",
+									color: T.textFaint,
+									cursor: "pointer",
+									flexShrink: 0,
+								}}
+								onMouseEnter={(e) => {
+									e.currentTarget.style.background = T.surfaceHi;
+									e.currentTarget.style.color = T.text;
+								}}
+								onMouseLeave={(e) => {
+									e.currentTarget.style.background = "transparent";
+									e.currentTarget.style.color = T.textFaint;
+								}}
+							>
+								<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+									<path
+										d="M8.2 1.8a1.1 1.1 0 011.6 1.6L4.3 8.9 2 9.5l.6-2.3 5.6-5.4z"
+										stroke="currentColor"
+										strokeWidth="1.2"
+										strokeLinecap="round"
+										strokeLinejoin="round"
+									/>
+								</svg>
+							</button>
+						</div>
+					)}
 					{session.cwd ? (
 						<span
 							title={session.cwd}

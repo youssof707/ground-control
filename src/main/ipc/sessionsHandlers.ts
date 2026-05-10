@@ -7,6 +7,7 @@ import type {
 	UserTurn,
 } from "../../shared/schemas/claude_session";
 import * as sessionStore from "../core/store/claude_session";
+import { broadcast } from "../windows";
 
 export function registerSessionsHandlers(): SessionManager {
 	const notifications = new NotificationManager();
@@ -52,6 +53,18 @@ export function registerSessionsHandlers(): SessionManager {
 					});
 			if (result.canceled || result.filePaths.length === 0) return null;
 			return result.filePaths[0];
+		},
+	);
+	ipcMain.handle(
+		"session:rename",
+		async (_e, payload: { sessionId: string; title: string }) => {
+			const title = payload.title.trim().slice(0, 200);
+			if (!title) throw new Error("Title cannot be empty");
+			const updated = await sessionStore.updateSession(payload.sessionId, {
+				title,
+			});
+			if (!updated) throw new Error("Session not found");
+			broadcast("session:patch", { sessionId: payload.sessionId, title });
 		},
 	);
 	ipcMain.handle("session:delete", async (_e, sessionId: string) => {
