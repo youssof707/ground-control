@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
+import { useReadStore } from "../stores/useReadStore";
 import { ConfirmModal } from "../../../components/ConfirmModal";
 import { T } from "../../../design/tokens";
 import { BranchChip, StatusPill } from "../../../design/Atoms";
@@ -246,6 +247,11 @@ function Row({
 }) {
 	const expanded = pending.length > 0;
 	const summary = deriveSummary(session);
+	const lastReadAt = useReadStore(
+		(s) => s.lastReadAt[session.id] ?? 0,
+	);
+	const lastIncomingTs = lastIncomingMessageTs(session);
+	const unread = lastIncomingTs > lastReadAt;
 	return (
 		<div
 			style={{
@@ -282,15 +288,38 @@ function Row({
 						<div
 							style={{
 								fontSize: 13.5,
-								fontWeight: 500,
+								fontWeight: unread ? 600 : 500,
 								color: T.text,
 								marginBottom: 3,
 								overflow: "hidden",
 								textOverflow: "ellipsis",
 								whiteSpace: "nowrap",
+								display: "flex",
+								alignItems: "center",
+								gap: 8,
 							}}
 						>
-							{session.title}
+							{unread ? (
+								<span
+									title="Unread"
+									style={{
+										width: 7,
+										height: 7,
+										borderRadius: "50%",
+										background: T.accent,
+										flexShrink: 0,
+									}}
+								/>
+							) : null}
+							<span
+								style={{
+									overflow: "hidden",
+									textOverflow: "ellipsis",
+									whiteSpace: "nowrap",
+								}}
+							>
+								{session.title}
+							</span>
 						</div>
 						<div
 							style={{
@@ -451,6 +480,14 @@ function folderName(path: string): string {
 	const trimmed = path.replace(/\/+$/, "");
 	const idx = trimmed.lastIndexOf("/");
 	return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
+function lastIncomingMessageTs(session: ClaudeSessionFull): number {
+	for (let i = session.messages.length - 1; i >= 0; i--) {
+		const m = session.messages[i];
+		if (m.role === "assistant") return m.ts;
+	}
+	return 0;
 }
 
 function lastConversationMessage(

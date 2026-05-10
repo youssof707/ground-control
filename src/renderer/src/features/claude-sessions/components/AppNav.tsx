@@ -37,7 +37,7 @@ export function AppNav() {
 						letterSpacing: "-0.1px",
 					}}
 				>
-					Claude Code
+					Ground Control
 				</span>
 			</Link>
 			<div

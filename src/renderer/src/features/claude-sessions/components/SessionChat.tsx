@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
+import { useReadStore } from "../stores/useReadStore";
 import { PermissionCard } from "./PermissionCard";
 import { ImagePasteTextarea } from "./ImagePasteTextarea";
 import { MessageView } from "./MessageView";
@@ -39,6 +40,10 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 		if (!el || !stickToBottom.current) return;
 		el.scrollTop = el.scrollHeight;
 	}, [messageCount, pendingCount]);
+
+	useEffect(() => {
+		useReadStore.getState().markRead(sessionId);
+	}, [sessionId, messageCount, pendingCount]);
 
 	const onScroll = () => {
 		const el = scrollRef.current;
