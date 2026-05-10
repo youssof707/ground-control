@@ -24,7 +24,7 @@ function createWindow(): BrowserWindow {
 		x: offset > 0 ? offset : undefined,
 		y: offset > 0 ? offset : undefined,
 		show: false,
-		title: "Claude Code Wrapper",
+		title: "Ground Control",
 		webPreferences: {
 			preload: preloadPath,
 			sandbox: false,
@@ -82,7 +82,7 @@ function buildMenu(): Electron.Menu {
 }
 
 app.whenReady().then(async () => {
-	electronApp.setAppUserModelId("com.anthropic.claude-code-wrapper");
+	electronApp.setAppUserModelId("com.anthropic.ground-control");
 
 	app.on("browser-window-created", (_, window) => {
 		optimizer.watchWindowShortcuts(window);

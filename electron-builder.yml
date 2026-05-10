@@ -1,5 +1,5 @@
-appId: com.anthropic.claude-code-wrapper
-productName: ClaudeCodeWrapper
+appId: com.anthropic.ground-control
+productName: Ground Control
 asar: true
 directories:
   buildResources: build
