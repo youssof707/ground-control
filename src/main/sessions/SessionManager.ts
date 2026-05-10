@@ -65,7 +65,11 @@ export class SessionManager {
 	}
 
 	get activeCount(): number {
-		return this.sessions.size;
+		let n = 0;
+		for (const { session } of this.sessions.values()) {
+			if (session.status === "running") n++;
+		}
+		return n;
 	}
 
 	listActive(): ClaudeSession[] {

@@ -1,20 +1,18 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { ConfirmModal } from "../../../components/ConfirmModal";
 import { T } from "../../../design/tokens";
-import { BranchChip, Eyebrow, StatusPill } from "../../../design/Atoms";
+import { BranchChip, StatusPill } from "../../../design/Atoms";
 import { PermissionCard } from "./PermissionCard";
 import type {
 	ClaudeSessionFull,
 	PermissionRequest,
+	SessionMessage,
 } from "@shared/claude-sessions/types";
 
-// EDIT ME: absolute path to a real repo with a .git directory and source files.
-const TEST_CWD = "/Users/youssof/Working Files/Code/gamestudio";
-
-const COLS = "1fr 200px 170px 120px 32px";
+const COLS = "1fr 200px 170px 32px";
 
 export function SessionsList() {
 	const sessions = useSessionsStore((s) => s.sessions);
@@ -33,7 +31,17 @@ export function SessionsList() {
 	).length;
 	const waitingCount = new Set(queue.map((q) => q.sessionId)).size;
 
-	const start = async () => {
+	const sortedOrder = useMemo(() => {
+		return [...order].sort(
+			(a, b) => lastActivity(sessions[b]) - lastActivity(sessions[a]),
+		);
+	}, [order, sessions]);
+
+	const lastUsedCwd = sortedOrder
+		.map((id) => sessions[id]?.cwd)
+		.find((c): c is string => !!c);
+
+	const startWith = async (cwd: string) => {
 		try {
 			setStartError(null);
 			const off = window.claude.on("session:started", (p) => {
@@ -43,11 +51,27 @@ export function SessionsList() {
 			});
 			await window.claude.startSession({
 				title: `Session ${order.length + 1}`,
-				cwd: TEST_CWD,
+				cwd,
 			});
 		} catch (err) {
 			setStartError(err instanceof Error ? err.message : String(err));
 		}
+	};
+
+	const start = async () => {
+		if (lastUsedCwd) {
+			await startWith(lastUsedCwd);
+			return;
+		}
+		const picked = await window.claude.pickFolder();
+		if (picked) await startWith(picked);
+	};
+
+	const startInPickedFolder = async () => {
+		const picked = await window.claude.pickFolder({
+			defaultPath: lastUsedCwd,
+		});
+		if (picked) await startWith(picked);
 	};
 
 	const confirmDelete = async () => {
@@ -80,7 +104,6 @@ export function SessionsList() {
 			{/* Header */}
 			<div className="page-header">
 				<div>
-					<Eyebrow style={{ marginBottom: 6 }}>Workspace · {TEST_CWD}</Eyebrow>
 					<h1 className="page-title">Sessions</h1>
 					<div
 						style={{
@@ -99,7 +122,15 @@ export function SessionsList() {
 					</div>
 				</div>
 				<div style={{ display: "flex", gap: 8 }}>
-					<button className="btn btn-primary" onClick={start}>
+					<button
+						className="btn btn-primary"
+						onClick={start}
+						title={
+							lastUsedCwd
+								? `Start a session in ${lastUsedCwd}`
+								: "Pick a folder and start a session there"
+						}
+					>
 						<svg width="13" height="13" viewBox="0 0 14 14" fill="none">
 							<path
 								d="M7 3v8M3 7h8"
@@ -109,7 +140,20 @@ export function SessionsList() {
 							/>
 						</svg>
 						New Session
+						{lastUsedCwd ? (
+							<span
+								style={{
+									fontFamily: T.mono,
+									fontSize: 11,
+									opacity: 0.55,
+									marginLeft: 2,
+								}}
+							>
+								· {folderName(lastUsedCwd)}
+							</span>
+						) : null}
 					</button>
+					<FolderButton onClick={startInPickedFolder} />
 				</div>
 			</div>
 
@@ -146,17 +190,16 @@ export function SessionsList() {
 						<div>Session</div>
 						<div>Branch</div>
 						<div>Status</div>
-						<div>ID</div>
 						<div />
 					</div>
-					{order.map((id, i) => {
+					{sortedOrder.map((id, i) => {
 						const s = sessions[id];
 						const sessionPending = queue.filter((q) => q.sessionId === id);
 						return (
 							<Row
 								key={id}
 								session={s}
-								last={i === order.length - 1}
+								last={i === sortedOrder.length - 1}
 								pending={sessionPending}
 								onDelete={() => {
 									setPendingDeleteId(id);
@@ -258,13 +301,24 @@ function Row({
 								whiteSpace: "nowrap",
 							}}
 						>
-							<span style={{ color: T.textFaint, marginRight: 8 }}>
-								{relativeTime(
-									session.finishedAt ?? session.createdAt,
-								)}
-							</span>
 							{summary}
 						</div>
+						{session.cwd ? (
+							<div
+								title={session.cwd}
+								style={{
+									fontSize: 11,
+									color: T.textFaint,
+									fontFamily: T.mono,
+									marginTop: 2,
+									overflow: "hidden",
+									textOverflow: "ellipsis",
+									whiteSpace: "nowrap",
+								}}
+							>
+								{folderName(session.cwd)}
+							</div>
+						) : null}
 					</div>
 					<div>
 						{session.branch ? (
@@ -280,15 +334,6 @@ function Row({
 							}
 						/>
 					</div>
-					<div
-						style={{
-							fontFamily: T.mono,
-							fontSize: 12,
-							color: T.textMute,
-						}}
-					>
-						{session.id.slice(0, 8)}
-					</div>
 					<DeleteButton onClick={onDelete} />
 				</div>
 			</Link>
@@ -300,6 +345,28 @@ function Row({
 				</div>
 			) : null}
 		</div>
+	);
+}
+
+function FolderButton({ onClick }: { onClick: () => void }) {
+	return (
+		<button
+			type="button"
+			className="btn"
+			onClick={onClick}
+			title="Open a different folder and start a session there"
+			style={{ width: 32, padding: 0, color: T.textDim }}
+		>
+			<svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+				<path
+					d="M1.5 3.5a1 1 0 011-1h2.4l1.2 1.4h5.4a1 1 0 011 1v5.6a1 1 0 01-1 1h-9a1 1 0 01-1-1v-7z"
+					stroke="currentColor"
+					strokeWidth="1.2"
+					strokeLinejoin="round"
+					fill="none"
+				/>
+			</svg>
+		</button>
 	);
 }
 
@@ -380,21 +447,43 @@ function Sep() {
 	);
 }
 
+function folderName(path: string): string {
+	const trimmed = path.replace(/\/+$/, "");
+	const idx = trimmed.lastIndexOf("/");
+	return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
+function lastConversationMessage(
+	session: ClaudeSessionFull,
+): SessionMessage | undefined {
+	for (let i = session.messages.length - 1; i >= 0; i--) {
+		const m = session.messages[i];
+		if (m.role === "user" || m.role === "assistant") return m;
+	}
+	return undefined;
+}
+
+function lastActivity(session: ClaudeSessionFull): number {
+	const last = lastConversationMessage(session);
+	return last?.ts ?? session.finishedAt ?? session.createdAt;
+}
+
 function deriveSummary(session: ClaudeSessionFull): string {
-	const last = session.messages[session.messages.length - 1];
+	if (session.error) return `Error: ${session.error}`;
+	const last = lastConversationMessage(session);
 	if (!last) {
 		return session.status === "idle"
 			? "Waiting for first message…"
 			: "No messages yet.";
 	}
-	if (session.error) return `Error: ${session.error}`;
 	if (last.role === "assistant") {
 		const text = extractAssistantText(last.content);
 		if (text) return text.slice(0, 140);
+		return "Working…";
 	}
-	if (last.role === "user") return "You sent a message.";
-	if (last.role === "result") return "Turn ended.";
-	return "Working…";
+	const userText = extractUserText(last.content);
+	if (userText) return `You: ${userText.slice(0, 140)}`;
+	return "You sent a message.";
 }
 
 function extractAssistantText(content: unknown): string {
@@ -410,11 +499,16 @@ function extractAssistantText(content: unknown): string {
 	return "";
 }
 
-function relativeTime(ts: number): string {
-	const sec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
-	if (sec < 30) return "just now";
-	if (sec < 60) return `${sec}s ago`;
-	if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
-	if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
-	return `${Math.floor(sec / 86400)}d ago`;
+function extractUserText(content: unknown): string {
+	const blocks = (
+		content as { message?: { content?: { type?: string; text?: string }[] } }
+	)?.message?.content;
+	if (!Array.isArray(blocks)) return "";
+	for (const b of blocks) {
+		if (b.type === "text" && typeof b.text === "string" && b.text.trim()) {
+			return b.text.replace(/\s+/g, " ").trim();
+		}
+	}
+	return "";
 }
+

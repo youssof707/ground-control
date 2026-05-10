@@ -1,4 +1,4 @@
-import { ipcMain } from "electron";
+import { BrowserWindow, dialog, ipcMain } from "electron";
 import { SessionManager } from "../sessions/SessionManager";
 import { PermissionBroker } from "../sessions/PermissionBroker";
 import { NotificationManager } from "./notifications";
@@ -34,6 +34,26 @@ export function registerSessionsHandlers(): SessionManager {
 		manager.resume(sessionId),
 	);
 	ipcMain.handle("sessions:list", () => sessionStore.listSessions());
+	ipcMain.handle(
+		"dialog:pickFolder",
+		async (
+			e,
+			opts: { defaultPath?: string } = {},
+		): Promise<string | null> => {
+			const win = BrowserWindow.fromWebContents(e.sender);
+			const result = win
+				? await dialog.showOpenDialog(win, {
+						properties: ["openDirectory", "createDirectory"],
+						defaultPath: opts.defaultPath,
+					})
+				: await dialog.showOpenDialog({
+						properties: ["openDirectory", "createDirectory"],
+						defaultPath: opts.defaultPath,
+					});
+			if (result.canceled || result.filePaths.length === 0) return null;
+			return result.filePaths[0];
+		},
+	);
 	ipcMain.handle("session:delete", async (_e, sessionId: string) => {
 		// If the session is still alive, cancel it first. The live loop will
 		// wind down on its own; its late writes are no-ops because the store

@@ -26,6 +26,8 @@ const claude = {
 	listSessions: () => ipcRenderer.invoke("sessions:list"),
 	deleteSession: (sessionId: string) =>
 		ipcRenderer.invoke("session:delete", sessionId),
+	pickFolder: (opts?: { defaultPath?: string }) =>
+		ipcRenderer.invoke("dialog:pickFolder", opts ?? {}),
 	on: (channel: string, fn: (payload: unknown) => void) => {
 		const listener = (_e: IpcRendererEvent, payload: unknown) => fn(payload);
 		ipcRenderer.on(channel, listener);

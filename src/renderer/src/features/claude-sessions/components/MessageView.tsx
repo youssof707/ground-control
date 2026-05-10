@@ -30,7 +30,8 @@ export function MessageView({ m }: { m: SessionMessage }) {
 	if (m.role === "assistant") return <AssistantMessage sdk={sdk} />;
 	if (m.role === "user") return <UserMessage sdk={sdk} />;
 	if (m.role === "system") return <SystemDivider label="Session initialized" />;
-	return <ResultDivider sdk={sdk} />;
+	if (m.role === "result") return null;
+	return null;
 }
 
 function AssistantMessage({ sdk }: { sdk: SdkLike }) {
@@ -337,11 +338,6 @@ function RawBlock({ block }: { block: ContentBlock }) {
 			</pre>
 		</details>
 	);
-}
-
-function ResultDivider({ sdk }: { sdk: SdkLike }) {
-	const subtype = sdk.subtype ?? "result";
-	return <SystemDivider label={`Turn ended · ${subtype}`} />;
 }
 
 function SystemDivider({ label }: { label: string }) {

@@ -20,6 +20,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 		session?.status === "running" ||
 		session?.status === "idle" ||
 		session?.status === "awaiting_permission";
+	const canChat = isOpen || !!session?.sdkSessionId;
 
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const stickToBottom = useRef(true);
@@ -95,103 +96,143 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 			{/* Breadcrumb header */}
 			<div
 				style={{
-					height: 50,
 					flexShrink: 0,
 					borderBottom: `0.5px solid ${T.border}`,
 					display: "flex",
-					alignItems: "center",
-					gap: 14,
-					padding: "0 18px",
+					flexDirection: "column",
+					gap: 8,
+					padding: "10px 18px",
 					background: T.win,
 				}}
 			>
-				<Link
-					to="/"
-					style={{
-						display: "inline-flex",
-						alignItems: "center",
-						gap: 6,
-						fontSize: 12.5,
-						color: T.textDim,
-						textDecoration: "none",
-						padding: "5px 9px",
-						borderRadius: 7,
-						border: `0.5px solid ${T.border}`,
-					}}
-				>
-					<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-						<path
-							d="M7 3l-3 3 3 3"
-							stroke="currentColor"
-							strokeWidth="1.4"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-						/>
-					</svg>
-					Sessions
-				</Link>
+				{/* Row 1: back, title, filepath, action buttons */}
 				<div
 					style={{
-						fontSize: 14,
-						fontWeight: 600,
-						color: T.text,
-						overflow: "hidden",
-						textOverflow: "ellipsis",
-						whiteSpace: "nowrap",
-						maxWidth: 320,
+						display: "flex",
+						alignItems: "center",
+						gap: 14,
+						minWidth: 0,
 					}}
 				>
-					{session.title}
-				</div>
-				<span
-					style={{
-						fontFamily: T.mono,
-						fontSize: 11.5,
-						color: T.textFaint,
-					}}
-				>
-					{session.id.slice(0, 8)}
-				</span>
-				<StatusPill status={effectiveStatus} />
-				{session.branch ? <BranchChip name={session.branch} /> : null}
-				{isOpen ? (
-					<ActivityChip session={session} hasPending={pending.length > 0} />
-				) : null}
-				<div style={{ flex: 1 }} />
-
-				{session.status === "running" ? (
-					<button
-						className="btn"
-						onClick={stop}
-						disabled={interrupting}
-						title="Stop Claude's current response. The session stays open — you can keep sending messages."
+					<Link
+						to="/"
+						style={{
+							display: "inline-flex",
+							alignItems: "center",
+							gap: 6,
+							fontSize: 12.5,
+							color: T.textDim,
+							textDecoration: "none",
+							padding: "5px 9px",
+							borderRadius: 7,
+							border: `0.5px solid ${T.border}`,
+							flexShrink: 0,
+						}}
 					>
-						{interrupting ? "Stopping…" : "Stop"}
-					</button>
-				) : null}
-				{!isOpen && session.sdkSessionId ? (
-					<button
-						className="btn"
-						onClick={resume}
-						disabled={resuming}
-						title="Resume this session and keep talking with the same context."
-					>
-						{resuming ? "Resuming…" : "Resume"}
-					</button>
-				) : null}
-				{session.diff ? (
-					<Link to={`/sessions/${sessionId}/diff`} className="btn">
 						<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
 							<path
-								d="M3 2h5v5M3 7l5-5"
+								d="M7 3l-3 3 3 3"
 								stroke="currentColor"
 								strokeWidth="1.4"
 								strokeLinecap="round"
+								strokeLinejoin="round"
 							/>
 						</svg>
-						View diff
+						Sessions
 					</Link>
-				) : null}
+					<div
+						style={{
+							fontSize: 14,
+							fontWeight: 600,
+							color: T.text,
+							overflow: "hidden",
+							textOverflow: "ellipsis",
+							whiteSpace: "nowrap",
+							maxWidth: 320,
+							flexShrink: 0,
+						}}
+					>
+						{session.title}
+					</div>
+					{session.cwd ? (
+						<span
+							title={session.cwd}
+							style={{
+								fontFamily: T.mono,
+								fontSize: 11.5,
+								color: T.textFaint,
+								overflow: "hidden",
+								textOverflow: "ellipsis",
+								whiteSpace: "nowrap",
+								minWidth: 0,
+								flex: 1,
+							}}
+						>
+							{session.cwd}
+						</span>
+					) : (
+						<div style={{ flex: 1 }} />
+					)}
+
+					{session.status === "running" ? (
+						<button
+							className="btn"
+							onClick={stop}
+							disabled={interrupting}
+							title="Stop Claude's current response. The session stays open — you can keep sending messages."
+						>
+							{interrupting ? "Stopping…" : "Stop"}
+						</button>
+					) : null}
+					{!isOpen && session.sdkSessionId ? (
+						<button
+							className="btn"
+							onClick={resume}
+							disabled={resuming}
+							title="Resume this session and keep talking with the same context."
+						>
+							{resuming ? "Resuming…" : "Resume"}
+						</button>
+					) : null}
+					{session.diff ? (
+						<Link to={`/sessions/${sessionId}/diff`} className="btn">
+							<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+								<path
+									d="M3 2h5v5M3 7l5-5"
+									stroke="currentColor"
+									strokeWidth="1.4"
+									strokeLinecap="round"
+								/>
+							</svg>
+							View diff
+						</Link>
+					) : null}
+				</div>
+
+				{/* Row 2: id + status chips */}
+				<div
+					style={{
+						display: "flex",
+						alignItems: "center",
+						gap: 10,
+						flexWrap: "wrap",
+					}}
+				>
+					<span
+						style={{
+							fontFamily: T.mono,
+							fontSize: 11.5,
+							color: T.textFaint,
+						}}
+					>
+						{session.id.slice(0, 8)}
+					</span>
+					<StatusPill status={effectiveStatus} />
+					{session.branch ? <BranchChip name={session.branch} /> : null}
+					{isOpen ? (
+						<ActivityChip session={session} hasPending={pending.length > 0} />
+					) : null}
+				</div>
 			</div>
 
 			{/* Transcript */}
@@ -238,7 +279,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 				</div>
 			) : null}
 
-			{isOpen ? <ImagePasteTextarea sessionId={sessionId} /> : null}
+			{canChat ? <ImagePasteTextarea sessionId={sessionId} /> : null}
 		</div>
 	);
 }

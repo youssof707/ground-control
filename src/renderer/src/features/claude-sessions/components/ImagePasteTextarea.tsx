@@ -85,6 +85,14 @@ export function ImagePasteTextarea({ sessionId, disabled }: Props) {
 		setSending(true);
 		setError(null);
 		try {
+			const sess = useSessionsStore.getState().sessions[sessionId];
+			const isOpen =
+				sess?.status === "running" ||
+				sess?.status === "idle" ||
+				sess?.status === "awaiting_permission";
+			if (!isOpen && sess?.sdkSessionId) {
+				await window.claude.resumeSession(sessionId);
+			}
 			await window.claude.sendUserMessage({ sessionId, blocks });
 			useSessionsStore.getState().appendMessage(sessionId, {
 				id: crypto.randomUUID(),

@@ -117,6 +117,11 @@ app.whenReady().then(async () => {
 	createWindow();
 
 	console.log("[ccw] ANTHROPIC_API_KEY set:", !!process.env.ANTHROPIC_API_KEY);
+	const { Notification } = await import("electron");
+	console.log(
+		"[ccw] Notification.isSupported():",
+		Notification.isSupported(),
+	);
 
 	app.on("activate", () => {
 		const existing = windows.getPrimary();
