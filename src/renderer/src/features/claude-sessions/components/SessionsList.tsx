@@ -1,15 +1,23 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
+import { ConfirmModal } from "../../../components/ConfirmModal";
 
 // EDIT ME: absolute path to a real repo with a .git directory and source files.
-const TEST_CWD = "/Users/youssof/Working Files/Code/claude-code-wrapper";
+const TEST_CWD = "/Users/youssof/Working Files/Code/gamestudio";
+
+const COLS = "1fr 160px 120px 80px 32px";
 
 export function SessionsList() {
 	const sessions = useSessionsStore((s) => s.sessions);
 	const order = useSessionsStore((s) => s.order);
+	const removeSession = useSessionsStore((s) => s.removeSession);
 	const navigate = useNavigate();
 	const [startError, setStartError] = useState<string | null>(null);
+
+	const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+	const [deleteError, setDeleteError] = useState<string | null>(null);
+	const [deleting, setDeleting] = useState(false);
 
 	const runningCount = order.filter(
 		(id) => sessions[id].status === "running",
@@ -24,15 +32,38 @@ export function SessionsList() {
 				navigate(`/sessions/${s.id}`);
 			});
 			await window.claude.startSession({
-				title: "Repo overview",
-				prompt:
-					"Look at the project structure and summarize what kind of app this is.",
+				title: `Session ${order.length + 1}`,
 				cwd: TEST_CWD,
 			});
 		} catch (err) {
 			setStartError(err instanceof Error ? err.message : String(err));
 		}
 	};
+
+	const confirmDelete = async () => {
+		if (!pendingDeleteId || deleting) return;
+		setDeleting(true);
+		setDeleteError(null);
+		try {
+			await window.claude.deleteSession(pendingDeleteId);
+			removeSession(pendingDeleteId);
+			setPendingDeleteId(null);
+		} catch (err) {
+			setDeleteError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setDeleting(false);
+		}
+	};
+
+	const cancelDelete = () => {
+		if (deleting) return;
+		setPendingDeleteId(null);
+		setDeleteError(null);
+	};
+
+	const pendingDeleteSession = pendingDeleteId
+		? sessions[pendingDeleteId]
+		: null;
 
 	return (
 		<div className="page">
@@ -61,12 +92,13 @@ export function SessionsList() {
 				<div className="table">
 					<div
 						className="table-header-row"
-						style={{ gridTemplateColumns: "1fr 160px 120px 80px" }}
+						style={{ gridTemplateColumns: COLS }}
 					>
 						<div>Title</div>
 						<div>Branch</div>
 						<div>Status</div>
 						<div>ID</div>
+						<div />
 					</div>
 					{order.map((id) => {
 						const s = sessions[id];
@@ -78,7 +110,7 @@ export function SessionsList() {
 							>
 								<div
 									className="table-row"
-									style={{ gridTemplateColumns: "1fr 160px 120px 80px" }}
+									style={{ gridTemplateColumns: COLS }}
 								>
 									<div>{s.title}</div>
 									<div
@@ -97,12 +129,67 @@ export function SessionsList() {
 									<div style={{ fontFamily: "monospace", fontSize: 12 }}>
 										{s.id.slice(0, 8)}
 									</div>
+									<button
+										onClick={(e) => {
+											e.preventDefault();
+											e.stopPropagation();
+											setPendingDeleteId(id);
+											setDeleteError(null);
+										}}
+										title="Delete this session from the app"
+										style={{
+											display: "inline-flex",
+											alignItems: "center",
+											justifyContent: "center",
+											width: 24,
+											height: 24,
+											border: "none",
+											background: "transparent",
+											color: "#86868b",
+											cursor: "pointer",
+											borderRadius: 4,
+											fontSize: 14,
+											lineHeight: 1,
+										}}
+										onMouseEnter={(e) => {
+											e.currentTarget.style.background = "#fdecec";
+											e.currentTarget.style.color = "#c92a2a";
+										}}
+										onMouseLeave={(e) => {
+											e.currentTarget.style.background = "transparent";
+											e.currentTarget.style.color = "#86868b";
+										}}
+									>
+										✕
+									</button>
 								</div>
 							</Link>
 						);
 					})}
 				</div>
 			)}
+
+			<ConfirmModal
+				open={!!pendingDeleteId}
+				title="Delete session?"
+				message={
+					<>
+						Remove{" "}
+						<strong>
+							{pendingDeleteSession?.title ?? "this session"}
+						</strong>{" "}
+						from this app. Claude Code's own session history (in{" "}
+						<code>~/.claude</code>) is not affected.
+					</>
+				}
+				confirmLabel="Delete"
+				cancelLabel="Cancel"
+				destructive
+				busy={deleting}
+				error={deleteError}
+				onConfirm={confirmDelete}
+				onCancel={cancelDelete}
+			/>
 		</div>
 	);
 }

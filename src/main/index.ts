@@ -1,14 +1,18 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 import { join } from "path";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import type { FastifyInstance } from "fastify";
 import { startServer, FASTIFY_PORT } from "./server";
 import { flush as flushStore } from "./core/store/write_queue";
+import { initialize as initializeClaudeSessionStore } from "./core/store/claude_session";
 import { registerSessionsHandlers } from "./ipc/sessionsHandlers";
+import type { SessionManager } from "./sessions/SessionManager";
 
 let mainWindow: BrowserWindow | null = null;
 let server: FastifyInstance | null = null;
+let sessionManager: SessionManager | null = null;
 let isQuitting = false;
+let confirmedQuit = false;
 
 const preloadPath = join(__dirname, "../preload/index.mjs");
 
@@ -52,9 +56,7 @@ app.whenReady().then(async () => {
 
 	const dataDir = join(app.getPath("userData"), "data");
 	try {
-		// Initialize per-model stores here as you add them:
-		// await initializeFooStore(dataDir);
-		void dataDir;
+		await initializeClaudeSessionStore(dataDir);
 	} catch (err) {
 		console.error(`[ccw] failed to initialize store at ${dataDir}:`, err);
 		app.exit(1);
@@ -76,7 +78,7 @@ app.whenReady().then(async () => {
 
 	mainWindow = createMainWindow();
 
-	registerSessionsHandlers(() => mainWindow);
+	sessionManager = registerSessionsHandlers(() => mainWindow);
 
 	console.log("[ccw] ANTHROPIC_API_KEY set:", !!process.env.ANTHROPIC_API_KEY);
 
@@ -89,8 +91,39 @@ app.whenReady().then(async () => {
 	});
 });
 
-app.on("before-quit", () => {
-	isQuitting = true;
+app.on("before-quit", async (event) => {
+	if (confirmedQuit) {
+		isQuitting = true;
+		return;
+	}
+
+	const active = sessionManager?.activeCount ?? 0;
+	if (active === 0) {
+		isQuitting = true;
+		return;
+	}
+
+	event.preventDefault();
+
+	const opts: Electron.MessageBoxOptions = {
+		type: "warning",
+		title: "Quit with active sessions?",
+		message: `${active} session${active === 1 ? " is" : "s are"} still active.`,
+		detail:
+			"Quitting now will cancel them. Their conversation history is saved and you can review them after restart.",
+		buttons: ["Cancel", "Quit anyway"],
+		defaultId: 0,
+		cancelId: 0,
+	};
+	const result = mainWindow
+		? await dialog.showMessageBox(mainWindow, opts)
+		: await dialog.showMessageBox(opts);
+
+	if (result.response === 1) {
+		confirmedQuit = true;
+		sessionManager?.cancelAll();
+		app.quit();
+	}
 });
 
 app.on("will-quit", async (event) => {

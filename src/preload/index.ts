@@ -3,7 +3,8 @@ import { electronAPI } from "@electron-toolkit/preload";
 import type {
 	PermissionDecision,
 	StartSessionInput,
-} from "../shared/claude-sessions/types";
+	UserTurn,
+} from "../shared/schemas/claude_session";
 
 const api = {};
 
@@ -12,8 +13,19 @@ const claude = {
 		ipcRenderer.invoke("session:start", input),
 	cancelSession: (sessionId: string) =>
 		ipcRenderer.invoke("session:cancel", sessionId),
+	sendUserMessage: (turn: UserTurn) =>
+		ipcRenderer.invoke("session:userMessage", turn),
+	finishSession: (sessionId: string) =>
+		ipcRenderer.invoke("session:finish", sessionId),
+	interruptSession: (sessionId: string) =>
+		ipcRenderer.invoke("session:interrupt", sessionId),
+	resumeSession: (sessionId: string) =>
+		ipcRenderer.invoke("session:resume", sessionId),
 	respondPermission: (decision: PermissionDecision) =>
 		ipcRenderer.send("permission:respond", decision),
+	listSessions: () => ipcRenderer.invoke("sessions:list"),
+	deleteSession: (sessionId: string) =>
+		ipcRenderer.invoke("session:delete", sessionId),
 	on: (channel: string, fn: (payload: unknown) => void) => {
 		const listener = (_e: IpcRendererEvent, payload: unknown) => fn(payload);
 		ipcRenderer.on(channel, listener);
