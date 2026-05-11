@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { DiffPage } from "./DiffRender";
 import { T } from "../../../design/tokens";
-import { BranchChip } from "../../../design/Atoms";
+import { BranchChipWithDelta } from "../../../design/Atoms";
 
 export function DiffViewer({ sessionId }: { sessionId: string }) {
 	const session = useSessionsStore((s) => s.sessions[sessionId]);
@@ -108,7 +108,10 @@ export function DiffViewer({ sessionId }: { sessionId: string }) {
 				>
 					{session.title}
 				</div>
-				{session.branch ? <BranchChip name={session.branch} /> : null}
+				<BranchChipWithDelta
+					branch={session.branch}
+					lastUserMessageBranch={session.lastUserMessageBranch}
+				/>
 				<div style={{ fontSize: 12, color: T.textFaint, fontFamily: T.mono }}>
 					diff since {session.startCommit.slice(0, 8)}
 				</div>

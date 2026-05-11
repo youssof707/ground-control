@@ -95,7 +95,34 @@ export function StatusPill({ status }: { status: string }) {
 
 // ─── BranchChip ──────────────────────────────────────────────────────────────
 
-export function BranchChip({ name }: { name: string }) {
+/**
+ * Returns true when the live branch (`branch`) differs from the branch
+ * captured when the user last sent a message in the session. Used to
+ * flip BranchChip into its red ("stale") state. Returns false when either
+ * side is missing — without a baseline (e.g. a freshly created session
+ * where the user hasn't sent anything yet) there's nothing to compare.
+ */
+export function isBranchStale(s: {
+	branch?: string;
+	lastUserMessageBranch?: string;
+}): boolean {
+	return (
+		!!s.lastUserMessageBranch &&
+		!!s.branch &&
+		s.branch !== s.lastUserMessageBranch
+	);
+}
+
+export function BranchChip({
+	name,
+	stale = false,
+	staleFrom,
+}: {
+	name: string;
+	stale?: boolean;
+	/** Branch name the session last sent on; surfaced in the tooltip when stale. */
+	staleFrom?: string;
+}) {
 	const [copied, setCopied] = useState(false);
 
 	const onClick = async (e: React.MouseEvent) => {
@@ -110,11 +137,25 @@ export function BranchChip({ name }: { name: string }) {
 		}
 	};
 
+	const baseTitle = copied
+		? "Copied!"
+		: stale
+			? staleFrom
+				? `Branch changed since last message (was "${staleFrom}") — click to copy "${name}"`
+				: `Branch changed since last message — click to copy "${name}"`
+			: `Copy "${name}"`;
+
+	// Resting palette: green when freshly copied, red when stale, otherwise
+	// the normal subdued chip. Hover handlers below mirror this priority.
+	const restingBg = copied ? T.okSoft : stale ? T.dangerSoft : T.surface;
+	const restingBorder = copied ? T.okBorder : stale ? T.dangerBorder : T.border;
+	const restingColor = copied ? T.ok : stale ? T.danger : T.textDim;
+
 	return (
 		<button
 			type="button"
 			onClick={onClick}
-			title={copied ? "Copied!" : `Copy "${name}"`}
+			title={baseTitle}
 			style={{
 				display: "inline-flex",
 				alignItems: "center",
@@ -122,10 +163,10 @@ export function BranchChip({ name }: { name: string }) {
 				height: 22,
 				padding: "0 9px 0 7px",
 				borderRadius: 11,
-				background: copied ? T.okSoft : T.surface,
-				border: `0.5px solid ${copied ? T.okBorder : T.border}`,
+				background: restingBg,
+				border: `0.5px solid ${restingBorder}`,
 				fontSize: 11.5,
-				color: copied ? T.ok : T.textDim,
+				color: restingColor,
 				fontFamily: T.mono,
 				whiteSpace: "nowrap",
 				maxWidth: 200,
@@ -135,12 +176,12 @@ export function BranchChip({ name }: { name: string }) {
 				transition: "background 0.12s, color 0.12s, border-color 0.12s",
 			}}
 			onMouseEnter={(e) => {
-				if (copied) return;
+				if (copied || stale) return;
 				e.currentTarget.style.background = T.surfaceHi;
 				e.currentTarget.style.color = T.text;
 			}}
 			onMouseLeave={(e) => {
-				if (copied) return;
+				if (copied || stale) return;
 				e.currentTarget.style.background = T.surface;
 				e.currentTarget.style.color = T.textDim;
 			}}
@@ -172,6 +213,144 @@ export function BranchChip({ name }: { name: string }) {
 				{copied ? "Copied" : name}
 			</span>
 		</button>
+	);
+}
+
+/**
+ * Small ghost-style button that runs `git switch <baseline>` in a session's
+ * cwd, clearing the chip's red state. Owns its own loading + error state so
+ * `BranchChipWithDelta` can stay a thin presentational wrapper.
+ *
+ * On failure (e.g. uncommitted changes, branch missing) the button briefly
+ * flips to a red "failed" label with the git error message in the tooltip,
+ * then resets after a few seconds so the user can retry.
+ */
+function BranchSwitchButton({
+	sessionId,
+	branch,
+}: {
+	sessionId: string;
+	branch: string;
+}) {
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	const onClick = async (e: React.MouseEvent) => {
+		e.preventDefault();
+		e.stopPropagation();
+		if (busy) return;
+		setError(null);
+		setBusy(true);
+		try {
+			await window.claude.switchBranch(sessionId, branch);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			setError(msg);
+			setTimeout(() => setError(null), 5000);
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			disabled={busy}
+			title={error ? error : `Switch the working tree back to "${branch}"`}
+			style={{
+				display: "inline-flex",
+				alignItems: "center",
+				gap: 4,
+				height: 18,
+				padding: "0 7px",
+				borderRadius: 9,
+				background: error ? T.dangerSoft : "transparent",
+				border: `0.5px solid ${error ? T.dangerBorder : T.border}`,
+				fontSize: 10.5,
+				color: error ? T.danger : T.textDim,
+				fontFamily: T.sans,
+				whiteSpace: "nowrap",
+				cursor: busy ? "default" : "pointer",
+				transition: "background 0.12s, color 0.12s, border-color 0.12s",
+			}}
+			onMouseEnter={(e) => {
+				if (busy || error) return;
+				e.currentTarget.style.background = T.surfaceHi;
+				e.currentTarget.style.color = T.text;
+			}}
+			onMouseLeave={(e) => {
+				if (busy || error) return;
+				e.currentTarget.style.background = "transparent";
+				e.currentTarget.style.color = T.textDim;
+			}}
+		>
+			{busy ? "switching…" : error ? "failed" : "Switch"}
+		</button>
+	);
+}
+
+/**
+ * The BranchChip plus, when stale, a subtle "Previously working on X" hint
+ * and a one-click Switch button to take the working tree back to that
+ * baseline branch. The hint + button only render when the pill is in its
+ * red ("stale") state.
+ *
+ * Renders inline (Fragment): parents must already lay out the chip area
+ * with their own flex / gap. Returns null when `branch` is undefined so
+ * callers don't need to gate on it themselves.
+ *
+ * Pass `sessionId` to enable the Switch button — without it the hint shows
+ * but no button. Useful for read-only contexts (e.g. diff headers) where
+ * mutating the working tree mid-view would be surprising.
+ */
+export function BranchChipWithDelta({
+	branch,
+	lastUserMessageBranch,
+	sessionId,
+	showCurrentHint = true,
+}: {
+	branch?: string;
+	lastUserMessageBranch?: string;
+	/** When provided alongside `showCurrentHint`, renders a Switch button
+	 * after the hint that runs `git switch <lastUserMessageBranch>`. */
+	sessionId?: string;
+	/** Show the "Previously working on X" hint (and the Switch button if
+	 * `sessionId` is also provided) when stale. Default true; pass false in
+	 * tight layouts where the extra text would overflow. */
+	showCurrentHint?: boolean;
+}) {
+	if (!branch) return null;
+	const stale = isBranchStale({ branch, lastUserMessageBranch });
+	const showHint = stale && showCurrentHint && !!lastUserMessageBranch;
+	return (
+		<>
+			<BranchChip
+				name={branch}
+				stale={stale}
+				staleFrom={lastUserMessageBranch}
+			/>
+			{showHint ? (
+				<span
+					style={{
+						fontSize: 11,
+						color: T.textFaint,
+						fontFamily: T.mono,
+						whiteSpace: "nowrap",
+						overflow: "hidden",
+						textOverflow: "ellipsis",
+					}}
+				>
+					Previously working on {lastUserMessageBranch}
+				</span>
+			) : null}
+			{showHint && sessionId && lastUserMessageBranch ? (
+				<BranchSwitchButton
+					sessionId={sessionId}
+					branch={lastUserMessageBranch}
+				/>
+			) : null}
+		</>
 	);
 }
 
@@ -331,6 +510,86 @@ export function InlineCode({ children }: { children: ReactNode }) {
 		>
 			{children}
 		</code>
+	);
+}
+
+// ─── Minimize toggle ─────────────────────────────────────────────────────────
+
+/**
+ * Disclosure-triangle button used to hide/show the body of an inline
+ * permission card (both the sessions-list row and the inbox sidebar entry).
+ * Pointing right when minimized, down when expanded — matches the Finder /
+ * VS Code disclosure convention.
+ *
+ * Always `e.preventDefault()` + `e.stopPropagation()` because both call sites
+ * wrap the surrounding region in a `<Link>` — without it the click navigates
+ * into the session instead of toggling visibility.
+ */
+export function MinimizeToggle({
+	minimized,
+	onToggle,
+	count,
+}: {
+	minimized: boolean;
+	onToggle: () => void;
+	count: number;
+}) {
+	const noun = count === 1 ? "card" : "cards";
+	const title = minimized
+		? `Show ${count} pending permission ${noun}`
+		: `Hide ${count} pending permission ${noun}`;
+	return (
+		<button
+			type="button"
+			onClick={(e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				onToggle();
+			}}
+			title={title}
+			aria-label={title}
+			aria-expanded={!minimized}
+			style={{
+				display: "inline-flex",
+				alignItems: "center",
+				justifyContent: "center",
+				width: 20,
+				height: 20,
+				border: "none",
+				background: "transparent",
+				color: T.textDim,
+				cursor: "pointer",
+				borderRadius: 4,
+				padding: 0,
+				transform: minimized ? "rotate(-90deg)" : "rotate(0deg)",
+				transition: "transform 120ms ease, background 120ms, color 120ms",
+				flexShrink: 0,
+			}}
+			onMouseEnter={(e) => {
+				e.currentTarget.style.background = T.accentSoft;
+				e.currentTarget.style.color = T.accent;
+			}}
+			onMouseLeave={(e) => {
+				e.currentTarget.style.background = "transparent";
+				e.currentTarget.style.color = T.textDim;
+			}}
+		>
+			<svg
+				width="10"
+				height="10"
+				viewBox="0 0 10 10"
+				fill="none"
+				aria-hidden="true"
+			>
+				<path
+					d="M2 3.5L5 6.5L8 3.5"
+					stroke="currentColor"
+					strokeWidth="1.5"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+				/>
+			</svg>
+		</button>
 	);
 }
 

@@ -12,7 +12,7 @@ import type {
 } from "@shared/claude-sessions/types";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { T } from "../../../design/tokens";
-import { Kbd, ModeToggle } from "../../../design/Atoms";
+import { Kbd, ModeToggle, isBranchStale } from "../../../design/Atoms";
 
 interface Props {
 	sessionId: string;
@@ -52,6 +52,14 @@ export function ImagePasteTextarea({ sessionId, disabled, textareaHeight = 44 }:
 	);
 	const status = useSessionsStore((s) => s.sessions[sessionId]?.status);
 	const isRunning = status === "running";
+	// Subscribe to the two branch fields so the send button mirrors the
+	// BranchChip's stale (red) state — extra visibility for "you're about
+	// to send on a different branch than your last message."
+	const branch = useSessionsStore((s) => s.sessions[sessionId]?.branch);
+	const lastUserMessageBranch = useSessionsStore(
+		(s) => s.sessions[sessionId]?.lastUserMessageBranch,
+	);
+	const branchStale = isBranchStale({ branch, lastUserMessageBranch });
 
 	// Auto-focus the textarea on session entry / switch. Keyed on sessionId
 	// so the focus also fires when navigating between sessions, not just the
@@ -307,9 +315,38 @@ export function ImagePasteTextarea({ sessionId, disabled, textareaHeight = 44 }:
 					<button
 						onClick={send}
 						disabled={disabled || sending || !canSend}
-						className="btn btn-primary"
+						className={`btn ${branchStale ? "btn-destructive" : "btn-primary"}`}
+						title={
+							branchStale && lastUserMessageBranch
+								? `Branch changed since last message (was "${lastUserMessageBranch}")`
+								: undefined
+						}
 						style={isRunning ? { opacity: 0.55, cursor: "default" } : undefined}
 					>
+						{branchStale && !sending ? (
+							<svg
+								width="12"
+								height="12"
+								viewBox="0 0 12 12"
+								fill="none"
+								aria-hidden
+							>
+								<path
+									d="M6 1.6 L11 10.4 H1 Z"
+									stroke="currentColor"
+									strokeWidth="1.4"
+									strokeLinecap="round"
+									strokeLinejoin="round"
+								/>
+								<path
+									d="M6 5 V7.3"
+									stroke="currentColor"
+									strokeWidth="1.4"
+									strokeLinecap="round"
+								/>
+								<circle cx="6" cy="9" r="0.7" fill="currentColor" />
+							</svg>
+						) : null}
 						{sending ? "…" : "Send"}
 						{!sending ? (
 							<svg width="11" height="11" viewBox="0 0 12 12" fill="none">

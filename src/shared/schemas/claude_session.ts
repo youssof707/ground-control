@@ -118,6 +118,12 @@ export const ClaudeSessionSchema = z.object({
 	finishedAt: z.number().optional(),
 	error: z.string().optional(),
 	branch: z.string().optional(),
+	/** Branch in effect the last time the user sent a message in this
+	 * session. Compared with `branch` (the live value) to decide whether the
+	 * chip should render in a "stale" / red state. Only set inside
+	 * SessionManager.pushUserMessage so it always tracks user-driven
+	 * checkpoints, never lifecycle events. */
+	lastUserMessageBranch: z.string().optional(),
 	startCommit: z.string().optional(),
 	diff: z.string().optional(),
 	/** Underlying Claude Agent SDK session id, captured from the SDK's

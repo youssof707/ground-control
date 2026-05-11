@@ -106,6 +106,7 @@ export type SessionPatch = Partial<
 		| "finishedAt"
 		| "error"
 		| "branch"
+		| "lastUserMessageBranch"
 		| "startCommit"
 		| "diff"
 		| "sdkSessionId"

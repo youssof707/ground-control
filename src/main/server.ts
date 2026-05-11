@@ -1,8 +1,13 @@
 import Fastify, { FastifyInstance } from "fastify";
 import fastifyCors from "@fastify/cors";
+import { is } from "@electron-toolkit/utils";
 
-export const FASTIFY_PORT =
-	process.env.NODE_ENV === "development" ? 41740 : 41739;
+// Dev and prod listen on different ports so a packaged prod build and a
+// `npm run dev` instance can run side-by-side without their HTTP surfaces
+// (e.g. `/ping`) colliding. `is.dev` (= !app.isPackaged) is the same signal
+// used to pick the on-disk store dir in `core/store/data_dir.ts`, so the two
+// stay in lockstep.
+export const FASTIFY_PORT = is.dev ? 41740 : 41739;
 const HOST = "127.0.0.1";
 
 const RENDERER_ORIGINS: ReadonlyArray<string> = [

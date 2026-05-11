@@ -8,8 +8,12 @@ import type {
 	UserTurn,
 } from "../../shared/schemas/claude_session";
 import * as sessionStore from "../core/store/claude_session";
+import * as minimizedStore from "../core/store/minimized_state";
 import { broadcast } from "../windows";
 import { registerReadHandlers } from "./readHandlers";
+import { registerMinimizedHandlers } from "./minimizedHandlers";
+import { registerSettingsHandlers } from "./settingsHandlers";
+import { registerAppInfoHandlers } from "./appInfoHandlers";
 
 export function registerSessionsHandlers(): SessionManager {
 	const notifications = new NotificationManager();
@@ -17,10 +21,16 @@ export function registerSessionsHandlers(): SessionManager {
 	const broker = new PermissionBroker(
 		notifications,
 		(sessionId) => manager?.getSession(sessionId)?.title,
+		// Re-anchor the branch baseline when the user answers a permission /
+		// plan / ask-user prompt. Same hook as sending a message.
+		(sessionId) => manager?.snapshotBranchCheckpoint(sessionId),
 	);
 	manager = new SessionManager(broker);
 
 	registerReadHandlers();
+	registerMinimizedHandlers();
+	registerSettingsHandlers();
+	registerAppInfoHandlers();
 
 	ipcMain.handle("session:start", (_e, input: StartSessionInput) =>
 		manager.run(input),
@@ -39,6 +49,14 @@ export function registerSessionsHandlers(): SessionManager {
 	);
 	ipcMain.handle("session:resume", (_e, sessionId: string) =>
 		manager.resume(sessionId),
+	);
+	ipcMain.handle("session:refreshBranch", (_e, sessionId: string) =>
+		manager.refreshBranch(sessionId),
+	);
+	ipcMain.handle(
+		"session:switchBranch",
+		(_e, payload: { sessionId: string; branch: string }) =>
+			manager.switchBranchInSession(payload.sessionId, payload.branch),
 	);
 	ipcMain.handle(
 		"session:fork",
@@ -117,6 +135,9 @@ export function registerSessionsHandlers(): SessionManager {
 		// called this), but the safety net for non-running sessions.
 		broker.cancelAllForSession(sessionId, "Session deleted");
 		await sessionStore.deleteSession(sessionId);
+		// Drop any stale "minimized" flag — the session no longer exists, so
+		// keeping the entry would just grow the file forever.
+		await minimizedStore.clear(sessionId);
 		// Structural ping → other windows refetch and drop this session from
 		// their stores. Originator already removed it locally.
 		broadcast("state:changed", undefined, e.sender.id);

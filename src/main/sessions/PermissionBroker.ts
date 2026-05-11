@@ -22,6 +22,11 @@ export class PermissionBroker {
 	constructor(
 		private notifications: NotificationManager,
 		private getSessionTitle: (sessionId: string) => string | undefined,
+		/** Called after a permission / plan / ask-user response resolves, so
+		 * SessionManager can re-record the branch checkpoint and dismiss the
+		 * red BranchChip on any user interaction (not just sends). Optional
+		 * to keep tests / alternate wirings simple. */
+		private onUserCheckpoint?: (sessionId: string) => void,
 	) {
 		ipcMain.on("permission:respond", (_e, decision: PermissionDecision) => {
 			this.handleResponse(decision);
@@ -97,6 +102,11 @@ export class PermissionBroker {
 		this.pending.delete(d.requestId);
 		this.syncBadge();
 		windows.broadcast("permission:resolved", { requestId: d.requestId });
+		// The user actively engaged with this session — re-anchor the
+		// branch baseline so the red chip clears if they happened to
+		// answer the prompt on a different branch than their last message.
+		// Fires on both allow and deny — either way they "used" the session.
+		this.onUserCheckpoint?.(entry.request.sessionId);
 		if (d.behavior === "allow") {
 			// ExitPlanMode is the plan-approval gate — it must always require an
 			// explicit click. Refuse to silently always-allow it even if a UI

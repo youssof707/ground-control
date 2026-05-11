@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Route, Routes, useParams } from "react-router-dom";
 import { useSessionsBootstrap } from "./features/claude-sessions/hooks/useSessionsBootstrap";
 import { useNotificationRouter } from "./features/claude-sessions/hooks/useNotificationRouter";
@@ -15,6 +15,19 @@ export default function MainApp() {
 	useNotificationRouter();
 	useDockUnreadBadge();
 	const [inboxOpen, setInboxOpen] = useState(true);
+	const [appInfo, setAppInfo] = useState<{
+		env: "dev" | "prod";
+		storeFolder: string;
+	} | null>(null);
+	useEffect(() => {
+		let alive = true;
+		window.claude.getAppInfo().then((info) => {
+			if (alive) setAppInfo(info);
+		});
+		return () => {
+			alive = false;
+		};
+	}, []);
 	return (
 		<div
 			style={{
@@ -42,6 +55,7 @@ export default function MainApp() {
 				}}
 			>
 				v{__APP_VERSION__}
+				{appInfo ? ` · ${appInfo.env} · ${appInfo.storeFolder}` : ""}
 			</span>
 			<AppNav
 				inboxOpen={inboxOpen}

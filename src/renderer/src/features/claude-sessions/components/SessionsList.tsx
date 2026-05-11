@@ -3,9 +3,15 @@ import { Link, useNavigate } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useReadStore } from "../stores/useReadStore";
+import { useMinimizedPermissionsStore } from "../stores/useMinimizedPermissionsStore";
+import { useSettingsStore } from "../stores/useSettingsStore";
 import { ConfirmModal } from "../../../components/ConfirmModal";
 import { T } from "../../../design/tokens";
-import { BranchChip, StatusPill } from "../../../design/Atoms";
+import {
+	BranchChipWithDelta,
+	MinimizeToggle,
+	StatusPill,
+} from "../../../design/Atoms";
 import { PermissionCard } from "./PermissionCard";
 import type {
 	ClaudeSessionFull,
@@ -35,9 +41,10 @@ export function SessionsList() {
 		);
 	}, [order, sessions]);
 
-	const lastUsedCwd = sortedOrder
-		.map((id) => sessions[id]?.cwd)
-		.find((c): c is string => !!c);
+	// Source of truth for "the workspace the user most recently created a
+	// session in" is the app_settings store — it survives deleting every
+	// session, which the derivation from `sessions` did not.
+	const lastUsedCwd = useSettingsStore((s) => s.lastUsedWorkspace);
 
 	const workspaces = useMemo(() => {
 		const set = new Set<string>();
@@ -69,6 +76,9 @@ export function SessionsList() {
 	const startWith = async (cwd: string) => {
 		try {
 			setStartError(null);
+			// Remember this workspace for the next New Session click. Optimistic
+			// local update + fire-and-forget IPC — mirrors the markRead pattern.
+			useSettingsStore.getState().setLastUsedWorkspace(cwd);
 			const off = window.claude.on("session:started", (p) => {
 				const s = p as { id: string };
 				off();
@@ -295,7 +305,12 @@ function Row({
 	pending: PermissionRequest[];
 	onDelete: () => void;
 }) {
-	const expanded = pending.length > 0;
+	const hasPending = pending.length > 0;
+	const minimized = useMinimizedPermissionsStore(
+		(s) => s.minimized[session.id] ?? false,
+	);
+	const setMinimized = useMinimizedPermissionsStore((s) => s.setMinimized);
+	const expanded = hasPending && !minimized;
 	const summary = deriveSummary(session);
 	const lastReadAt = useReadStore(
 		(s) => s.lastReadAt[session.id] ?? 0,
@@ -307,11 +322,14 @@ function Row({
 		<div
 			style={{
 				borderBottom: last ? "none" : `0.5px solid ${T.borderSoft}`,
-				background: expanded ? T.accentSoft : "transparent",
+				// Keep the accent treatment whenever there's something pending,
+				// regardless of whether the cards themselves are visible — so a
+				// minimized row still reads as "has a pending request" at a glance.
+				background: hasPending ? T.accentSoft : "transparent",
 				position: "relative",
 			}}
 		>
-			{expanded ? (
+			{hasPending ? (
 				<div
 					style={{
 						position: "absolute",
@@ -402,17 +420,35 @@ function Row({
 					</div>
 					<div>
 						{session.branch ? (
-							<BranchChip name={session.branch} />
+							<BranchChipWithDelta
+								branch={session.branch}
+								lastUserMessageBranch={session.lastUserMessageBranch}
+								showCurrentHint={false}
+							/>
 						) : (
 							<span style={{ color: T.textFaint, fontSize: 12 }}>—</span>
 						)}
 					</div>
-					<div>
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							gap: 6,
+							minWidth: 0,
+						}}
+					>
 						<StatusPill
 							status={
-								pending.length > 0 ? "awaiting_permission" : session.status
+								hasPending ? "awaiting_permission" : session.status
 							}
 						/>
+						{hasPending ? (
+							<MinimizeToggle
+								minimized={minimized}
+								onToggle={() => setMinimized(session.id, !minimized)}
+								count={pending.length}
+							/>
+						) : null}
 					</div>
 					<DeleteButton onClick={onDelete} />
 				</div>

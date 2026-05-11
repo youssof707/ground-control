@@ -25,7 +25,12 @@ import type {
 	UserContentBlock,
 } from "../../shared/schemas/claude_session";
 import { PermissionBroker } from "./PermissionBroker";
-import { getCurrentBranch, getDiffSinceCommit, getHeadCommit } from "./git";
+import {
+	getCurrentBranch,
+	getDiffSinceCommit,
+	getHeadCommit,
+	switchBranch,
+} from "./git";
 import * as sessionStore from "../core/store/claude_session";
 import * as windows from "../windows";
 
@@ -598,10 +603,11 @@ export class SessionManager {
 		// If this is the first user input on a session that started without an
 		// initial prompt, derive a meaningful title from the message text.
 		const persisted = sessionStore.getSession(sessionId);
-		const hasNoMessages = !!persisted && persisted.messages.length === 0;
+		const hasNoPriorUserMessage =
+			!!persisted && !persisted.messages.some((m) => m.role === "user");
 		const hasNoPriorPrompt =
 			!entry.session.prompt || entry.session.prompt.trim().length === 0;
-		if (hasNoMessages && hasNoPriorPrompt) {
+		if (hasNoPriorUserMessage && hasNoPriorPrompt) {
 			const text = firstTextFromBlocks(blocks);
 			const title = deriveTitle(text);
 			if (title && title !== entry.session.title) {
@@ -622,10 +628,98 @@ export class SessionManager {
 			ts: Date.now(),
 		};
 		void sessionStore.appendMessage(sessionId, sessionMessage);
+
+		this.snapshotBranchCheckpoint(sessionId);
+	}
+
+	/**
+	 * Record the current branch as the user's "checkpoint" baseline for this
+	 * session. Called whenever the user actively interacts with the session
+	 * — sending a message, or answering a permission / plan / ask-user
+	 * prompt — so the chip's red stale state dismisses naturally on any
+	 * forward motion, not just messages.
+	 *
+	 * Fire-and-forget: the git shell-out is decoupled from the caller's
+	 * critical path. Worst case the chip's red→normal flip lags by one tick.
+	 * Best-effort: any failure here is swallowed (chip just won't update).
+	 *
+	 * Also refreshes `session.branch` so the displayed name keeps up without
+	 * waiting for the next session open.
+	 */
+	snapshotBranchCheckpoint(sessionId: string): void {
+		const entry = this.sessions.get(sessionId);
+		const cwd = entry?.session.cwd ?? sessionStore.getSession(sessionId)?.cwd;
+		if (!cwd) return;
+		void (async () => {
+			try {
+				const branch = await getCurrentBranch(cwd);
+				if (entry) {
+					entry.session.branch = branch;
+					entry.session.lastUserMessageBranch = branch;
+				}
+				this.send("session:patch", {
+					sessionId,
+					branch,
+					lastUserMessageBranch: branch,
+				});
+				await sessionStore.updateSession(sessionId, {
+					branch,
+					lastUserMessageBranch: branch,
+				});
+			} catch (err) {
+				console.error("[ccw] snapshotBranchCheckpoint failed:", err);
+			}
+		})();
 	}
 
 	finish(sessionId: string) {
 		this.sessions.get(sessionId)?.finish();
+	}
+
+	/**
+	 * Re-read the current git branch for a session's cwd and, if it differs
+	 * from the persisted value, update + broadcast it. Used when the user
+	 * opens / switches to a session so the chip reflects whatever `git
+	 * switch`es happened while the session was off-screen.
+	 *
+	 * Works whether or not the session is currently running — falls back to
+	 * the persisted record so stopped sessions still get their chip refreshed.
+	 * Best-effort: any failure here is swallowed (chip just won't refresh).
+	 */
+	async refreshBranch(sessionId: string): Promise<void> {
+		const entry = this.sessions.get(sessionId);
+		const cwd = entry?.session.cwd ?? sessionStore.getSession(sessionId)?.cwd;
+		if (!cwd) return;
+		const previous =
+			entry?.session.branch ?? sessionStore.getSession(sessionId)?.branch;
+		const branch = await getCurrentBranch(cwd);
+		if (branch === previous) return;
+		if (entry) entry.session.branch = branch;
+		await sessionStore.updateSession(sessionId, { branch });
+		this.send("session:patch", { sessionId, branch });
+	}
+
+	/**
+	 * Run `git switch <branch>` in the session's cwd, then refresh + broadcast
+	 * the new branch so the chip clears its red state. Throws on git failure
+	 * (branch missing, uncommitted changes, etc.) so the renderer can show
+	 * the error inline next to the Switch button.
+	 *
+	 * Deliberately does NOT update `lastUserMessageBranch`: a branch switch
+	 * is a working-tree move, not a "user checkpoint." If the user switches
+	 * to a third branch (neither current nor baseline), the chip stays red
+	 * with the new "Previously working on" hint still pointing at the
+	 * original baseline — which is the correct behavior.
+	 */
+	async switchBranchInSession(
+		sessionId: string,
+		branch: string,
+	): Promise<void> {
+		const entry = this.sessions.get(sessionId);
+		const cwd = entry?.session.cwd ?? sessionStore.getSession(sessionId)?.cwd;
+		if (!cwd) throw new Error(`No session ${sessionId}`);
+		await switchBranch(cwd, branch);
+		await this.refreshBranch(sessionId);
 	}
 
 	/**

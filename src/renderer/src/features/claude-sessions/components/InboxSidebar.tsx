@@ -1,9 +1,18 @@
 import { Link } from "react-router-dom";
+import type {
+	ClaudeSessionFull,
+	PermissionRequest,
+} from "@shared/claude-sessions/types";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
+import { useMinimizedPermissionsStore } from "../stores/useMinimizedPermissionsStore";
 import { PermissionCard } from "./PermissionCard";
 import { T } from "../../../design/tokens";
-import { BranchChip, Eyebrow } from "../../../design/Atoms";
+import {
+	BranchChipWithDelta,
+	Eyebrow,
+	MinimizeToggle,
+} from "../../../design/Atoms";
 
 export function InboxSidebar({ onClose }: { onClose: () => void }) {
 	const queue = usePermissionsStore((s) => s.queue);
@@ -26,7 +35,6 @@ export function InboxSidebar({ onClose }: { onClose: () => void }) {
 				style={{
 					flexShrink: 0,
 					padding: "20px 20px 16px",
-					borderBottom: `0.5px solid ${T.border}`,
 					display: "flex",
 					alignItems: "flex-start",
 					justifyContent: "space-between",
@@ -89,94 +97,117 @@ export function InboxSidebar({ onClose }: { onClose: () => void }) {
 					padding: "16px 16px 24px",
 				}}
 			>
-				{ordered.length === 0 ? (
-					<div
-						style={{
-							marginTop: 16,
-							fontSize: 12.5,
-							color: T.textFaint,
-							textAlign: "center",
-							padding: "0 8px",
-						}}
-					>
-						All caught up. Other sessions will queue here when they need you.
-					</div>
-				) : (
+				{ordered.length > 0 && (
 					<div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-						{ordered.map((req) => {
-							const sess = sessions[req.sessionId];
-							return (
-								<div
-									key={req.requestId}
-									style={{
-										borderRadius: 12,
-										background: T.surface,
-										border: `0.5px solid ${T.border}`,
-										boxShadow: `0 0 0 3px ${T.accentSoft}, 0 6px 20px rgba(0,0,0,0.25)`,
-										overflow: "hidden",
-									}}
-								>
-									<div
-										style={{
-											padding: "10px 14px",
-											borderBottom: `0.5px solid ${T.border}`,
-											display: "flex",
-											alignItems: "center",
-											gap: 8,
-											flexWrap: "wrap",
-										}}
-									>
-										<div style={{ fontSize: 12, color: T.textDim }}>From</div>
-										<Link
-											to={`/sessions/${req.sessionId}`}
-											style={{
-												fontSize: 12.5,
-												color: T.info,
-												fontWeight: 500,
-												textDecoration: "none",
-												display: "inline-flex",
-												alignItems: "center",
-												gap: 6,
-												minWidth: 0,
-												overflow: "hidden",
-												textOverflow: "ellipsis",
-												whiteSpace: "nowrap",
-											}}
-										>
-											{sess?.title ?? req.sessionId.slice(0, 8)}
-											<svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-												<path
-													d="M3 2h5v5M3 7l5-5"
-													stroke="currentColor"
-													strokeWidth="1.4"
-													strokeLinecap="round"
-												/>
-											</svg>
-										</Link>
-										<div style={{ flex: 1 }} />
-										{sess?.branch ? <BranchChip name={sess.branch} /> : null}
-										<span
-											style={{
-												fontSize: 11.5,
-												color: T.textFaint,
-												fontFamily: T.mono,
-											}}
-										>
-											{new Date(req.createdAt).toLocaleTimeString([], {
-												hour: "2-digit",
-												minute: "2-digit",
-											})}
-										</span>
-									</div>
-									<div style={{ padding: 14 }}>
-										<PermissionCard req={req} />
-									</div>
-								</div>
-							);
-						})}
+						{ordered.map((req) => (
+							<InboxCard
+								key={req.requestId}
+								req={req}
+								session={sessions[req.sessionId]}
+							/>
+						))}
 					</div>
 				)}
 			</div>
 		</aside>
+	);
+}
+
+function InboxCard({
+	req,
+	session,
+}: {
+	req: PermissionRequest;
+	session: ClaudeSessionFull | undefined;
+}) {
+	// Keyed on requestId (not sessionId): each inbox entry is one specific
+	// request, so the user's "hide this card" choice should ride with that
+	// request, not the whole session. Reuses the same persistent store as the
+	// sessions-list row toggle; keys never collide (sessionId vs requestId are
+	// distinct ULIDs) and stale entries are cheap.
+	const minimized = useMinimizedPermissionsStore(
+		(s) => s.minimized[req.requestId] ?? false,
+	);
+	const setMinimized = useMinimizedPermissionsStore((s) => s.setMinimized);
+
+	return (
+		<div
+			style={{
+				borderRadius: 12,
+				background: T.surface,
+				border: `0.5px solid ${T.border}`,
+				boxShadow: `0 0 0 3px ${T.accentSoft}, 0 6px 20px rgba(0,0,0,0.25)`,
+				overflow: "hidden",
+			}}
+		>
+			<div
+				style={{
+					padding: "10px 14px",
+					// Drop the bottom border when collapsed — otherwise it floats
+					// without a body below it and looks like a stray line.
+					borderBottom: minimized ? "none" : `0.5px solid ${T.border}`,
+					display: "flex",
+					alignItems: "center",
+					gap: 8,
+					flexWrap: "wrap",
+				}}
+			>
+				<div style={{ fontSize: 12, color: T.textDim }}>From</div>
+				<Link
+					to={`/sessions/${req.sessionId}`}
+					style={{
+						fontSize: 12.5,
+						color: T.info,
+						fontWeight: 500,
+						textDecoration: "none",
+						display: "inline-flex",
+						alignItems: "center",
+						gap: 6,
+						minWidth: 0,
+						overflow: "hidden",
+						textOverflow: "ellipsis",
+						whiteSpace: "nowrap",
+					}}
+				>
+					{session?.title ?? req.sessionId.slice(0, 8)}
+					<svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+						<path
+							d="M3 2h5v5M3 7l5-5"
+							stroke="currentColor"
+							strokeWidth="1.4"
+							strokeLinecap="round"
+						/>
+					</svg>
+				</Link>
+				<div style={{ flex: 1 }} />
+				<BranchChipWithDelta
+					branch={session?.branch}
+					lastUserMessageBranch={session?.lastUserMessageBranch}
+					showCurrentHint={false}
+				/>
+				<span
+					style={{
+						fontSize: 11.5,
+						color: T.textFaint,
+						fontFamily: T.mono,
+					}}
+				>
+					{new Date(req.createdAt).toLocaleTimeString([], {
+						hour: "2-digit",
+						minute: "2-digit",
+					})}
+				</span>
+				<MinimizeToggle
+					minimized={minimized}
+					onToggle={() => setMinimized(req.requestId, !minimized)}
+					count={1}
+				/>
+			</div>
+			{minimized ? null : (
+				<div style={{ padding: 14 }}>
+					<PermissionCard req={req} />
+				</div>
+			)}
+		</div>
 	);
 }

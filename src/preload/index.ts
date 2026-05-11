@@ -22,6 +22,10 @@ const claude = {
 		ipcRenderer.invoke("session:interrupt", sessionId),
 	resumeSession: (sessionId: string) =>
 		ipcRenderer.invoke("session:resume", sessionId),
+	refreshBranch: (sessionId: string) =>
+		ipcRenderer.invoke("session:refreshBranch", sessionId),
+	switchBranch: (sessionId: string, branch: string) =>
+		ipcRenderer.invoke("session:switchBranch", { sessionId, branch }),
 	forkSession: (sessionId: string, messageId: string) =>
 		ipcRenderer.invoke("session:fork", { sessionId, messageId }),
 	setSessionMode: (sessionId: string, mode: SessionMode) =>
@@ -40,7 +44,14 @@ const claude = {
 	listReadState: () => ipcRenderer.invoke("read:list"),
 	markRead: (sessionId: string, ts?: number) =>
 		ipcRenderer.invoke("read:mark", { sessionId, ts }),
+	listMinimized: () => ipcRenderer.invoke("minimized:list"),
+	setMinimized: (sessionId: string, value: boolean) =>
+		ipcRenderer.invoke("minimized:set", { sessionId, value }),
+	getSettings: () => ipcRenderer.invoke("settings:get"),
+	setLastUsedWorkspace: (cwd: string) =>
+		ipcRenderer.invoke("settings:setLastUsedWorkspace", { cwd }),
 	listPermissions: () => ipcRenderer.invoke("permissions:list"),
+	getAppInfo: () => ipcRenderer.invoke("appInfo:get"),
 	on: (channel: string, fn: (payload: unknown) => void) => {
 		const listener = (_e: IpcRendererEvent, payload: unknown) => fn(payload);
 		ipcRenderer.on(channel, listener);

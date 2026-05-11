@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { SessionMessage } from "@shared/claude-sessions/types";
 import { MarkdownText } from "./MarkdownText";
 import { T } from "../../../design/tokens";
@@ -26,7 +26,13 @@ interface ContentBlock {
 	[k: string]: unknown;
 }
 
-export function MessageView({
+// Messages are immutable in the Zustand store (only appended, never mutated),
+// so React.memo with default shallow comparison safely short-circuits
+// re-renders of already-rendered messages. This is what prevents the message
+// list from re-running ReactMarkdown + rehype-highlight on every parent
+// re-render. For memo to actually short-circuit, the parent must pass a
+// stable `onFork` reference (via useCallback).
+export const MessageView = memo(function MessageView({
 	m,
 	onFork,
 	forkPending,
@@ -50,7 +56,7 @@ export function MessageView({
 	if (m.role === "system") return null;
 	if (m.role === "result") return null;
 	return null;
-}
+});
 
 function AssistantMessage({
 	sdk,

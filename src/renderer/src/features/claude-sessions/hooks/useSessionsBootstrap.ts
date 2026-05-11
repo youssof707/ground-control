@@ -8,6 +8,8 @@ import type {
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useReadStore } from "../stores/useReadStore";
+import { useMinimizedPermissionsStore } from "../stores/useMinimizedPermissionsStore";
+import { useSettingsStore } from "../stores/useSettingsStore";
 
 export function useSessionsBootstrap() {
 	const upsertSession = useSessionsStore((s) => s.upsertSession);
@@ -29,7 +31,13 @@ export function useSessionsBootstrap() {
 		// (e.g. user did something locally + a `state:changed` ping arrived),
 		// drop any response whose seq isn't the latest. Prevents an older
 		// response from clobbering a newer one and causing UI flicker-back.
-		const seq = { sessions: 0, read: 0, permissions: 0 };
+		const seq = {
+			sessions: 0,
+			read: 0,
+			minimized: 0,
+			permissions: 0,
+			settings: 0,
+		};
 
 		async function refetchSessions(): Promise<void> {
 			const my = ++seq.sessions;
@@ -45,6 +53,13 @@ export function useSessionsBootstrap() {
 			useReadStore.getState().hydrate(lastReadAt);
 		}
 
+		async function refetchMinimized(): Promise<void> {
+			const my = ++seq.minimized;
+			const { minimized } = await window.claude.listMinimized();
+			if (my !== seq.minimized) return;
+			useMinimizedPermissionsStore.getState().hydrate(minimized);
+		}
+
 		async function refetchPermissions(): Promise<void> {
 			const my = ++seq.permissions;
 			const queue = await window.claude.listPermissions();
@@ -52,10 +67,19 @@ export function useSessionsBootstrap() {
 			for (const req of queue) enqueuePermission(req);
 		}
 
+		async function refetchSettings(): Promise<void> {
+			const my = ++seq.settings;
+			const settings = await window.claude.getSettings();
+			if (my !== seq.settings) return;
+			useSettingsStore.getState().hydrate(settings);
+		}
+
 		function refetchAll(): void {
 			void refetchSessions();
 			void refetchReadState();
+			void refetchMinimized();
 			void refetchPermissions();
+			void refetchSettings();
 		}
 
 		// CRITICAL ORDERING: register the per-event listeners FIRST so that

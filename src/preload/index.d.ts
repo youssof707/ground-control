@@ -8,6 +8,8 @@ import type {
 	UserTurn,
 } from "../shared/schemas/claude_session";
 import type { ReadStateFile } from "../shared/schemas/read_state";
+import type { MinimizedStateFile } from "../shared/schemas/minimized_state";
+import type { AppSettingsFile } from "../shared/schemas/app_settings";
 
 declare global {
 	interface Window {
@@ -18,6 +20,8 @@ declare global {
 			finishSession: (sessionId: string) => Promise<void>;
 			interruptSession: (sessionId: string) => Promise<void>;
 			resumeSession: (sessionId: string) => Promise<void>;
+			refreshBranch: (sessionId: string) => Promise<void>;
+			switchBranch: (sessionId: string, branch: string) => Promise<void>;
 			forkSession: (
 				sessionId: string,
 				messageId: string,
@@ -34,7 +38,15 @@ declare global {
 			setUnreadCount: (count: number) => void;
 			listReadState: () => Promise<ReadStateFile>;
 			markRead: (sessionId: string, ts?: number) => Promise<void>;
+			listMinimized: () => Promise<MinimizedStateFile>;
+			setMinimized: (sessionId: string, value: boolean) => Promise<void>;
+			getSettings: () => Promise<AppSettingsFile>;
+			setLastUsedWorkspace: (cwd: string) => Promise<void>;
 			listPermissions: () => Promise<PermissionRequest[]>;
+			getAppInfo: () => Promise<{
+				env: "dev" | "prod";
+				storeFolder: string;
+			}>;
 			on: (channel: string, fn: (payload: unknown) => void) => () => void;
 		};
 	}

@@ -10,6 +10,13 @@ import {
 	deleteSession,
 } from "./core/store/claude_session";
 import { initialize as initializeReadStore } from "./core/store/read_state";
+import { initialize as initializeMinimizedStore } from "./core/store/minimized_state";
+import {
+	initialize as initializeAppSettingsStore,
+	get as getAppSettings,
+	setLastUsedWorkspace,
+} from "./core/store/app_settings";
+import { resolveDataDir } from "./core/store/data_dir";
 import { registerSessionsHandlers } from "./ipc/sessionsHandlers";
 import type { SessionManager } from "./sessions/SessionManager";
 import * as windows from "./windows";
@@ -95,10 +102,13 @@ app.whenReady().then(async () => {
 
 	Menu.setApplicationMenu(buildMenu());
 
-	const dataDir = join(app.getPath("userData"), "data");
+	const dataDir = resolveDataDir();
+	console.log(`[ccw] store dataDir: ${dataDir} (dev=${is.dev})`);
 	try {
 		await initializeClaudeSessionStore(dataDir);
 		await initializeReadStore(dataDir);
+		await initializeMinimizedStore(dataDir);
+		await initializeAppSettingsStore(dataDir);
 	} catch (err) {
 		console.error(`[ccw] failed to initialize store at ${dataDir}:`, err);
 		app.exit(1);
@@ -108,6 +118,23 @@ app.whenReady().then(async () => {
 	for (const s of listSessions()) {
 		if (s.messages.length === 0) {
 			await deleteSession(s.id);
+		}
+	}
+
+	// One-time backfill: if a user is upgrading from a build that didn't have
+	// app_settings, seed `lastUsedWorkspace` from the most recent session's cwd
+	// so the New Session button keeps working without forcing a folder pick.
+	if (!getAppSettings().lastUsedWorkspace) {
+		const sessions = listSessions();
+		const mostRecent = sessions
+			.filter((s) => !!s.cwd)
+			.sort((a, b) => b.createdAt - a.createdAt)[0];
+		if (mostRecent?.cwd) {
+			try {
+				await setLastUsedWorkspace(mostRecent.cwd);
+			} catch (err) {
+				console.error("[ccw] failed to backfill lastUsedWorkspace:", err);
+			}
 		}
 	}
 

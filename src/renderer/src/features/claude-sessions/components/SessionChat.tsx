@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
@@ -8,7 +8,7 @@ import { PermissionCard } from "./PermissionCard";
 import { ImagePasteTextarea } from "./ImagePasteTextarea";
 import { MessageView } from "./MessageView";
 import { T } from "../../../design/tokens";
-import { BranchChip, StatusPill } from "../../../design/Atoms";
+import { BranchChipWithDelta, StatusPill } from "../../../design/Atoms";
 
 export function SessionChat({ sessionId }: { sessionId: string }) {
 	const navigate = useNavigate();
@@ -80,13 +80,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	const messageCount = session?.messages.length ?? 0;
 	const pendingCount = pending.length;
 
-	const [, setTick] = useState(0);
-	useEffect(() => {
-		if (!isOpen) return;
-		const id = setInterval(() => setTick((t) => t + 1), 1000);
-		return () => clearInterval(id);
-	}, [isOpen]);
-
 	useEffect(() => {
 		const el = scrollRef.current;
 		if (!el || !stickToBottom.current) return;
@@ -96,6 +89,13 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	useEffect(() => {
 		useReadStore.getState().markRead(sessionId);
 	}, [sessionId, messageCount, pendingCount]);
+
+	// Re-read the live git branch whenever the user opens / switches into a
+	// session. If it changed since the user's last message, the chip flips
+	// red (computed downstream from session.branch vs lastUserMessageBranch).
+	useEffect(() => {
+		void window.claude.refreshBranch(sessionId);
+	}, [sessionId]);
 
 	const onScroll = () => {
 		const el = scrollRef.current;
@@ -154,19 +154,25 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 		}
 	};
 
-	const fork = async (messageId: string) => {
-		if (forkingId) return;
-		setForkingId(messageId);
-		setForkError(null);
-		try {
-			const next = await window.claude.forkSession(sessionId, messageId);
-			navigate(`/sessions/${next.id}`);
-		} catch (err) {
-			setForkError(err instanceof Error ? err.message : String(err));
-		} finally {
-			setForkingId(null);
-		}
-	};
+	// useCallback so MessageView's React.memo can short-circuit re-renders.
+	// forkingId is in deps because we early-return when a fork is in flight;
+	// during the brief fork window the identity changes once, which is fine.
+	const fork = useCallback(
+		async (messageId: string) => {
+			if (forkingId) return;
+			setForkingId(messageId);
+			setForkError(null);
+			try {
+				const next = await window.claude.forkSession(sessionId, messageId);
+				navigate(`/sessions/${next.id}`);
+			} catch (err) {
+				setForkError(err instanceof Error ? err.message : String(err));
+			} finally {
+				setForkingId(null);
+			}
+		},
+		[forkingId, sessionId, navigate],
+	);
 
 	const requestDelete = () => {
 		setDeleteError(null);
@@ -478,7 +484,11 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 						{session.id.slice(0, 8)}
 					</span>
 					<StatusPill status={effectiveStatus} />
-					{session.branch ? <BranchChip name={session.branch} /> : null}
+					<BranchChipWithDelta
+						branch={session.branch}
+						lastUserMessageBranch={session.lastUserMessageBranch}
+						sessionId={sessionId}
+					/>
 					{isOpen ? (
 						<ActivityChip session={session} hasPending={pending.length > 0} />
 					) : null}
@@ -602,6 +612,15 @@ function ActivityChip({
 	session: { messages: { ts: number }[]; createdAt: number; status: string };
 	hasPending: boolean;
 }) {
+	// Self-contained per-second tick so only this chip re-renders, not the
+	// whole SessionChat tree (which would re-run react-markdown +
+	// rehype-highlight for every message every second).
+	const [, setTick] = useState(0);
+	useEffect(() => {
+		const id = setInterval(() => setTick((t) => t + 1), 1000);
+		return () => clearInterval(id);
+	}, []);
+
 	if (hasPending) return null;
 	if (session.status === "idle") return null;
 
