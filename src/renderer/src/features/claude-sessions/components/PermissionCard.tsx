@@ -6,17 +6,34 @@ import { PlanApprovalCard } from "./PlanApprovalCard";
 import { ToolPreview } from "./ToolPreview";
 import { T } from "../../../design/tokens";
 
-export function PermissionCard({ req }: { req: PermissionRequest }) {
+export function PermissionCard({
+	req,
+	naked = false,
+}: {
+	req: PermissionRequest;
+	/**
+	 * When true, drop each variant's outer accent border / ring. Used when the
+	 * card is already inside a chrome-providing container (e.g. InboxSidebar),
+	 * where the extra border reads as a distracting double frame.
+	 */
+	naked?: boolean;
+}) {
 	if (req.toolName === "ExitPlanMode") {
-		return <PlanApprovalCard req={req} />;
+		return <PlanApprovalCard req={req} naked={naked} />;
 	}
 	if (req.toolName === "AskUserQuestion") {
-		return <AskUserQuestionCard req={req} />;
+		return <AskUserQuestionCard req={req} naked={naked} />;
 	}
-	return <DefaultPermissionCard req={req} />;
+	return <DefaultPermissionCard req={req} naked={naked} />;
 }
 
-function DefaultPermissionCard({ req }: { req: PermissionRequest }) {
+function DefaultPermissionCard({
+	req,
+	naked,
+}: {
+	req: PermissionRequest;
+	naked: boolean;
+}) {
 	const remove = usePermissionsStore((s) => s.remove);
 	const [showDenyReason, setShowDenyReason] = useState(false);
 	const [denyReason, setDenyReason] = useState("");
@@ -50,7 +67,7 @@ function DefaultPermissionCard({ req }: { req: PermissionRequest }) {
 			style={{
 				borderRadius: 10,
 				background: T.surface,
-				border: `0.5px solid ${T.accentBorder}`,
+				border: naked ? "none" : `0.5px solid ${T.accentBorder}`,
 				overflow: "hidden",
 			}}
 		>

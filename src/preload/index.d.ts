@@ -42,6 +42,7 @@ declare global {
 			setMinimized: (sessionId: string, value: boolean) => Promise<void>;
 			getSettings: () => Promise<AppSettingsFile>;
 			setLastUsedWorkspace: (cwd: string) => Promise<void>;
+			setSessionsSidebarWidth: (width: number) => Promise<void>;
 			listPermissions: () => Promise<PermissionRequest[]>;
 			getAppInfo: () => Promise<{
 				env: "dev" | "prod";

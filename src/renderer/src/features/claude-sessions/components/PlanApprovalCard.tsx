@@ -16,7 +16,13 @@ interface AllowedPrompt {
 //     explicit; the broker also enforces this defensively),
 //   - and uses prominent, distinct CTAs so the user can't mistake it for an
 //     ordinary tool-permission card.
-export function PlanApprovalCard({ req }: { req: PermissionRequest }) {
+export function PlanApprovalCard({
+	req,
+	naked = false,
+}: {
+	req: PermissionRequest;
+	naked?: boolean;
+}) {
 	const remove = usePermissionsStore((s) => s.remove);
 	const [showDenyReason, setShowDenyReason] = useState(false);
 	const [denyReason, setDenyReason] = useState("");
@@ -58,9 +64,10 @@ export function PlanApprovalCard({ req }: { req: PermissionRequest }) {
 				background: T.surface,
 				// Thicker, brighter border so this card visually outranks a
 				// normal permission card. It's the most important UI in the
-				// transcript at this moment.
-				border: `1.5px solid ${T.accent}`,
-				boxShadow: `0 0 0 3px ${T.accentSoft}`,
+				// transcript at this moment. Suppressed in `naked` mode (e.g.
+				// inside the InboxSidebar, which already provides chrome).
+				border: naked ? "none" : `1.5px solid ${T.accent}`,
+				boxShadow: naked ? undefined : `0 0 0 3px ${T.accentSoft}`,
 				overflow: "hidden",
 			}}
 		>

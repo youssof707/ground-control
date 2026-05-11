@@ -14,14 +14,20 @@ import type { AppSettingsFile } from "@shared/schemas/app_settings";
  */
 interface State {
 	lastUsedWorkspace?: string;
+	sessionsSidebarWidth?: number;
 	hydrate: (settings: AppSettingsFile) => void;
 	setLastUsedWorkspace: (cwd: string) => void;
+	setSessionsSidebarWidth: (width: number) => void;
 }
 
 export const useSettingsStore = create<State>((set, get) => ({
 	lastUsedWorkspace: undefined,
+	sessionsSidebarWidth: undefined,
 	hydrate: (settings) =>
-		set({ lastUsedWorkspace: settings.lastUsedWorkspace }),
+		set({
+			lastUsedWorkspace: settings.lastUsedWorkspace,
+			sessionsSidebarWidth: settings.sessionsSidebarWidth,
+		}),
 	setLastUsedWorkspace: (cwd) => {
 		// No-op if unchanged — avoids unnecessary IPC churn when starting
 		// repeated sessions in the same workspace.
@@ -30,5 +36,13 @@ export const useSettingsStore = create<State>((set, get) => ({
 		// to every other window (skip-self) which triggers their refetch.
 		void window.claude?.setLastUsedWorkspace(cwd);
 		set({ lastUsedWorkspace: cwd });
+	},
+	setSessionsSidebarWidth: (width) => {
+		// Same pattern as setLastUsedWorkspace: no-op if unchanged, optimistic
+		// local update, fire-and-forget IPC. Called from the resize-divider
+		// drop handler so it fires once per drag, not per pointer move.
+		if (get().sessionsSidebarWidth === width) return;
+		void window.claude?.setSessionsSidebarWidth(width);
+		set({ sessionsSidebarWidth: width });
 	},
 }));

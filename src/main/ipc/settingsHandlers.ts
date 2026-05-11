@@ -13,4 +13,11 @@ export function registerSettingsHandlers(): void {
 			broadcast("state:changed", undefined, e.sender.id);
 		},
 	);
+	ipcMain.handle(
+		"settings:setSessionsSidebarWidth",
+		async (e, payload: { width: number }) => {
+			await appSettings.setSessionsSidebarWidth(payload.width);
+			broadcast("state:changed", undefined, e.sender.id);
+		},
+	);
 }

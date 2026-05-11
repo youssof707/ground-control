@@ -3,7 +3,6 @@ import { Link, useNavigate } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useReadStore } from "../stores/useReadStore";
-import { ConfirmModal } from "../../../components/ConfirmModal";
 import { PermissionCard } from "./PermissionCard";
 import { ImagePasteTextarea } from "./ImagePasteTextarea";
 import { MessageView } from "./MessageView";
@@ -41,9 +40,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	const [editingTitle, setEditingTitle] = useState(false);
 	const [titleDraft, setTitleDraft] = useState("");
 	const titleInputRef = useRef<HTMLInputElement>(null);
-	const [pendingDelete, setPendingDelete] = useState(false);
-	const [deleting, setDeleting] = useState(false);
-	const [deleteError, setDeleteError] = useState<string | null>(null);
 	const [inputHeight, setInputHeight] = useState(44);
 	const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
 
@@ -174,33 +170,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 		[forkingId, sessionId, navigate],
 	);
 
-	const requestDelete = () => {
-		setDeleteError(null);
-		setPendingDelete(true);
-	};
-
-	const confirmDelete = async () => {
-		if (deleting) return;
-		setDeleting(true);
-		setDeleteError(null);
-		try {
-			await window.claude.deleteSession(sessionId);
-			removeSession(sessionId);
-			setPendingDelete(false);
-			navigate("/");
-		} catch (err) {
-			setDeleteError(err instanceof Error ? err.message : String(err));
-		} finally {
-			setDeleting(false);
-		}
-	};
-
-	const cancelDelete = () => {
-		if (deleting) return;
-		setPendingDelete(false);
-		setDeleteError(null);
-	};
-
 	// Clicking the "Sessions" breadcrumb (back). If this session has never
 	// received a message, treat it as discarded scratch space and delete it
 	// on the way out rather than leaving an empty husk in the list.
@@ -267,6 +236,8 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					<Link
 						to="/"
 						onClick={handleLeave}
+						aria-label="Back to sessions"
+						title="Back to sessions"
 						style={{
 							display: "inline-flex",
 							alignItems: "center",
@@ -274,9 +245,8 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 							fontSize: 12.5,
 							color: T.textDim,
 							textDecoration: "none",
-							padding: "5px 9px",
+							padding: "5px 4px",
 							borderRadius: 7,
-							border: `0.5px solid ${T.border}`,
 							flexShrink: 0,
 						}}
 					>
@@ -289,7 +259,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 								strokeLinejoin="round"
 							/>
 						</svg>
-						Sessions
 						{hasAnyUnread ? (
 							<span
 								title="Unread sessions"
@@ -416,7 +385,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 								flex: 1,
 							}}
 						>
-							{session.cwd}
+							{session.cwd.replace(/[\/\\]+$/, "").split(/[\/\\]/).pop() || session.cwd}
 						</span>
 					) : (
 						<div style={{ flex: 1 }} />
@@ -442,14 +411,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 							{resuming ? "Resuming…" : "Resume"}
 						</button>
 					) : null}
-					<button
-						className="btn btn-destructive"
-						onClick={requestDelete}
-						disabled={deleting}
-						title="Delete this session from the app."
-					>
-						{deleting ? "Deleting…" : "Delete session"}
-					</button>
 					{session.diff ? (
 						<Link to={`/sessions/${sessionId}/diff`} className="btn">
 							<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -465,7 +426,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					) : null}
 				</div>
 
-				{/* Row 2: id + status chips */}
+				{/* Row 2: status chips */}
 				<div
 					style={{
 						display: "flex",
@@ -474,15 +435,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 						flexWrap: "wrap",
 					}}
 				>
-					<span
-						style={{
-							fontFamily: T.mono,
-							fontSize: 11.5,
-							color: T.textFaint,
-						}}
-					>
-						{session.id.slice(0, 8)}
-					</span>
 					<StatusPill status={effectiveStatus} />
 					<BranchChipWithDelta
 						branch={session.branch}
@@ -583,24 +535,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					textareaHeight={inputHeight}
 				/>
 			) : null}
-
-			<ConfirmModal
-				open={pendingDelete}
-				title="Delete session?"
-				message={
-					<>
-						Remove <strong>{session.title}</strong> from this app. Claude Code's
-						own session history (in <code>~/.claude</code>) is not affected.
-					</>
-				}
-				confirmLabel="Delete"
-				cancelLabel="Cancel"
-				destructive
-				busy={deleting}
-				error={deleteError}
-				onConfirm={confirmDelete}
-				onCancel={cancelDelete}
-			/>
 		</div>
 	);
 }

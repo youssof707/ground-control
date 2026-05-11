@@ -136,7 +136,6 @@ function InboxCard({
 				borderRadius: 12,
 				background: T.surface,
 				border: `0.5px solid ${T.border}`,
-				boxShadow: `0 0 0 3px ${T.accentSoft}, 0 6px 20px rgba(0,0,0,0.25)`,
 				overflow: "hidden",
 			}}
 		>
@@ -205,7 +204,7 @@ function InboxCard({
 			</div>
 			{minimized ? null : (
 				<div style={{ padding: 14 }}>
-					<PermissionCard req={req} />
+					<PermissionCard req={req} naked />
 				</div>
 			)}
 		</div>

@@ -7,5 +7,6 @@ import { z } from "zod";
  */
 export const AppSettingsFileSchema = z.object({
 	lastUsedWorkspace: z.string().optional(),
+	sessionsSidebarWidth: z.number().int().min(200).max(800).optional(),
 });
 export type AppSettingsFile = z.infer<typeof AppSettingsFileSchema>;

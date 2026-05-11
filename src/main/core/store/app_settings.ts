@@ -63,3 +63,12 @@ export async function setLastUsedWorkspace(cwd: string): Promise<void> {
 		await persist();
 	});
 }
+
+export async function setSessionsSidebarWidth(width: number): Promise<void> {
+	assertInitialized();
+	return enqueue(async () => {
+		if (db.sessionsSidebarWidth === width) return;
+		db = { ...db, sessionsSidebarWidth: width };
+		await persist();
+	});
+}

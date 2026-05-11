@@ -50,6 +50,8 @@ const claude = {
 	getSettings: () => ipcRenderer.invoke("settings:get"),
 	setLastUsedWorkspace: (cwd: string) =>
 		ipcRenderer.invoke("settings:setLastUsedWorkspace", { cwd }),
+	setSessionsSidebarWidth: (width: number) =>
+		ipcRenderer.invoke("settings:setSessionsSidebarWidth", { width }),
 	listPermissions: () => ipcRenderer.invoke("permissions:list"),
 	getAppInfo: () => ipcRenderer.invoke("appInfo:get"),
 	on: (channel: string, fn: (payload: unknown) => void) => {

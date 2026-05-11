@@ -20,7 +20,13 @@ interface AskUserQuestionInput {
 	questions: QuestionDef[];
 }
 
-export function AskUserQuestionCard({ req }: { req: PermissionRequest }) {
+export function AskUserQuestionCard({
+	req,
+	naked = false,
+}: {
+	req: PermissionRequest;
+	naked?: boolean;
+}) {
 	const remove = usePermissionsStore((s) => s.remove);
 	const input = req.input as unknown as AskUserQuestionInput;
 	const questions = input.questions ?? [];
@@ -96,7 +102,7 @@ export function AskUserQuestionCard({ req }: { req: PermissionRequest }) {
 			style={{
 				borderRadius: 10,
 				background: T.surface,
-				border: `0.5px solid ${T.accentBorder}`,
+				border: naked ? "none" : `0.5px solid ${T.accentBorder}`,
 				overflow: "hidden",
 			}}
 		>
