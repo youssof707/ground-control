@@ -15,18 +15,22 @@ import type { AppSettingsFile } from "@shared/schemas/app_settings";
 interface State {
 	lastUsedWorkspace?: string;
 	sessionsSidebarWidth?: number;
+	notesSidebarWidth?: number;
 	hydrate: (settings: AppSettingsFile) => void;
 	setLastUsedWorkspace: (cwd: string) => void;
 	setSessionsSidebarWidth: (width: number) => void;
+	setNotesSidebarWidth: (width: number) => void;
 }
 
 export const useSettingsStore = create<State>((set, get) => ({
 	lastUsedWorkspace: undefined,
 	sessionsSidebarWidth: undefined,
+	notesSidebarWidth: undefined,
 	hydrate: (settings) =>
 		set({
 			lastUsedWorkspace: settings.lastUsedWorkspace,
 			sessionsSidebarWidth: settings.sessionsSidebarWidth,
+			notesSidebarWidth: settings.notesSidebarWidth,
 		}),
 	setLastUsedWorkspace: (cwd) => {
 		// No-op if unchanged — avoids unnecessary IPC churn when starting
@@ -44,5 +48,10 @@ export const useSettingsStore = create<State>((set, get) => ({
 		if (get().sessionsSidebarWidth === width) return;
 		void window.claude?.setSessionsSidebarWidth(width);
 		set({ sessionsSidebarWidth: width });
+	},
+	setNotesSidebarWidth: (width) => {
+		if (get().notesSidebarWidth === width) return;
+		void window.claude?.setNotesSidebarWidth(width);
+		set({ notesSidebarWidth: width });
 	},
 }));

@@ -3,29 +3,19 @@ import { Link, useNavigate } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useReadStore } from "../stores/useReadStore";
-import { useMinimizedPermissionsStore } from "../stores/useMinimizedPermissionsStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
 import { ConfirmModal } from "../../../components/ConfirmModal";
 import { T } from "../../../design/tokens";
-import {
-	BranchChipWithDelta,
-	MinimizeToggle,
-	StatusPill,
-} from "../../../design/Atoms";
-import { PermissionCard } from "./PermissionCard";
+import { BranchChipWithDelta, StatusPill } from "../../../design/Atoms";
 import type {
 	ClaudeSessionFull,
 	PermissionRequest,
 	SessionMessage,
 } from "@shared/claude-sessions/types";
 
-const COLS = "1fr 200px 170px 32px";
-
 export function SessionsList({
-	variant = "full",
 	activeSessionId,
 }: {
-	variant?: "full" | "sidebar";
 	activeSessionId?: string;
 } = {}) {
 	const sessions = useSessionsStore((s) => s.sessions);
@@ -128,8 +118,8 @@ export function SessionsList({
 			usePermissionsStore.getState().removeBySessionId(pendingDeleteId);
 			setPendingDeleteId(null);
 			// If the deleted session was the one currently open in the right
-			// pane, drop back to the full-width list — otherwise SessionChat
-			// would render its "Session not found." state.
+			// pane, drop back to "/" so the right pane goes empty — otherwise
+			// SessionChat would render its "Session not found." state.
 			if (wasActive) navigate("/");
 		} catch (err) {
 			setDeleteError(err instanceof Error ? err.message : String(err));
@@ -169,154 +159,28 @@ export function SessionsList({
 		/>
 	);
 
-	if (variant === "sidebar") {
-		return (
+	return (
+		<div
+			style={{
+				display: "flex",
+				flexDirection: "column",
+				height: "100%",
+				minHeight: 0,
+			}}
+		>
+			{/* Compact header — drops the "Sessions" h1 + total Stat (the
+			    AppNav already shows global counts), uses a stacked layout
+			    instead of the wide page-header flexbox. */}
 			<div
 				style={{
+					padding: "12px 12px 10px",
+					borderBottom: `0.5px solid ${T.borderSoft}`,
 					display: "flex",
 					flexDirection: "column",
-					height: "100%",
-					minHeight: 0,
+					gap: 8,
 				}}
 			>
-				{/* Compact header — drops the "Sessions" h1 + total Stat (the
-				    AppNav already shows global counts), uses a stacked layout
-				    instead of the wide page-header flexbox. */}
-				<div
-					style={{
-						padding: "12px 12px 10px",
-						borderBottom: `0.5px solid ${T.borderSoft}`,
-						display: "flex",
-						flexDirection: "column",
-						gap: 8,
-					}}
-				>
-					<div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-						<button
-							className="btn btn-primary"
-							onClick={start}
-							title={
-								targetCwd
-									? `Start a session in ${targetCwd}`
-									: "Pick a folder and start a session there"
-							}
-							style={{ flex: 1, justifyContent: "center" }}
-						>
-							<svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-								<path
-									d="M7 3v8M3 7h8"
-									stroke="currentColor"
-									strokeWidth="1.6"
-									strokeLinecap="round"
-								/>
-							</svg>
-							New Session
-						</button>
-						<FolderButton onClick={startInPickedFolder} />
-					</div>
-					{workspaces.length > 0 ? (
-						<WorkspaceFilter
-							workspaces={workspaces}
-							value={workspaceFilter}
-							onChange={setWorkspaceFilter}
-							fullWidth
-						/>
-					) : null}
-				</div>
-
-				{startError ? (
-					<div
-						className="message message-error"
-						style={{ margin: 12, marginBottom: 0 }}
-					>
-						{startError}
-					</div>
-				) : null}
-
-				<div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-					{order.length === 0 ? (
-						<div className="message" style={{ margin: 12 }}>
-							No sessions yet. Click "New Session".
-						</div>
-					) : visibleOrder.length === 0 ? (
-						<div className="message" style={{ margin: 12 }}>
-							No sessions in{" "}
-							<code>
-								{workspaceFilter ? folderName(workspaceFilter) : ""}
-							</code>
-							.{" "}
-							<button
-								type="button"
-								onClick={() => setWorkspaceFilter(null)}
-								style={{
-									border: "none",
-									background: "transparent",
-									padding: 0,
-									color: T.accent,
-									cursor: "pointer",
-									font: "inherit",
-									textDecoration: "underline",
-								}}
-							>
-								Show all
-							</button>
-						</div>
-					) : (
-						<div>
-							{visibleOrder.map((id, i) => {
-								const s = sessions[id];
-								const sessionPending = queue.filter(
-									(q) => q.sessionId === id,
-								);
-								return (
-									<SessionRowSidebar
-										key={id}
-										session={s}
-										last={i === visibleOrder.length - 1}
-										pending={sessionPending}
-										active={id === activeSessionId}
-										onDelete={() => {
-											setPendingDeleteId(id);
-											setDeleteError(null);
-										}}
-									/>
-								);
-							})}
-						</div>
-					)}
-				</div>
-
-				{deleteModal}
-			</div>
-		);
-	}
-
-	return (
-		<div className="page">
-			{/* Header */}
-			<div className="page-header">
-				<div>
-					<h1 className="page-title">Sessions</h1>
-					<div
-						style={{
-							display: "flex",
-							gap: 14,
-							alignItems: "center",
-							fontSize: 13,
-							color: T.textDim,
-						}}
-					>
-						<Stat n={order.length} label="total" />
-					</div>
-				</div>
-				<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-					{workspaces.length > 0 ? (
-						<WorkspaceFilter
-							workspaces={workspaces}
-							value={workspaceFilter}
-							onChange={setWorkspaceFilter}
-						/>
-					) : null}
+				<div style={{ display: "flex", gap: 6, alignItems: "center" }}>
 					<button
 						className="btn btn-primary"
 						onClick={start}
@@ -325,6 +189,7 @@ export function SessionsList({
 								? `Start a session in ${targetCwd}`
 								: "Pick a folder and start a session there"
 						}
+						style={{ flex: 1, justifyContent: "center" }}
 					>
 						<svg width="13" height="13" viewBox="0 0 14 14" fill="none">
 							<path
@@ -335,283 +200,95 @@ export function SessionsList({
 							/>
 						</svg>
 						New Session
-						{targetCwd ? (
-							<span
-								style={{
-									fontFamily: T.mono,
-									fontSize: 11,
-									opacity: 0.55,
-									marginLeft: 2,
-								}}
-							>
-								· {folderName(targetCwd)}
-							</span>
-						) : null}
 					</button>
 					<FolderButton onClick={startInPickedFolder} />
 				</div>
+				{workspaces.length > 0 ? (
+					<WorkspaceFilter
+						workspaces={workspaces}
+						value={workspaceFilter}
+						onChange={setWorkspaceFilter}
+						fullWidth
+					/>
+				) : null}
 			</div>
 
 			{startError ? (
-				<div className="message message-error" style={{ marginBottom: 16 }}>
+				<div
+					className="message message-error"
+					style={{ margin: 12, marginBottom: 0 }}
+				>
 					{startError}
 				</div>
 			) : null}
 
-			{order.length === 0 ? (
-				<div className="message">No sessions yet. Click “New Session”.</div>
-			) : visibleOrder.length === 0 ? (
-				<div className="message">
-					No sessions in{" "}
-					<code>{workspaceFilter ? folderName(workspaceFilter) : ""}</code>.
-					Switch the filter to{" "}
-					<button
-						type="button"
-						onClick={() => setWorkspaceFilter(null)}
-						style={{
-							border: "none",
-							background: "transparent",
-							padding: 0,
-							color: T.accent,
-							cursor: "pointer",
-							font: "inherit",
-							textDecoration: "underline",
-						}}
-					>
-						All workspaces
-					</button>
-					.
-				</div>
-			) : (
-				<div
-					style={{
-						borderRadius: 12,
-						overflow: "hidden",
-						border: `0.5px solid ${T.border}`,
-						background: T.surface,
-					}}
-				>
-					<div
-						style={{
-							display: "grid",
-							gridTemplateColumns: COLS,
-							padding: "11px 18px",
-							borderBottom: `0.5px solid ${T.border}`,
-							fontSize: 11,
-							fontWeight: 600,
-							color: T.textMute,
-							letterSpacing: 1,
-							textTransform: "uppercase",
-						}}
-					>
-						<div>Session</div>
-						<div>Branch</div>
-						<div>Status</div>
-						<div />
+			<div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+				{order.length === 0 ? (
+					<div className="message" style={{ margin: 12 }}>
+						No sessions yet. Click "New Session".
 					</div>
-					{visibleOrder.map((id, i) => {
-						const s = sessions[id];
-						const sessionPending = queue.filter((q) => q.sessionId === id);
-						return (
-							<Row
-								key={id}
-								session={s}
-								last={i === visibleOrder.length - 1}
-								pending={sessionPending}
-								onDelete={() => {
-									setPendingDeleteId(id);
-									setDeleteError(null);
-								}}
-							/>
-						);
-					})}
-				</div>
-			)}
+				) : visibleOrder.length === 0 ? (
+					<div className="message" style={{ margin: 12 }}>
+						No sessions in{" "}
+						<code>
+							{workspaceFilter ? folderName(workspaceFilter) : ""}
+						</code>
+						.{" "}
+						<button
+							type="button"
+							onClick={() => setWorkspaceFilter(null)}
+							style={{
+								border: "none",
+								background: "transparent",
+								padding: 0,
+								color: T.accent,
+								cursor: "pointer",
+								font: "inherit",
+								textDecoration: "underline",
+							}}
+						>
+							Show all
+						</button>
+					</div>
+				) : (
+					<div>
+						{visibleOrder.map((id, i) => {
+							const s = sessions[id];
+							const sessionPending = queue.filter(
+								(q) => q.sessionId === id,
+							);
+							return (
+								<SessionRowSidebar
+									key={id}
+									session={s}
+									last={i === visibleOrder.length - 1}
+									pending={sessionPending}
+									active={id === activeSessionId}
+									onDelete={() => {
+										setPendingDeleteId(id);
+										setDeleteError(null);
+									}}
+								/>
+							);
+						})}
+					</div>
+				)}
+			</div>
 
 			{deleteModal}
 		</div>
 	);
 }
 
-function Row({
-	session,
-	last,
-	pending,
-	active = false,
-	onDelete,
-}: {
-	session: ClaudeSessionFull;
-	last: boolean;
-	pending: PermissionRequest[];
-	active?: boolean;
-	onDelete: () => void;
-}) {
-	const { hasPending, minimized, setMinimized, expanded, summary, unread } =
-		useRowDerived(session, pending);
-	return (
-		<div
-			style={{
-				borderBottom: last ? "none" : `0.5px solid ${T.borderSoft}`,
-				// Active wins over pending visually: highlight the open session
-				// with a stronger background and accent bar. Pending-only rows
-				// still get the soft accent treatment so they read at a glance.
-				background: active
-					? T.surfaceHi
-					: hasPending
-						? T.accentSoft
-						: "transparent",
-				position: "relative",
-			}}
-		>
-			{active || hasPending ? (
-				<div
-					style={{
-						position: "absolute",
-						left: 0,
-						top: 0,
-						bottom: 0,
-						width: active ? 3 : 2,
-						background: T.accent,
-					}}
-				/>
-			) : null}
-			<Link
-				to={`/sessions/${session.id}`}
-				style={{ textDecoration: "none", color: "inherit" }}
-			>
-				<div
-					style={{
-						display: "grid",
-						gridTemplateColumns: COLS,
-						padding: "14px 18px",
-						alignItems: "center",
-					}}
-				>
-					<div style={{ minWidth: 0 }}>
-						<div
-							style={{
-								fontSize: 13.5,
-								fontWeight: unread ? 600 : 500,
-								color: T.text,
-								marginBottom: 3,
-								overflow: "hidden",
-								textOverflow: "ellipsis",
-								whiteSpace: "nowrap",
-								display: "flex",
-								alignItems: "center",
-								gap: 8,
-							}}
-						>
-							{unread ? (
-								<span
-									title="Unread"
-									style={{
-										width: 7,
-										height: 7,
-										borderRadius: "50%",
-										background: T.accent,
-										flexShrink: 0,
-									}}
-								/>
-							) : null}
-							<span
-								style={{
-									overflow: "hidden",
-									textOverflow: "ellipsis",
-									whiteSpace: "nowrap",
-								}}
-							>
-								{session.title}
-							</span>
-						</div>
-						<div
-							style={{
-								fontSize: 12,
-								color: T.textMute,
-								overflow: "hidden",
-								textOverflow: "ellipsis",
-								whiteSpace: "nowrap",
-							}}
-						>
-							{summary}
-						</div>
-						{session.cwd ? (
-							<div
-								title={session.cwd}
-								style={{
-									fontSize: 11,
-									color: T.textFaint,
-									fontFamily: T.mono,
-									marginTop: 2,
-									overflow: "hidden",
-									textOverflow: "ellipsis",
-									whiteSpace: "nowrap",
-								}}
-							>
-								{folderName(session.cwd)}
-							</div>
-						) : null}
-					</div>
-					<div>
-						{session.branch ? (
-							<BranchChipWithDelta
-								branch={session.branch}
-								lastUserMessageBranch={session.lastUserMessageBranch}
-								showCurrentHint={false}
-							/>
-						) : (
-							<span style={{ color: T.textFaint, fontSize: 12 }}>—</span>
-						)}
-					</div>
-					<div
-						style={{
-							display: "flex",
-							alignItems: "center",
-							gap: 6,
-							minWidth: 0,
-						}}
-					>
-						<StatusPill
-							status={
-								hasPending ? "awaiting_permission" : session.status
-							}
-						/>
-						{hasPending ? (
-							<MinimizeToggle
-								minimized={minimized}
-								onToggle={() => setMinimized(session.id, !minimized)}
-								count={pending.length}
-							/>
-						) : null}
-					</div>
-					<DeleteButton onClick={onDelete} />
-				</div>
-			</Link>
-			{expanded ? (
-				<div style={{ margin: "0 18px 16px 18px" }}>
-					{pending.map((p) => (
-						<PermissionCard key={p.requestId} req={p} />
-					))}
-				</div>
-			) : null}
-		</div>
-	);
-}
-
 /**
- * Shared derivation for both row variants — keeps the two layouts in sync
- * on what they consider "unread", "pending", "expanded", and "summary".
+ * Shared derivation used by SessionRowSidebar — keeps "unread", "pending",
+ * and "summary" logic in one place.
  */
 function useRowDerived(
 	session: ClaudeSessionFull,
 	pending: PermissionRequest[],
 ) {
 	const hasPending = pending.length > 0;
-	const minimized = useMinimizedPermissionsStore(
-		(s) => s.minimized[session.id] ?? false,
-	);
-	const setMinimized = useMinimizedPermissionsStore((s) => s.setMinimized);
-	const expanded = hasPending && !minimized;
 	const summary = deriveSummary(session);
 	const lastReadAt = useReadStore((s) => s.lastReadAt[session.id] ?? 0);
 	const lastIncomingTs = lastIncomingMessageTs(session);
@@ -619,9 +296,6 @@ function useRowDerived(
 		session.status !== "running" && lastIncomingTs > lastReadAt;
 	return {
 		hasPending,
-		minimized,
-		setMinimized,
-		expanded,
 		summary,
 		unread,
 	};
@@ -641,6 +315,7 @@ function SessionRowSidebar({
 	onDelete: () => void;
 }) {
 	const { hasPending, summary, unread } = useRowDerived(session, pending);
+	const markUnread = useReadStore((s) => s.markUnread);
 	return (
 		<div
 			style={{
@@ -711,7 +386,11 @@ function SessionRowSidebar({
 						>
 							{session.title}
 						</span>
-						<DeleteButton onClick={onDelete} />
+						<RowMenuButton
+							onDelete={onDelete}
+							onMarkUnread={() => markUnread(session.id)}
+							showMarkUnread={!unread}
+						/>
 					</div>
 					{/* Summary — two-line clamp */}
 					<div
@@ -932,14 +611,19 @@ function MenuItem({
 	label,
 	hint,
 	mono,
+	danger,
 	onClick,
 }: {
 	active: boolean;
 	label: string;
 	hint?: string;
 	mono?: boolean;
+	danger?: boolean;
 	onClick: () => void;
 }) {
+	// Active wins over danger — workspace filter uses `active` to mark the
+	// current selection, and that signal shouldn't be overridden by tone.
+	const restingColor = active ? T.accent : danger ? T.danger : T.text;
 	return (
 		<button
 			type="button"
@@ -954,13 +638,17 @@ function MenuItem({
 				borderRadius: 6,
 				border: "none",
 				background: active ? T.accentSoft : "transparent",
-				color: active ? T.accent : T.text,
+				color: restingColor,
 				fontSize: 13,
 				fontFamily: mono ? T.mono : undefined,
 				cursor: "pointer",
 			}}
 			onMouseEnter={(e) => {
-				if (!active) e.currentTarget.style.background = T.surface;
+				if (!active) {
+					e.currentTarget.style.background = danger
+						? T.dangerSoft
+						: T.surface;
+				}
 			}}
 			onMouseLeave={(e) => {
 				if (!active) e.currentTarget.style.background = "transparent";
@@ -993,70 +681,138 @@ function FolderButton({ onClick }: { onClick: () => void }) {
 	);
 }
 
-function DeleteButton({ onClick }: { onClick: () => void }) {
+/**
+ * Row-level action menu. Replaces the old bare ✕ button so the row exposes
+ * more than just "delete". Today: Delete + Mark as unread. The mark-unread
+ * item is hidden when the row is already unread — keeps the menu showing
+ * only actionable items.
+ *
+ * The row is wrapped in <Link>, so every click inside this menu has to
+ * swallow propagation; otherwise opening the menu (or picking an item)
+ * would navigate to the session. The wrapper div does this uniformly for
+ * the button and every menu item.
+ */
+function RowMenuButton({
+	onDelete,
+	onMarkUnread,
+	showMarkUnread,
+}: {
+	onDelete: () => void;
+	onMarkUnread: () => void;
+	showMarkUnread: boolean;
+}) {
+	const [open, setOpen] = useState(false);
+	const ref = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		if (!open) return;
+		const onDocClick = (e: MouseEvent) => {
+			if (ref.current && !ref.current.contains(e.target as Node)) {
+				setOpen(false);
+			}
+		};
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") setOpen(false);
+		};
+		document.addEventListener("mousedown", onDocClick);
+		document.addEventListener("keydown", onKey);
+		return () => {
+			document.removeEventListener("mousedown", onDocClick);
+			document.removeEventListener("keydown", onKey);
+		};
+	}, [open]);
+
+	const runAndClose = (fn: () => void) => () => {
+		setOpen(false);
+		fn();
+	};
+
 	return (
-		<button
+		<div
+			ref={ref}
 			onClick={(e) => {
+				// Stop the row's <Link> from navigating on any click inside.
 				e.preventDefault();
 				e.stopPropagation();
-				onClick();
 			}}
-			title="Delete this session from the app"
-			style={{
-				display: "inline-flex",
-				alignItems: "center",
-				justifyContent: "center",
-				width: 24,
-				height: 24,
-				border: "none",
-				background: "transparent",
-				color: T.textFaint,
-				cursor: "pointer",
-				borderRadius: 4,
-				fontSize: 14,
-				lineHeight: 1,
-			}}
-			onMouseEnter={(e) => {
-				e.currentTarget.style.background = T.dangerSoft;
-				e.currentTarget.style.color = T.danger;
-			}}
-			onMouseLeave={(e) => {
-				e.currentTarget.style.background = "transparent";
-				e.currentTarget.style.color = T.textFaint;
-			}}
+			style={{ position: "relative", display: "inline-flex" }}
 		>
-			✕
-		</button>
-	);
-}
-
-function Stat({ n, label, dot }: { n: number; label: string; dot?: string }) {
-	return (
-		<div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-			{dot ? (
-				<span
-					style={{
-						width: 6,
-						height: 6,
-						borderRadius: "50%",
-						background: dot,
-					}}
-				/>
-			) : null}
-			<span
+			<button
+				type="button"
+				onClick={() => setOpen((o) => !o)}
+				aria-haspopup="menu"
+				aria-expanded={open}
+				title="More actions"
 				style={{
-					fontFamily: T.mono,
-					color: T.text,
-					fontWeight: 500,
+					display: "inline-flex",
+					alignItems: "center",
+					justifyContent: "center",
+					width: 24,
+					height: 24,
+					border: "none",
+					background: open ? T.surfaceHi : "transparent",
+					color: open ? T.text : T.textFaint,
+					cursor: "pointer",
+					borderRadius: 4,
+					padding: 0,
+				}}
+				onMouseEnter={(e) => {
+					e.currentTarget.style.background = T.surfaceHi;
+					e.currentTarget.style.color = T.text;
+				}}
+				onMouseLeave={(e) => {
+					if (!open) {
+						e.currentTarget.style.background = "transparent";
+						e.currentTarget.style.color = T.textFaint;
+					}
 				}}
 			>
-				{n}
-			</span>
-			<span style={{ color: T.textMute }}>{label}</span>
+				<svg
+					width="14"
+					height="14"
+					viewBox="0 0 14 14"
+					fill="currentColor"
+					aria-hidden
+				>
+					<circle cx="7" cy="3" r="1.3" />
+					<circle cx="7" cy="7" r="1.3" />
+					<circle cx="7" cy="11" r="1.3" />
+				</svg>
+			</button>
+			{open ? (
+				<div
+					role="menu"
+					style={{
+						position: "absolute",
+						top: "calc(100% + 4px)",
+						right: 0,
+						minWidth: 160,
+						background: T.surfaceHi,
+						border: `0.5px solid ${T.border}`,
+						borderRadius: 8,
+						padding: 4,
+						zIndex: 50,
+						boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+					}}
+				>
+					{showMarkUnread ? (
+						<MenuItem
+							active={false}
+							label="Mark as unread"
+							onClick={runAndClose(onMarkUnread)}
+						/>
+					) : null}
+					<MenuItem
+						active={false}
+						label="Delete"
+						danger
+						onClick={runAndClose(onDelete)}
+					/>
+				</div>
+			) : null}
 		</div>
 	);
 }
-
 
 function folderName(path: string): string {
 	const trimmed = path.replace(/\/+$/, "");
@@ -1125,4 +881,3 @@ function extractUserText(content: unknown): string {
 	}
 	return "";
 }
-

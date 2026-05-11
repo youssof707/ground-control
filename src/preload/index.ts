@@ -44,16 +44,24 @@ const claude = {
 	listReadState: () => ipcRenderer.invoke("read:list"),
 	markRead: (sessionId: string, ts?: number) =>
 		ipcRenderer.invoke("read:mark", { sessionId, ts }),
-	listMinimized: () => ipcRenderer.invoke("minimized:list"),
-	setMinimized: (sessionId: string, value: boolean) =>
-		ipcRenderer.invoke("minimized:set", { sessionId, value }),
+	markUnread: (sessionId: string) =>
+		ipcRenderer.invoke("read:markUnread", { sessionId }),
 	getSettings: () => ipcRenderer.invoke("settings:get"),
 	setLastUsedWorkspace: (cwd: string) =>
 		ipcRenderer.invoke("settings:setLastUsedWorkspace", { cwd }),
 	setSessionsSidebarWidth: (width: number) =>
 		ipcRenderer.invoke("settings:setSessionsSidebarWidth", { width }),
+	setNotesSidebarWidth: (width: number) =>
+		ipcRenderer.invoke("settings:setNotesSidebarWidth", { width }),
+	listNotes: (sessionId: string) => ipcRenderer.invoke("notes:list", sessionId),
+	createNote: (sessionId: string) =>
+		ipcRenderer.invoke("notes:create", sessionId),
+	updateNote: (id: string, markdown: string) =>
+		ipcRenderer.invoke("notes:update", { id, markdown }),
+	deleteNote: (id: string) => ipcRenderer.invoke("notes:delete", id),
 	listPermissions: () => ipcRenderer.invoke("permissions:list"),
 	getAppInfo: () => ipcRenderer.invoke("appInfo:get"),
+	toggleDevTools: () => ipcRenderer.invoke("devtools:toggle"),
 	on: (channel: string, fn: (payload: unknown) => void) => {
 		const listener = (_e: IpcRendererEvent, payload: unknown) => fn(payload);
 		ipcRenderer.on(channel, listener);

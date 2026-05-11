@@ -150,6 +150,7 @@ export function AskUserQuestionCard({
 							onOtherChange={(text) =>
 								setOther((p) => ({ ...p, [single.question]: text }))
 							}
+							onSubmit={submit}
 						/>
 					</>
 				) : (
@@ -208,6 +209,7 @@ export function AskUserQuestionCard({
 									onOtherChange={(text) =>
 										setOther((p) => ({ ...p, [q.question]: text }))
 									}
+									onSubmit={submit}
 								/>
 							</div>
 						))}
@@ -246,12 +248,14 @@ function QuestionField({
 	other,
 	onToggle,
 	onOtherChange,
+	onSubmit,
 }: {
 	q: QuestionDef;
 	chosen: string[];
 	other: string;
 	onToggle: (label: string) => void;
 	onOtherChange: (text: string) => void;
+	onSubmit: () => void;
 }) {
 	return (
 		<div style={{ paddingBottom: 8 }}>
@@ -308,6 +312,43 @@ function QuestionField({
 						autoFocus
 						value={other}
 						onChange={(e) => onOtherChange(e.target.value)}
+						onKeyDown={(e) => {
+							if (e.key !== "Enter") return;
+
+							// Plain Enter → submit
+							if (
+								!e.shiftKey &&
+								!e.metaKey &&
+								!e.ctrlKey &&
+								!e.altKey
+							) {
+								e.preventDefault();
+								onSubmit();
+								return;
+							}
+
+							// Cmd+Enter → insert newline at cursor (not native on macOS)
+							if (
+								e.metaKey &&
+								!e.shiftKey &&
+								!e.ctrlKey &&
+								!e.altKey
+							) {
+								e.preventDefault();
+								const ta = e.currentTarget;
+								const start = ta.selectionStart ?? other.length;
+								const end = ta.selectionEnd ?? other.length;
+								const next =
+									other.slice(0, start) + "\n" + other.slice(end);
+								onOtherChange(next);
+								requestAnimationFrame(() => {
+									ta.selectionStart = ta.selectionEnd = start + 1;
+								});
+								return;
+							}
+
+							// Shift+Enter and anything else: let the browser handle it.
+						}}
 						rows={2}
 						placeholder="Type your answer…"
 						style={{

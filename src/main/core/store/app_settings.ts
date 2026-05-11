@@ -66,9 +66,23 @@ export async function setLastUsedWorkspace(cwd: string): Promise<void> {
 
 export async function setSessionsSidebarWidth(width: number): Promise<void> {
 	assertInitialized();
+	// Pointer events on high-DPI displays produce fractional clientX values,
+	// which would violate the `int()` schema on next boot. Round at the
+	// single chokepoint so no caller can poison the JSON.
+	const w = Math.round(width);
 	return enqueue(async () => {
-		if (db.sessionsSidebarWidth === width) return;
-		db = { ...db, sessionsSidebarWidth: width };
+		if (db.sessionsSidebarWidth === w) return;
+		db = { ...db, sessionsSidebarWidth: w };
+		await persist();
+	});
+}
+
+export async function setNotesSidebarWidth(width: number): Promise<void> {
+	assertInitialized();
+	const w = Math.round(width);
+	return enqueue(async () => {
+		if (db.notesSidebarWidth === w) return;
+		db = { ...db, notesSidebarWidth: w };
 		await persist();
 	});
 }

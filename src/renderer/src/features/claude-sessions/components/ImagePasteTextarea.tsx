@@ -168,10 +168,30 @@ export function ImagePasteTextarea({ sessionId, disabled, textareaHeight = 44 }:
 	};
 
 	const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-		if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+		if (e.key !== "Enter") return;
+
+		// Plain Enter → send
+		if (!e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
 			e.preventDefault();
 			void send();
+			return;
 		}
+
+		// Cmd+Enter → insert newline at cursor (not native on macOS)
+		if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+			e.preventDefault();
+			const ta = e.currentTarget;
+			const start = ta.selectionStart ?? text.length;
+			const end = ta.selectionEnd ?? text.length;
+			const next = text.slice(0, start) + "\n" + text.slice(end);
+			setText(next);
+			requestAnimationFrame(() => {
+				ta.selectionStart = ta.selectionEnd = start + 1;
+			});
+			return;
+		}
+
+		// Shift+Enter and anything else: let the browser handle it.
 	};
 
 	const canSend = !!(text.trim() || images.length > 0);
@@ -310,7 +330,7 @@ export function ImagePasteTextarea({ sessionId, disabled, textareaHeight = 44 }:
 					<ModeToggle
 						mode={mode}
 						onChange={(next) => void changeMode(next)}
-						disabled={modeSwitching}
+						disabled={disabled || modeSwitching}
 					/>
 					<button
 						onClick={send}

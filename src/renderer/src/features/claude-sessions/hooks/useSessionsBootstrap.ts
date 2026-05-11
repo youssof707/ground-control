@@ -8,7 +8,6 @@ import type {
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useReadStore } from "../stores/useReadStore";
-import { useMinimizedPermissionsStore } from "../stores/useMinimizedPermissionsStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
 
 export function useSessionsBootstrap() {
@@ -34,7 +33,6 @@ export function useSessionsBootstrap() {
 		const seq = {
 			sessions: 0,
 			read: 0,
-			minimized: 0,
 			permissions: 0,
 			settings: 0,
 		};
@@ -51,13 +49,6 @@ export function useSessionsBootstrap() {
 			const { lastReadAt } = await window.claude.listReadState();
 			if (my !== seq.read) return;
 			useReadStore.getState().hydrate(lastReadAt);
-		}
-
-		async function refetchMinimized(): Promise<void> {
-			const my = ++seq.minimized;
-			const { minimized } = await window.claude.listMinimized();
-			if (my !== seq.minimized) return;
-			useMinimizedPermissionsStore.getState().hydrate(minimized);
 		}
 
 		async function refetchPermissions(): Promise<void> {
@@ -77,7 +68,6 @@ export function useSessionsBootstrap() {
 		function refetchAll(): void {
 			void refetchSessions();
 			void refetchReadState();
-			void refetchMinimized();
 			void refetchPermissions();
 			void refetchSettings();
 		}
@@ -171,36 +161,12 @@ export function useSessionsBootstrap() {
 	]);
 }
 
-function stringifyToolResultContent(content: unknown): string {
-	if (typeof content === "string") return content;
-	if (Array.isArray(content)) {
-		return content
-			.map((b) => {
-				if (b && typeof b === "object" && "text" in b) {
-					return String((b as { text: unknown }).text ?? "");
-				}
-				try {
-					return JSON.stringify(b);
-				} catch {
-					return String(b);
-				}
-			})
-			.join("\n");
-	}
-	try {
-		return JSON.stringify(content);
-	} catch {
-		return String(content);
-	}
-}
-
 function logMessageErrors(sessionId: string, message: SessionMessage): void {
 	const sdk = message.content as {
 		type?: string;
 		is_error?: boolean;
 		subtype?: string;
 		result?: unknown;
-		message?: { content?: unknown };
 	};
 	if (!sdk || typeof sdk !== "object") return;
 
@@ -211,27 +177,8 @@ function logMessageErrors(sessionId: string, message: SessionMessage): void {
 				sdk.result ?? sdk,
 			);
 		}
-		return;
 	}
-
-	if (sdk.type === "user") {
-		const inner = sdk.message?.content;
-		if (!Array.isArray(inner)) return;
-		for (const block of inner) {
-			if (!block || typeof block !== "object") continue;
-			const b = block as {
-				type?: string;
-				is_error?: boolean;
-				tool_use_id?: string;
-				content?: unknown;
-			};
-			if (b.type !== "tool_result") continue;
-			const text = stringifyToolResultContent(b.content);
-			if (b.is_error || /<tool_use_error>|InputValidationError/.test(text)) {
-				console.error(
-					`[ccw][session ${sessionId}] tool_result error tool_use_id=${b.tool_use_id ?? "?"}\n${text}`,
-				);
-			}
-		}
-	}
+	// tool_result errors are intentionally not logged — they fire constantly
+	// during normal use (permission denials, <tool_use_error>, InputValidationError)
+	// and drowned out genuine errors.
 }
