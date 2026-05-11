@@ -9,6 +9,7 @@ import {
 	listSessions,
 	deleteSession,
 } from "./core/store/claude_session";
+import { initialize as initializeReadStore } from "./core/store/read_state";
 import { registerSessionsHandlers } from "./ipc/sessionsHandlers";
 import type { SessionManager } from "./sessions/SessionManager";
 import * as windows from "./windows";
@@ -97,6 +98,7 @@ app.whenReady().then(async () => {
 	const dataDir = join(app.getPath("userData"), "data");
 	try {
 		await initializeClaudeSessionStore(dataDir);
+		await initializeReadStore(dataDir);
 	} catch (err) {
 		console.error(`[ccw] failed to initialize store at ${dataDir}:`, err);
 		app.exit(1);

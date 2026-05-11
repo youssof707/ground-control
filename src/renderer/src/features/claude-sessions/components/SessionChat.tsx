@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
@@ -36,12 +36,38 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	const [interrupting, setInterrupting] = useState(false);
 	const [resuming, setResuming] = useState(false);
 	const [resumeError, setResumeError] = useState<string | null>(null);
+	const [forkingId, setForkingId] = useState<string | null>(null);
+	const [forkError, setForkError] = useState<string | null>(null);
 	const [editingTitle, setEditingTitle] = useState(false);
 	const [titleDraft, setTitleDraft] = useState("");
 	const titleInputRef = useRef<HTMLInputElement>(null);
 	const [pendingDelete, setPendingDelete] = useState(false);
 	const [deleting, setDeleting] = useState(false);
 	const [deleteError, setDeleteError] = useState<string | null>(null);
+	const [inputHeight, setInputHeight] = useState(44);
+	const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+
+	const onDividerPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+		e.preventDefault();
+		dragRef.current = { startY: e.clientY, startHeight: inputHeight };
+		e.currentTarget.setPointerCapture(e.pointerId);
+		document.body.style.userSelect = "none";
+		document.body.style.cursor = "ns-resize";
+	};
+	const onDividerPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+		const d = dragRef.current;
+		if (!d) return;
+		const delta = e.clientY - d.startY;
+		const max = Math.max(120, window.innerHeight - 260);
+		setInputHeight(Math.min(max, Math.max(44, d.startHeight - delta)));
+	};
+	const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+		if (!dragRef.current) return;
+		dragRef.current = null;
+		e.currentTarget.releasePointerCapture(e.pointerId);
+		document.body.style.userSelect = "";
+		document.body.style.cursor = "";
+	};
 
 	const isOpen =
 		session?.status === "running" ||
@@ -125,6 +151,20 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 			setResumeError(err instanceof Error ? err.message : String(err));
 		} finally {
 			setResuming(false);
+		}
+	};
+
+	const fork = async (messageId: string) => {
+		if (forkingId) return;
+		setForkingId(messageId);
+		setForkError(null);
+		try {
+			const next = await window.claude.forkSession(sessionId, messageId);
+			navigate(`/sessions/${next.id}`);
+		} catch (err) {
+			setForkError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setForkingId(null);
 		}
 	};
 
@@ -460,7 +500,14 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					{session.messages.length === 0 && pending.length === 0 ? (
 						<div className="message">Waiting for first message…</div>
 					) : (
-						session.messages.map((m) => <MessageView key={m.id} m={m} />)
+						session.messages.map((m) => (
+							<MessageView
+								key={m.id}
+								m={m}
+								onFork={fork}
+								forkPending={forkingId === m.id}
+							/>
+						))
 					)}
 					{pending.length > 0 ? (
 						<div
@@ -480,6 +527,28 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 				</div>
 			</div>
 
+			{canChat ? (
+				<div
+					onPointerDown={onDividerPointerDown}
+					onPointerMove={onDividerPointerMove}
+					onPointerUp={endDrag}
+					onPointerCancel={endDrag}
+					role="separator"
+					aria-orientation="horizontal"
+					aria-label="Resize chat input"
+					style={{
+						flexShrink: 0,
+						height: 6,
+						cursor: "ns-resize",
+						display: "flex",
+						alignItems: "center",
+						touchAction: "none",
+					}}
+				>
+					<div style={{ height: 1, width: "100%", background: T.borderSoft }} />
+				</div>
+			) : null}
+
 			{resumeError ? (
 				<div
 					className="message message-error"
@@ -489,7 +558,21 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 				</div>
 			) : null}
 
-			{canChat ? <ImagePasteTextarea sessionId={sessionId} /> : null}
+			{forkError ? (
+				<div
+					className="message message-error"
+					style={{ margin: 12, padding: 8, fontSize: 12 }}
+				>
+					Fork failed: {forkError}
+				</div>
+			) : null}
+
+			{canChat ? (
+				<ImagePasteTextarea
+					sessionId={sessionId}
+					textareaHeight={inputHeight}
+				/>
+			) : null}
 
 			<ConfirmModal
 				open={pendingDelete}

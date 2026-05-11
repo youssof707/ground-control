@@ -1,4 +1,10 @@
-import { useState, type ClipboardEvent, type KeyboardEvent } from "react";
+import {
+	useEffect,
+	useRef,
+	useState,
+	type ClipboardEvent,
+	type KeyboardEvent,
+} from "react";
 import type {
 	SessionMode,
 	UserContentBlock,
@@ -11,6 +17,7 @@ import { Kbd, ModeToggle } from "../../../design/Atoms";
 interface Props {
 	sessionId: string;
 	disabled?: boolean;
+	textareaHeight?: number;
 }
 
 interface PendingImage {
@@ -32,7 +39,7 @@ function toSupportedMediaType(t: string): UserImageMediaType | null {
 		: null;
 }
 
-export function ImagePasteTextarea({ sessionId, disabled }: Props) {
+export function ImagePasteTextarea({ sessionId, disabled, textareaHeight = 44 }: Props) {
 	const [text, setText] = useState("");
 	const [images, setImages] = useState<PendingImage[]>([]);
 	const [sending, setSending] = useState(false);
@@ -45,6 +52,19 @@ export function ImagePasteTextarea({ sessionId, disabled }: Props) {
 	);
 	const status = useSessionsStore((s) => s.sessions[sessionId]?.status);
 	const isRunning = status === "running";
+
+	// Auto-focus the textarea on session entry / switch. Keyed on sessionId
+	// so the focus also fires when navigating between sessions, not just the
+	// initial mount. The setTimeout(…, 0) defers focus past the same tick as
+	// any route transition / layout work so the call lands on the real DOM
+	// node after it has been (re)mounted.
+	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	useEffect(() => {
+		const id = window.setTimeout(() => {
+			textareaRef.current?.focus();
+		}, 0);
+		return () => window.clearTimeout(id);
+	}, [sessionId]);
 
 	const changeMode = async (next: SessionMode) => {
 		if (modeSwitching || mode === next) return;
@@ -153,7 +173,6 @@ export function ImagePasteTextarea({ sessionId, disabled }: Props) {
 			style={{
 				flexShrink: 0,
 				padding: "14px 32px 18px",
-				borderTop: `0.5px solid ${T.border}`,
 				background: T.win,
 			}}
 		>
@@ -230,6 +249,8 @@ export function ImagePasteTextarea({ sessionId, disabled }: Props) {
 				) : null}
 
 				<textarea
+					ref={textareaRef}
+					autoFocus
 					value={text}
 					onChange={(e) => setText(e.target.value)}
 					onPaste={onPaste}
@@ -238,8 +259,8 @@ export function ImagePasteTextarea({ sessionId, disabled }: Props) {
 					placeholder="Reply to Claude…"
 					style={{
 						width: "100%",
-						minHeight: 44,
-						resize: "vertical",
+						height: textareaHeight,
+						resize: "none",
 						background: "transparent",
 						border: "none",
 						outline: "none",
@@ -248,6 +269,7 @@ export function ImagePasteTextarea({ sessionId, disabled }: Props) {
 						fontSize: 14,
 						lineHeight: 1.5,
 						padding: 0,
+						overflowY: "auto",
 					}}
 				/>
 

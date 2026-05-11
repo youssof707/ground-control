@@ -22,6 +22,8 @@ const claude = {
 		ipcRenderer.invoke("session:interrupt", sessionId),
 	resumeSession: (sessionId: string) =>
 		ipcRenderer.invoke("session:resume", sessionId),
+	forkSession: (sessionId: string, messageId: string) =>
+		ipcRenderer.invoke("session:fork", { sessionId, messageId }),
 	setSessionMode: (sessionId: string, mode: SessionMode) =>
 		ipcRenderer.invoke("session:setMode", { sessionId, mode }),
 	respondPermission: (decision: PermissionDecision) =>
@@ -35,6 +37,10 @@ const claude = {
 		ipcRenderer.invoke("dialog:pickFolder", opts ?? {}),
 	setUnreadCount: (count: number) =>
 		ipcRenderer.send("notifications:setUnreadCount", count),
+	listReadState: () => ipcRenderer.invoke("read:list"),
+	markRead: (sessionId: string, ts?: number) =>
+		ipcRenderer.invoke("read:mark", { sessionId, ts }),
+	listPermissions: () => ipcRenderer.invoke("permissions:list"),
 	on: (channel: string, fn: (payload: unknown) => void) => {
 		const listener = (_e: IpcRendererEvent, payload: unknown) => fn(payload);
 		ipcRenderer.on(channel, listener);

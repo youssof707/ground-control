@@ -2,10 +2,12 @@ import type {
 	ClaudeSession,
 	ClaudeSessionFull,
 	PermissionDecision,
+	PermissionRequest,
 	SessionMode,
 	StartSessionInput,
 	UserTurn,
 } from "../shared/schemas/claude_session";
+import type { ReadStateFile } from "../shared/schemas/read_state";
 
 declare global {
 	interface Window {
@@ -16,6 +18,10 @@ declare global {
 			finishSession: (sessionId: string) => Promise<void>;
 			interruptSession: (sessionId: string) => Promise<void>;
 			resumeSession: (sessionId: string) => Promise<void>;
+			forkSession: (
+				sessionId: string,
+				messageId: string,
+			) => Promise<ClaudeSession>;
 			setSessionMode: (
 				sessionId: string,
 				mode: SessionMode,
@@ -26,6 +32,9 @@ declare global {
 			renameSession: (sessionId: string, title: string) => Promise<void>;
 			pickFolder: (opts?: { defaultPath?: string }) => Promise<string | null>;
 			setUnreadCount: (count: number) => void;
+			listReadState: () => Promise<ReadStateFile>;
+			markRead: (sessionId: string, ts?: number) => Promise<void>;
+			listPermissions: () => Promise<PermissionRequest[]>;
 			on: (channel: string, fn: (payload: unknown) => void) => () => void;
 		};
 	}

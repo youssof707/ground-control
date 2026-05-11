@@ -5,6 +5,7 @@ interface State {
 	queue: PermissionRequest[];
 	enqueue: (r: PermissionRequest) => void;
 	remove: (requestId: string) => void;
+	removeBySessionId: (sessionId: string) => void;
 }
 
 export const usePermissionsStore = create<State>((set) => ({
@@ -17,5 +18,9 @@ export const usePermissionsStore = create<State>((set) => ({
 	remove: (requestId) =>
 		set((s) => ({
 			queue: s.queue.filter((q) => q.requestId !== requestId),
+		})),
+	removeBySessionId: (sessionId) =>
+		set((s) => ({
+			queue: s.queue.filter((q) => q.sessionId !== sessionId),
 		})),
 }));

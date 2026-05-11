@@ -30,8 +30,24 @@ export function getPrimary(): BrowserWindow | null {
 	return getAll()[0] ?? null;
 }
 
-export function broadcast(channel: string, payload: unknown): void {
+/**
+ * Send `channel` + `payload` to every live window. If `exceptWebContentsId` is
+ * provided, the matching window is skipped — used by the multi-window
+ * `state:changed` ping so the originating window doesn't refetch what it
+ * already knows from its own IPC response.
+ */
+export function broadcast(
+	channel: string,
+	payload: unknown,
+	exceptWebContentsId?: number,
+): void {
 	for (const win of getAll()) {
+		if (
+			exceptWebContentsId !== undefined &&
+			win.webContents.id === exceptWebContentsId
+		) {
+			continue;
+		}
 		win.webContents.send(channel, payload);
 	}
 }

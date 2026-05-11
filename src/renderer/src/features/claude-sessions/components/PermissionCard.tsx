@@ -2,10 +2,14 @@ import { useState } from "react";
 import type { PermissionRequest } from "@shared/claude-sessions/types";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { AskUserQuestionCard } from "./AskUserQuestionCard";
+import { PlanApprovalCard } from "./PlanApprovalCard";
 import { ToolPreview } from "./ToolPreview";
 import { T } from "../../../design/tokens";
 
 export function PermissionCard({ req }: { req: PermissionRequest }) {
+	if (req.toolName === "ExitPlanMode") {
+		return <PlanApprovalCard req={req} />;
+	}
 	if (req.toolName === "AskUserQuestion") {
 		return <AskUserQuestionCard req={req} />;
 	}

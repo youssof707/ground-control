@@ -1,4 +1,5 @@
 import {
+	forkSession as sdkForkSession,
 	query,
 	type Options,
 	type Query,
@@ -35,6 +36,10 @@ interface RunningEntry {
 	finish: () => void;
 	setIdle: () => Promise<void>;
 	queryRef: { current: Query | null };
+	// Resolves once runLoop's finally block has run and the entry has been
+	// removed from `sessions`. Lets callers (e.g. session:delete) await
+	// complete SDK teardown before continuing.
+	done: Promise<void>;
 }
 
 function roleFromSdkMessage(
@@ -194,6 +199,135 @@ export class SessionManager {
 		return session;
 	}
 
+	/**
+	 * Fork a session from a specific assistant message. Creates a new wrapper
+	 * session whose transcript is the parent's history truncated to (and
+	 * including) the target message, backed by a brand-new Claude Agent SDK
+	 * session that the SDK forks for us (preserving the parentUuid chain with
+	 * fresh UUIDs).
+	 *
+	 * The parent session is untouched — fork operates on the on-disk JSONL
+	 * snapshot so it's safe to call while the parent is mid-stream.
+	 *
+	 * After persisting the new session, we auto-resume it so its SDK loop is
+	 * live and the composer's `pushUserMessage` flow works immediately when
+	 * the renderer navigates to it.
+	 */
+	async fork(
+		parentWrapperId: string,
+		wrapperMessageId: string,
+	): Promise<ClaudeSession> {
+		const parent = sessionStore.getSession(parentWrapperId);
+		if (!parent) throw new Error("Parent session not found");
+		if (!parent.sdkSessionId) {
+			throw new Error(
+				"This session has no SDK session id yet — wait for Claude's first response before forking.",
+			);
+		}
+
+		const msgIndex = parent.messages.findIndex(
+			(m) => m.id === wrapperMessageId,
+		);
+		if (msgIndex < 0) throw new Error("Message not found in this session");
+		const targetMsg = parent.messages[msgIndex];
+		if (targetMsg.role !== "assistant") {
+			throw new Error("Can only fork from an assistant message");
+		}
+		const sdkUuid = (targetMsg.content as { uuid?: unknown }).uuid;
+		if (typeof sdkUuid !== "string" || sdkUuid.length === 0) {
+			throw new Error(
+				"This message has no SDK uuid and can't be used as a fork point",
+			);
+		}
+
+		const truncated = parent.messages.slice(0, msgIndex + 1);
+		const newTitle = `${parent.title} (fork)`;
+
+		const { sessionId: newSdkId } = await sdkForkSession(parent.sdkSessionId, {
+			upToMessageId: sdkUuid,
+			title: newTitle,
+		});
+
+		// Refresh git context — the working tree may have moved on since the
+		// parent started.
+		const [branch, startCommit] = await Promise.all([
+			getCurrentBranch(parent.cwd),
+			getHeadCommit(parent.cwd),
+		]);
+
+		const newWrapperId = randomUUID();
+		const newSessionFull: ClaudeSessionFull = {
+			id: newWrapperId,
+			title: newTitle,
+			prompt: "",
+			cwd: parent.cwd,
+			status: "idle",
+			createdAt: Date.now(),
+			branch,
+			startCommit,
+			sdkSessionId: newSdkId,
+			mode: parent.mode,
+			// Re-id each entry so they don't collide with the parent's message
+			// ids in the renderer's flat store. Original SDK content and
+			// timestamps are preserved.
+			messages: truncated.map((m) => ({
+				id: randomUUID(),
+				role: m.role,
+				content: m.content,
+				ts: m.ts,
+			})),
+		};
+
+		try {
+			await sessionStore.createSession(newSessionFull);
+		} catch (err) {
+			console.error("[ccw] failed to persist forked session:", err);
+			throw err;
+		}
+
+		const newSession: ClaudeSession = {
+			id: newSessionFull.id,
+			title: newSessionFull.title,
+			prompt: newSessionFull.prompt,
+			cwd: newSessionFull.cwd,
+			status: newSessionFull.status,
+			createdAt: newSessionFull.createdAt,
+			branch: newSessionFull.branch,
+			startCommit: newSessionFull.startCommit,
+			sdkSessionId: newSessionFull.sdkSessionId,
+			mode: newSessionFull.mode,
+		};
+
+		// Tell the renderer the new session exists, then hydrate its history
+		// in a single patch. Sending session:message per-message here used to
+		// cause a ~5s renderer freeze: each event drove its own Zustand
+		// mutation + full re-render, and MessageView/MarkdownText are not
+		// memoized, so every render re-ran rehype-highlight on every message
+		// (O(N²) sync work on the main thread).
+		//
+		// One patch = one store mutation = one render. upsertSession does a
+		// shallow merge, so `messages` is replaced atomically.
+		//
+		// resume() below fires its own session:started for the runtime entry;
+		// its payload has no `messages` field, so the merge preserves the
+		// history we set here.
+		this.send("session:started", newSession);
+		this.send("session:patch", {
+			sessionId: newWrapperId,
+			messages: newSessionFull.messages,
+		});
+
+		// Spin up the SDK loop in the background so the composer can push user
+		// turns. resume() is non-blocking (it `void`s runLoop internally).
+		try {
+			await this.resume(newWrapperId);
+		} catch (err) {
+			console.error("[ccw] auto-resume after fork failed:", err);
+		}
+
+		return newSession;
+	}
+
 	async resume(wrapperId: string): Promise<void> {
 		if (this.sessions.has(wrapperId)) {
 			throw new Error("Session is already active");
@@ -316,6 +450,10 @@ export class SessionManager {
 
 		const abort = new AbortController();
 		const queryRef: { current: Query | null } = { current: null };
+		let resolveDone!: () => void;
+		const done = new Promise<void>((r) => {
+			resolveDone = r;
+		});
 		this.sessions.set(id, {
 			session,
 			abort,
@@ -323,6 +461,7 @@ export class SessionManager {
 			finish,
 			setIdle,
 			queryRef,
+			done,
 		});
 		this.send("session:started", session);
 
@@ -337,8 +476,33 @@ export class SessionManager {
 				//                                    other tools still hit the broker)
 				permissionMode: sdkPermissionModeFor(session.mode),
 				pathToClaudeCodeExecutable: resolveClaudeBinary(),
-				canUseTool: (toolName, toolInput) =>
-					this.broker.ask({ sessionId: id, toolName, input: toolInput }),
+				canUseTool: async (toolName, toolInput) => {
+					const result = await this.broker.ask({
+						sessionId: id,
+						toolName,
+						input: toolInput,
+					});
+					if (
+						toolName === "ExitPlanMode" &&
+						result.behavior === "allow" &&
+						session.mode === "plan"
+					) {
+						// Fire-and-forget: must not block the SDK's canUseTool
+						// resolution. setMode calls setPermissionMode on the same
+						// Query the SDK is currently awaiting us on — awaiting it
+						// here risks reentrancy. Scheduling it on the next
+						// microtask also lands after the SDK's own post-
+						// ExitPlanMode internal mode transition, so our
+						// "acceptEdits" is the final write.
+						this.setMode(id, "acceptEdits").catch((err) => {
+							console.error(
+								"[ccw] auto-flip to acceptEdits after ExitPlanMode failed:",
+								err,
+							);
+						});
+					}
+					return result;
+				},
 				...(cfg.resumeSdkSessionId
 					? { resume: cfg.resumeSdkSessionId }
 					: {}),
@@ -423,6 +587,7 @@ export class SessionManager {
 			state.finished = true;
 			state.waitForTurn?.();
 			this.sessions.delete(id);
+			resolveDone();
 		}
 	}
 
@@ -508,6 +673,38 @@ export class SessionManager {
 
 	cancelAll() {
 		for (const { abort } of this.sessions.values()) abort.abort();
+	}
+
+	/**
+	 * Fully tear down a running session and wait for the SDK loop to finish
+	 * before returning. Use this when the caller needs to be sure no more
+	 * messages, status events, or store writes will arrive for this session
+	 * (e.g. before deleting the session record).
+	 *
+	 * Steps:
+	 *   1. Ask the SDK to stop in-flight tool/assistant work (interrupt).
+	 *   2. End the user-prompt async iterable so the SDK winds down naturally.
+	 *   3. Trigger the abort signal so the for-await loop breaks.
+	 *   4. Await the runLoop's `done` deferred (resolved in its `finally`).
+	 *
+	 * Best-effort with a timeout — if the SDK is wedged, we still return so
+	 * the caller can proceed with deletion. The store's late-write guards
+	 * handle any straggling writes.
+	 */
+	async cancelAndWait(sessionId: string, timeoutMs = 5000): Promise<void> {
+		const entry = this.sessions.get(sessionId);
+		if (!entry) return;
+		try {
+			await entry.queryRef.current?.interrupt();
+		} catch (err) {
+			console.error("[ccw] interrupt during cancelAndWait failed:", err);
+		}
+		entry.finish();
+		entry.abort.abort();
+		await Promise.race([
+			entry.done,
+			new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+		]);
 	}
 
 	private async captureDiff(

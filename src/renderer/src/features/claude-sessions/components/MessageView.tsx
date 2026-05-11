@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { SessionMessage } from "@shared/claude-sessions/types";
 import { MarkdownText } from "./MarkdownText";
 import { T } from "../../../design/tokens";
@@ -25,21 +26,58 @@ interface ContentBlock {
 	[k: string]: unknown;
 }
 
-export function MessageView({ m }: { m: SessionMessage }) {
+export function MessageView({
+	m,
+	onFork,
+	forkPending,
+}: {
+	m: SessionMessage;
+	onFork?: (messageId: string) => void;
+	forkPending?: boolean;
+}) {
 	const sdk = m.content as SdkLike;
-	if (m.role === "assistant") return <AssistantMessage sdk={sdk} />;
+	if (m.role === "assistant") {
+		return (
+			<AssistantMessage
+				sdk={sdk}
+				messageId={m.id}
+				onFork={onFork}
+				forkPending={forkPending}
+			/>
+		);
+	}
 	if (m.role === "user") return <UserMessage sdk={sdk} />;
 	if (m.role === "system") return null;
 	if (m.role === "result") return null;
 	return null;
 }
 
-function AssistantMessage({ sdk }: { sdk: SdkLike }) {
+function AssistantMessage({
+	sdk,
+	messageId,
+	onFork,
+	forkPending,
+}: {
+	sdk: SdkLike;
+	messageId: string;
+	onFork?: (messageId: string) => void;
+	forkPending?: boolean;
+}) {
+	const [hovered, setHovered] = useState(false);
 	const blocks = (sdk.message?.content as ContentBlock[] | undefined) ?? [];
 	if (blocks.length === 0) return null;
+	// Fork is only available for assistant messages with an SDK uuid (which
+	// the SDK requires for `upToMessageId`). Skip the button otherwise so
+	// users don't click into a guaranteed-error path.
+	const sdkUuid = (sdk as { uuid?: unknown }).uuid;
+	const canFork =
+		!!onFork && typeof sdkUuid === "string" && sdkUuid.length > 0;
 	return (
 		<div
+			onMouseEnter={() => setHovered(true)}
+			onMouseLeave={() => setHovered(false)}
 			style={{
+				position: "relative",
 				display: "flex",
 				gap: 14,
 				marginBottom: 22,
@@ -68,7 +106,78 @@ function AssistantMessage({ sdk }: { sdk: SdkLike }) {
 					return <RawBlock key={i} block={b} />;
 				})}
 			</div>
+			{canFork && hovered ? (
+				<ForkButton
+					pending={!!forkPending}
+					onClick={() => onFork?.(messageId)}
+				/>
+			) : null}
 		</div>
+	);
+}
+
+function ForkButton({
+	pending,
+	onClick,
+}: {
+	pending: boolean;
+	onClick: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={(e) => {
+				e.stopPropagation();
+				if (pending) return;
+				onClick();
+			}}
+			disabled={pending}
+			title={
+				pending
+					? "Forking…"
+					: "Fork conversation from this message into a new session"
+			}
+			aria-label="Fork conversation from this message"
+			style={{
+				position: "absolute",
+				top: 2,
+				right: 2,
+				display: "inline-flex",
+				alignItems: "center",
+				justifyContent: "center",
+				width: 22,
+				height: 22,
+				padding: 0,
+				borderRadius: 5,
+				border: "none",
+				background: "transparent",
+				color: pending ? T.textMute : T.textFaint,
+				cursor: pending ? "default" : "pointer",
+			}}
+			onMouseEnter={(e) => {
+				if (pending) return;
+				e.currentTarget.style.background = T.surfaceHi;
+				e.currentTarget.style.color = T.text;
+			}}
+			onMouseLeave={(e) => {
+				e.currentTarget.style.background = "transparent";
+				e.currentTarget.style.color = pending ? T.textMute : T.textFaint;
+			}}
+		>
+			{/* Branching/fork icon: a trunk that splits into two diverging paths. */}
+			<svg width="13" height="13" viewBox="0 0 12 12" fill="none">
+				<path
+					d="M3 1.5v3.5c0 1 .8 1.8 1.8 1.8h2.4c1 0 1.8.8 1.8 1.8V10.5M3 10.5V7M9 4.5V1.5"
+					stroke="currentColor"
+					strokeWidth="1.2"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+				/>
+				<circle cx="3" cy="10.5" r="1" fill="currentColor" />
+				<circle cx="3" cy="1.5" r="1" fill="currentColor" />
+				<circle cx="9" cy="1.5" r="1" fill="currentColor" />
+			</svg>
+		</button>
 	);
 }
 

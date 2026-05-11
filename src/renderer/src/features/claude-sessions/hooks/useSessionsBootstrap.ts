@@ -1,13 +1,13 @@
 import { useEffect } from "react";
 import type {
 	ClaudeSession,
-	ClaudeSessionFull,
 	PermissionRequest,
 	SessionMessage,
 	SessionStatus,
 } from "@shared/claude-sessions/types";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
+import { useReadStore } from "../stores/useReadStore";
 
 export function useSessionsBootstrap() {
 	const upsertSession = useSessionsStore((s) => s.upsertSession);
@@ -25,11 +25,42 @@ export function useSessionsBootstrap() {
 			return;
 		}
 
-		// Hydrate from the main-process store on first mount.
-		void window.claude.listSessions().then((sessions: ClaudeSessionFull[]) => {
-			hydrate(sessions);
-		});
+		// Per-domain monotonic seq counters: if two refetches are in flight
+		// (e.g. user did something locally + a `state:changed` ping arrived),
+		// drop any response whose seq isn't the latest. Prevents an older
+		// response from clobbering a newer one and causing UI flicker-back.
+		const seq = { sessions: 0, read: 0, permissions: 0 };
 
+		async function refetchSessions(): Promise<void> {
+			const my = ++seq.sessions;
+			const sessions = await window.claude.listSessions();
+			if (my !== seq.sessions) return;
+			hydrate(sessions);
+		}
+
+		async function refetchReadState(): Promise<void> {
+			const my = ++seq.read;
+			const { lastReadAt } = await window.claude.listReadState();
+			if (my !== seq.read) return;
+			useReadStore.getState().hydrate(lastReadAt);
+		}
+
+		async function refetchPermissions(): Promise<void> {
+			const my = ++seq.permissions;
+			const queue = await window.claude.listPermissions();
+			if (my !== seq.permissions) return;
+			for (const req of queue) enqueuePermission(req);
+		}
+
+		function refetchAll(): void {
+			void refetchSessions();
+			void refetchReadState();
+			void refetchPermissions();
+		}
+
+		// CRITICAL ORDERING: register the per-event listeners FIRST so that
+		// any event arriving between now and when refetchAll's IPC calls
+		// resolve is captured. enqueue/upsert dedupe handles overlap.
 		const offs = [
 			window.claude.on("session:started", (p) => {
 				upsertSession(p as ClaudeSession);
@@ -89,7 +120,22 @@ export function useSessionsBootstrap() {
 			window.claude.on("permission:request", (p) => {
 				enqueuePermission(p as PermissionRequest);
 			}),
+			window.claude.on("permission:resolved", (p) => {
+				const { requestId } = p as { requestId: string };
+				removePermission(requestId);
+			}),
+			// The structural-change ping. Originating window is skipped by main,
+			// so we only get here when *another* window mutated something.
+			window.claude.on("state:changed", () => {
+				refetchAll();
+			}),
 		];
+
+		// Initial hydration. Listeners are already attached above, so any
+		// event arriving in parallel is captured (and dedupes via the stores'
+		// upsert/enqueue logic).
+		refetchAll();
+
 		return () => offs.forEach((off) => off());
 	}, [
 		upsertSession,

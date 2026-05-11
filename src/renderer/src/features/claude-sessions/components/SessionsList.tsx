@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
@@ -26,6 +26,7 @@ export function SessionsList() {
 	const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 	const [deleteError, setDeleteError] = useState<string | null>(null);
 	const [deleting, setDeleting] = useState(false);
+	const [workspaceFilter, setWorkspaceFilter] = useState<string | null>(null);
 
 	const sortedOrder = useMemo(() => {
 		return [...order].sort(
@@ -37,6 +38,33 @@ export function SessionsList() {
 	const lastUsedCwd = sortedOrder
 		.map((id) => sessions[id]?.cwd)
 		.find((c): c is string => !!c);
+
+	const workspaces = useMemo(() => {
+		const set = new Set<string>();
+		for (const id of sortedOrder) {
+			const c = sessions[id]?.cwd;
+			if (c) set.add(c);
+		}
+		return Array.from(set).sort((a, b) =>
+			folderName(a).localeCompare(folderName(b)),
+		);
+	}, [sortedOrder, sessions]);
+
+	// If the active filter no longer matches any session (e.g. last session in
+	// that workspace was deleted), fall back to ALL.
+	useEffect(() => {
+		if (workspaceFilter && !workspaces.includes(workspaceFilter)) {
+			setWorkspaceFilter(null);
+		}
+	}, [workspaces, workspaceFilter]);
+
+	const visibleOrder = useMemo(() => {
+		if (!workspaceFilter) return sortedOrder;
+		return sortedOrder.filter((id) => sessions[id]?.cwd === workspaceFilter);
+	}, [sortedOrder, sessions, workspaceFilter]);
+
+	// New-session target cwd: filter takes precedence, then last-used cwd.
+	const targetCwd = workspaceFilter ?? lastUsedCwd ?? null;
 
 	const startWith = async (cwd: string) => {
 		try {
@@ -56,8 +84,8 @@ export function SessionsList() {
 	};
 
 	const start = async () => {
-		if (lastUsedCwd) {
-			await startWith(lastUsedCwd);
+		if (targetCwd) {
+			await startWith(targetCwd);
 			return;
 		}
 		const picked = await window.claude.pickFolder();
@@ -78,6 +106,7 @@ export function SessionsList() {
 		try {
 			await window.claude.deleteSession(pendingDeleteId);
 			removeSession(pendingDeleteId);
+			usePermissionsStore.getState().removeBySessionId(pendingDeleteId);
 			setPendingDeleteId(null);
 		} catch (err) {
 			setDeleteError(err instanceof Error ? err.message : String(err));
@@ -114,13 +143,20 @@ export function SessionsList() {
 						<Stat n={order.length} label="total" />
 					</div>
 				</div>
-				<div style={{ display: "flex", gap: 8 }}>
+				<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+					{workspaces.length > 0 ? (
+						<WorkspaceFilter
+							workspaces={workspaces}
+							value={workspaceFilter}
+							onChange={setWorkspaceFilter}
+						/>
+					) : null}
 					<button
 						className="btn btn-primary"
 						onClick={start}
 						title={
-							lastUsedCwd
-								? `Start a session in ${lastUsedCwd}`
+							targetCwd
+								? `Start a session in ${targetCwd}`
 								: "Pick a folder and start a session there"
 						}
 					>
@@ -133,7 +169,7 @@ export function SessionsList() {
 							/>
 						</svg>
 						New Session
-						{lastUsedCwd ? (
+						{targetCwd ? (
 							<span
 								style={{
 									fontFamily: T.mono,
@@ -142,7 +178,7 @@ export function SessionsList() {
 									marginLeft: 2,
 								}}
 							>
-								· {folderName(lastUsedCwd)}
+								· {folderName(targetCwd)}
 							</span>
 						) : null}
 					</button>
@@ -158,6 +194,28 @@ export function SessionsList() {
 
 			{order.length === 0 ? (
 				<div className="message">No sessions yet. Click “New Session”.</div>
+			) : visibleOrder.length === 0 ? (
+				<div className="message">
+					No sessions in{" "}
+					<code>{workspaceFilter ? folderName(workspaceFilter) : ""}</code>.
+					Switch the filter to{" "}
+					<button
+						type="button"
+						onClick={() => setWorkspaceFilter(null)}
+						style={{
+							border: "none",
+							background: "transparent",
+							padding: 0,
+							color: T.accent,
+							cursor: "pointer",
+							font: "inherit",
+							textDecoration: "underline",
+						}}
+					>
+						All workspaces
+					</button>
+					.
+				</div>
 			) : (
 				<div
 					style={{
@@ -185,14 +243,14 @@ export function SessionsList() {
 						<div>Status</div>
 						<div />
 					</div>
-					{sortedOrder.map((id, i) => {
+					{visibleOrder.map((id, i) => {
 						const s = sessions[id];
 						const sessionPending = queue.filter((q) => q.sessionId === id);
 						return (
 							<Row
 								key={id}
 								session={s}
-								last={i === sortedOrder.length - 1}
+								last={i === visibleOrder.length - 1}
 								pending={sessionPending}
 								onDelete={() => {
 									setPendingDeleteId(id);
@@ -367,6 +425,181 @@ function Row({
 				</div>
 			) : null}
 		</div>
+	);
+}
+
+function WorkspaceFilter({
+	workspaces,
+	value,
+	onChange,
+}: {
+	workspaces: string[];
+	value: string | null;
+	onChange: (v: string | null) => void;
+}) {
+	const [open, setOpen] = useState(false);
+	const ref = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		if (!open) return;
+		const onDocClick = (e: MouseEvent) => {
+			if (ref.current && !ref.current.contains(e.target as Node)) {
+				setOpen(false);
+			}
+		};
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") setOpen(false);
+		};
+		document.addEventListener("mousedown", onDocClick);
+		document.addEventListener("keydown", onKey);
+		return () => {
+			document.removeEventListener("mousedown", onDocClick);
+			document.removeEventListener("keydown", onKey);
+		};
+	}, [open]);
+
+	const label = value ? folderName(value) : "All workspaces";
+
+	return (
+		<div ref={ref} style={{ position: "relative" }}>
+			<button
+				type="button"
+				className="btn"
+				onClick={() => setOpen((o) => !o)}
+				title={value ?? "Show sessions from all workspaces"}
+				style={{
+					display: "inline-flex",
+					alignItems: "center",
+					gap: 8,
+					color: T.textDim,
+					fontSize: 13,
+				}}
+			>
+				<span
+					style={{
+						color: T.textMute,
+						fontSize: 11,
+						fontWeight: 600,
+						letterSpacing: 1,
+						textTransform: "uppercase",
+					}}
+				>
+					Workspace
+				</span>
+				<span
+					style={{
+						color: T.text,
+						fontFamily: value ? T.mono : undefined,
+					}}
+				>
+					{label}
+				</span>
+				<svg width="9" height="9" viewBox="0 0 10 10">
+					<path
+						d="M2 4l3 3 3-3"
+						stroke="currentColor"
+						strokeWidth="1.4"
+						fill="none"
+						strokeLinecap="round"
+						strokeLinejoin="round"
+					/>
+				</svg>
+			</button>
+			{open ? (
+				<div
+					role="menu"
+					style={{
+						position: "absolute",
+						top: "calc(100% + 4px)",
+						right: 0,
+						minWidth: 220,
+						maxHeight: 320,
+						overflowY: "auto",
+						background: T.surfaceHi,
+						border: `0.5px solid ${T.border}`,
+						borderRadius: 8,
+						padding: 4,
+						zIndex: 50,
+						boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+					}}
+				>
+					<MenuItem
+						active={value === null}
+						label="All workspaces"
+						onClick={() => {
+							onChange(null);
+							setOpen(false);
+						}}
+					/>
+					{workspaces.length > 0 ? (
+						<div
+							style={{
+								height: 1,
+								background: T.borderSoft,
+								margin: "4px 0",
+							}}
+						/>
+					) : null}
+					{workspaces.map((w) => (
+						<MenuItem
+							key={w}
+							active={value === w}
+							label={folderName(w)}
+							hint={w}
+							mono
+							onClick={() => {
+								onChange(w);
+								setOpen(false);
+							}}
+						/>
+					))}
+				</div>
+			) : null}
+		</div>
+	);
+}
+
+function MenuItem({
+	active,
+	label,
+	hint,
+	mono,
+	onClick,
+}: {
+	active: boolean;
+	label: string;
+	hint?: string;
+	mono?: boolean;
+	onClick: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			role="menuitem"
+			onClick={onClick}
+			title={hint}
+			style={{
+				display: "block",
+				width: "100%",
+				textAlign: "left",
+				padding: "6px 10px",
+				borderRadius: 6,
+				border: "none",
+				background: active ? T.accentSoft : "transparent",
+				color: active ? T.accent : T.text,
+				fontSize: 13,
+				fontFamily: mono ? T.mono : undefined,
+				cursor: "pointer",
+			}}
+			onMouseEnter={(e) => {
+				if (!active) e.currentTarget.style.background = T.surface;
+			}}
+			onMouseLeave={(e) => {
+				if (!active) e.currentTarget.style.background = "transparent";
+			}}
+		>
+			{label}
+		</button>
 	);
 }
 
