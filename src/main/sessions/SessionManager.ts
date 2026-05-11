@@ -61,25 +61,6 @@ function extractSdkSessionId(msg: SDKMessage): string | undefined {
 	return typeof sid === "string" ? sid : undefined;
 }
 
-function stringifyToolResultContent(content: unknown): string {
-	if (typeof content === "string") return content;
-	if (Array.isArray(content)) {
-		return content
-			.map((b) => {
-				if (b && typeof b === "object" && "text" in b) {
-					return String((b as { text: unknown }).text ?? "");
-				}
-				return JSON.stringify(b);
-			})
-			.join("\n");
-	}
-	try {
-		return JSON.stringify(content);
-	} catch {
-		return String(content);
-	}
-}
-
 function logSdkErrors(sessionId: string, msg: SDKMessage): void {
 	if (msg.type === "result") {
 		const r = msg as unknown as {
@@ -93,29 +74,10 @@ function logSdkErrors(sessionId: string, msg: SDKMessage): void {
 				r.result ?? r,
 			);
 		}
-		return;
 	}
-	if (msg.type === "user") {
-		const inner = (msg as unknown as { message?: { content?: unknown } })
-			.message?.content;
-		if (!Array.isArray(inner)) return;
-		for (const block of inner) {
-			if (!block || typeof block !== "object") continue;
-			const b = block as {
-				type?: string;
-				is_error?: boolean;
-				tool_use_id?: string;
-				content?: unknown;
-			};
-			if (b.type !== "tool_result") continue;
-			const text = stringifyToolResultContent(b.content);
-			if (b.is_error || /<tool_use_error>|InputValidationError/.test(text)) {
-				console.error(
-					`[session ${sessionId}] tool_result error tool_use_id=${b.tool_use_id ?? "?"}\n${text}`,
-				);
-			}
-		}
-	}
+	// tool_result errors are intentionally not logged — they fire constantly
+	// during normal use (permission denials, <tool_use_error>, InputValidationError)
+	// and drowned out genuine errors.
 }
 
 function sdkPermissionModeFor(mode: SessionMode): "plan" | "acceptEdits" {
@@ -138,8 +100,23 @@ function firstTextFromBlocks(blocks: UserContentBlock[]): string {
 
 export class SessionManager {
 	private sessions = new Map<string, RunningEntry>();
+	// Tombstones for deleted sessions. Once an id lands here, `send()` drops
+	// any subsequent broadcast referring to it so leaked SDK events from a
+	// still-winding-down loop can't resurrect the row in any renderer
+	// (which lazy-creates entries from upsert payloads). UUIDs are random,
+	// so we don't need to evict — one entry per delete per process lifetime.
+	private deletedIds = new Set<string>();
 
 	constructor(private broker: PermissionBroker) {}
+
+	/**
+	 * Mark a session id as deleted. After this point, `send()` drops any
+	 * broadcast whose payload references the id, regardless of whether the
+	 * SDK loop has finished tearing down. Idempotent.
+	 */
+	markDeleted(id: string): void {
+		this.deletedIds.add(id);
+	}
 
 	getSession(id: string): ClaudeSession | undefined {
 		return this.sessions.get(id)?.session;
@@ -810,6 +787,22 @@ export class SessionManager {
 	}
 
 	private send(channel: string, payload: unknown) {
+		// Drop broadcasts for tombstoned sessions. Late SDK events (status,
+		// cancelled, message, patch, done, errored, started) all carry the
+		// session id as either `sessionId` or `id` in the payload object.
+		// Payloads without a session id (e.g. `permission:resolved` carries
+		// only `requestId`) pass through — the renderer needs them to clear
+		// its permission queue and they can't resurrect a deleted row.
+		if (payload && typeof payload === "object") {
+			const p = payload as { sessionId?: unknown; id?: unknown };
+			const sid =
+				typeof p.sessionId === "string"
+					? p.sessionId
+					: typeof p.id === "string"
+						? p.id
+						: undefined;
+			if (sid && this.deletedIds.has(sid)) return;
+		}
 		windows.broadcast(channel, payload);
 	}
 }

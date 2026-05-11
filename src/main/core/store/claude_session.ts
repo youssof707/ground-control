@@ -14,6 +14,14 @@ import { enqueue } from "./write_queue";
 let initialized = false;
 let filePath: string | null = null;
 let db: ClaudeSessionsFile = { items: {} };
+// Tombstones for sessions that have been (or are being) deleted. Added
+// synchronously in `deleteSession` so any already-enqueued appendMessage /
+// updateSession tasks for the same id short-circuit when they finally run.
+// Without this, a busy session with many queued message writes could block
+// the delete for seconds behind a stack of full-file `writeFileAtomic`
+// flushes. Tombstones are in-memory only — after restart the row is gone
+// from disk so the natural `if (!current) return` guards do the same job.
+const tombstones = new Set<string>();
 
 function assertInitialized(): void {
 	if (!initialized) {
@@ -91,6 +99,9 @@ export async function createSession(
 ): Promise<ClaudeSessionFull> {
 	assertInitialized();
 	const validated = ClaudeSessionFullSchema.parse(session);
+	// Defensive: random UUIDs don't collide, but clear any prior tombstone
+	// for the id so writes after this create aren't silently dropped.
+	tombstones.delete(validated.id);
 	return enqueue(async () => {
 		db.items[validated.id] = validated;
 		await persist();
@@ -120,6 +131,10 @@ export async function updateSession(
 ): Promise<ClaudeSessionFull | null> {
 	assertInitialized();
 	return enqueue(async () => {
+		// Short-circuit tombstoned ids so a long queue of pending updates
+		// from a still-winding-down SDK loop drains instantly behind the
+		// delete instead of doing a full-file `writeFileAtomic` per task.
+		if (tombstones.has(id)) return null;
 		const current = db.items[id];
 		// Tolerate missing rows: an active session can be deleted concurrently;
 		// late updates from its winding-down loop should silently no-op rather
@@ -139,6 +154,10 @@ export async function appendMessage(
 ): Promise<void> {
 	assertInitialized();
 	return enqueue(async () => {
+		// Same short-circuit as updateSession — without this, a session with
+		// dozens of queued message appends would force the delete to wait
+		// behind every full-file flush.
+		if (tombstones.has(id)) return;
 		const current = db.items[id];
 		if (!current) return;
 		const merged = { ...current, messages: [...current.messages, msg] };
@@ -160,9 +179,16 @@ export async function setSessionStatus(
 /**
  * Hard-delete a session record from this app's storage. Does NOT touch the
  * underlying Claude Agent SDK's session state (which lives in ~/.claude).
+ *
+ * Synchronously tombstones the id before enqueuing the actual delete so
+ * any already-queued appendMessage / updateSession tasks for the same id
+ * (e.g. from a busy SDK loop) see the tombstone the moment they run and
+ * skip their full-file flush. This is what keeps the delete IPC fast
+ * even on a chatty session.
  */
 export async function deleteSession(id: string): Promise<void> {
 	assertInitialized();
+	tombstones.add(id);
 	return enqueue(async () => {
 		if (!db.items[id]) return;
 		delete db.items[id];

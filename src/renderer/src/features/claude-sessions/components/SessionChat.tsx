@@ -6,6 +6,7 @@ import { useReadStore } from "../stores/useReadStore";
 import { PermissionCard } from "./PermissionCard";
 import { ImagePasteTextarea } from "./ImagePasteTextarea";
 import { MessageView } from "./MessageView";
+import { ConfirmModal } from "../../../components/ConfirmModal";
 import { T } from "../../../design/tokens";
 import { BranchChipWithDelta, StatusPill } from "../../../design/Atoms";
 
@@ -13,39 +14,71 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	const navigate = useNavigate();
 	const session = useSessionsStore((s) => s.sessions[sessionId]);
 	const upsertSession = useSessionsStore((s) => s.upsertSession);
-	const removeSession = useSessionsStore((s) => s.removeSession);
-	const allSessions = useSessionsStore((s) => s.sessions);
-	const sessionOrder = useSessionsStore((s) => s.order);
-	const lastReadAt = useReadStore((s) => s.lastReadAt);
 	const queue = usePermissionsStore((s) => s.queue);
 	const pending = queue.filter((q) => q.sessionId === sessionId);
-	const hasAnyUnread = sessionOrder.some((id) => {
-		const sess = allSessions[id];
-		if (!sess) return false;
-		if (sess.status === "running") return false;
-		let lastIncoming = 0;
-		for (let i = sess.messages.length - 1; i >= 0; i--) {
-			if (sess.messages[i].role === "assistant") {
-				lastIncoming = sess.messages[i].ts;
-				break;
-			}
-		}
-		return lastIncoming > 0 && lastIncoming > (lastReadAt[id] ?? 0);
-	});
 	const [interrupting, setInterrupting] = useState(false);
 	const [resuming, setResuming] = useState(false);
 	const [resumeError, setResumeError] = useState<string | null>(null);
 	const [forkingId, setForkingId] = useState<string | null>(null);
 	const [forkError, setForkError] = useState<string | null>(null);
+	const [pendingForkMessageId, setPendingForkMessageId] = useState<
+		string | null
+	>(null);
 	const [editingTitle, setEditingTitle] = useState(false);
 	const [titleDraft, setTitleDraft] = useState("");
 	const titleInputRef = useRef<HTMLInputElement>(null);
+	// `inputHeight` is the single source of truth for the chat textarea's
+	// rendered height. It's updated by either:
+	//   (1) the drag handle (any direction, sets it directly), or
+	//   (2) content measurement via `onContentHeightChange` — but ONLY
+	//       to push the height UP when scrollHeight exceeds the current
+	//       height. Content measurement never shrinks `inputHeight`, so
+	//       a manual drag-down is preserved and the textarea scrolls
+	//       internally (overflowY: auto) past the dragged height.
 	const [inputHeight, setInputHeight] = useState(44);
-	const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+	// Cap the chat textarea at 45% of the window so the message transcript
+	// always keeps the majority of the viewport. The 120px floor keeps the
+	// textarea usable on tiny windows where 45% would be cramped.
+	const maxInputHeight = Math.max(120, Math.floor(window.innerHeight * 0.45));
+	const dragRef = useRef<{
+		startY: number;
+		startHeight: number;
+		lastHeight: number;
+	} | null>(null);
+	// Manual-size lock: set true after a drag-DOWN so subsequent typing
+	// can't undo the user's deliberate shrink. Released by either a
+	// drag-UP past the original size or by the textarea emptying out
+	// (e.g. after sending), so each new message starts in auto-grow mode.
+	const isManualRef = useRef(false);
+
+	const onContentHeightChange = useCallback(
+		(sh: number) => {
+			// Textarea is essentially empty (post-send, or all text deleted).
+			// Reset the manual lock so the next typing session auto-grows.
+			// Empty Chromium textarea with default rows=2 reports
+			// scrollHeight ≈ 42–46, so 50 is a safe threshold.
+			if (sh <= 50) {
+				isManualRef.current = false;
+			}
+			// While locked (after a drag-down), don't auto-grow — let the
+			// textarea's overflowY: auto scroll content internally instead.
+			if (isManualRef.current) return;
+			setInputHeight((prev) =>
+				sh > prev
+					? Math.min(maxInputHeight, Math.max(44, sh))
+					: prev,
+			);
+		},
+		[maxInputHeight],
+	);
 
 	const onDividerPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
 		e.preventDefault();
-		dragRef.current = { startY: e.clientY, startHeight: inputHeight };
+		dragRef.current = {
+			startY: e.clientY,
+			startHeight: inputHeight,
+			lastHeight: inputHeight,
+		};
 		e.currentTarget.setPointerCapture(e.pointerId);
 		document.body.style.userSelect = "none";
 		document.body.style.cursor = "ns-resize";
@@ -54,11 +87,24 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 		const d = dragRef.current;
 		if (!d) return;
 		const delta = e.clientY - d.startY;
-		const max = Math.max(120, window.innerHeight - 260);
-		setInputHeight(Math.min(max, Math.max(44, d.startHeight - delta)));
+		const newHeight = Math.min(
+			maxInputHeight,
+			Math.max(44, d.startHeight - delta),
+		);
+		d.lastHeight = newHeight;
+		setInputHeight(newHeight);
 	};
 	const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
-		if (!dragRef.current) return;
+		const d = dragRef.current;
+		if (!d) return;
+		// Apply the manual-lock rule from the drag's final direction:
+		// drag-down locks the smaller size; drag-up releases any prior lock.
+		// A click without movement leaves the flag unchanged.
+		if (d.lastHeight < d.startHeight) {
+			isManualRef.current = true;
+		} else if (d.lastHeight > d.startHeight) {
+			isManualRef.current = false;
+		}
 		dragRef.current = null;
 		e.currentTarget.releasePointerCapture(e.pointerId);
 		document.body.style.userSelect = "";
@@ -153,49 +199,43 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	// useCallback so MessageView's React.memo can short-circuit re-renders.
 	// forkingId is in deps because we early-return when a fork is in flight;
 	// during the brief fork window the identity changes once, which is fine.
+	// Clicking the fork icon only *stages* the fork — the actual IPC call
+	// runs from confirmFork() after the user confirms in the modal.
 	const fork = useCallback(
-		async (messageId: string) => {
+		(messageId: string) => {
 			if (forkingId) return;
-			setForkingId(messageId);
 			setForkError(null);
-			try {
-				const next = await window.claude.forkSession(sessionId, messageId);
-				navigate(`/sessions/${next.id}`);
-			} catch (err) {
-				setForkError(err instanceof Error ? err.message : String(err));
-			} finally {
-				setForkingId(null);
-			}
+			setPendingForkMessageId(messageId);
 		},
-		[forkingId, sessionId, navigate],
+		[forkingId],
 	);
 
-	// Clicking the "Sessions" breadcrumb (back). If this session has never
-	// received a message, treat it as discarded scratch space and delete it
-	// on the way out rather than leaving an empty husk in the list.
-	const handleLeave = async (e: React.MouseEvent<HTMLAnchorElement>) => {
-		e.preventDefault();
-		if (session && session.messages.length === 0) {
-			try {
-				await window.claude.deleteSession(sessionId);
-				removeSession(sessionId);
-			} catch (err) {
-				// If the cleanup fails, fall through and navigate anyway —
-				// stranding the user on this screen would be worse than
-				// leaving an empty session behind.
-				console.error("Failed to delete empty session on leave", err);
-			}
+	const confirmFork = async () => {
+		const messageId = pendingForkMessageId;
+		if (!messageId || forkingId) return;
+		setForkingId(messageId);
+		setForkError(null);
+		try {
+			const next = await window.claude.forkSession(sessionId, messageId);
+			setPendingForkMessageId(null);
+			navigate(`/sessions/${next.id}`);
+		} catch (err) {
+			setForkError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setForkingId(null);
 		}
-		navigate("/");
+	};
+
+	const cancelFork = () => {
+		if (forkingId) return;
+		setPendingForkMessageId(null);
+		setForkError(null);
 	};
 
 	if (!session) {
 		return (
 			<div className="page">
 				<div className="message">Session not found.</div>
-				<div style={{ marginTop: 12 }}>
-					<Link to="/">← Back</Link>
-				</div>
 			</div>
 		);
 	}
@@ -224,7 +264,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					background: T.win,
 				}}
 			>
-				{/* Row 1: back, title, filepath, action buttons */}
+				{/* Row 1: title, filepath, action buttons */}
 				<div
 					style={{
 						display: "flex",
@@ -233,45 +273,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 						minWidth: 0,
 					}}
 				>
-					<Link
-						to="/"
-						onClick={handleLeave}
-						aria-label="Back to sessions"
-						title="Back to sessions"
-						style={{
-							display: "inline-flex",
-							alignItems: "center",
-							gap: 6,
-							fontSize: 12.5,
-							color: T.textDim,
-							textDecoration: "none",
-							padding: "5px 4px",
-							borderRadius: 7,
-							flexShrink: 0,
-						}}
-					>
-						<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-							<path
-								d="M7 3l-3 3 3 3"
-								stroke="currentColor"
-								strokeWidth="1.4"
-								strokeLinecap="round"
-								strokeLinejoin="round"
-							/>
-						</svg>
-						{hasAnyUnread ? (
-							<span
-								title="Unread sessions"
-								style={{
-									width: 7,
-									height: 7,
-									borderRadius: "50%",
-									background: T.accent,
-									flexShrink: 0,
-								}}
-							/>
-						) : null}
-					</Link>
 					{editingTitle ? (
 						<input
 							ref={titleInputRef}
@@ -520,7 +521,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 				</div>
 			) : null}
 
-			{forkError ? (
+			{forkError && !pendingForkMessageId ? (
 				<div
 					className="message message-error"
 					style={{ margin: 12, padding: 8, fontSize: 12 }}
@@ -533,8 +534,22 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 				<ImagePasteTextarea
 					sessionId={sessionId}
 					textareaHeight={inputHeight}
+					onContentHeightChange={onContentHeightChange}
+					disabled={pending.length > 0}
 				/>
 			) : null}
+
+			<ConfirmModal
+				open={!!pendingForkMessageId}
+				title="Fork conversation?"
+				message="Start a new session that branches from this message. The current session stays intact."
+				confirmLabel="Fork"
+				cancelLabel="Cancel"
+				busy={!!forkingId}
+				error={forkError}
+				onConfirm={confirmFork}
+				onCancel={cancelFork}
+			/>
 		</div>
 	);
 }

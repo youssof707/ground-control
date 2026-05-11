@@ -1,5 +1,6 @@
 import {
 	useEffect,
+	useLayoutEffect,
 	useRef,
 	useState,
 	type ClipboardEvent,
@@ -18,6 +19,7 @@ interface Props {
 	sessionId: string;
 	disabled?: boolean;
 	textareaHeight?: number;
+	onContentHeightChange?: (height: number) => void;
 }
 
 interface PendingImage {
@@ -39,7 +41,12 @@ function toSupportedMediaType(t: string): UserImageMediaType | null {
 		: null;
 }
 
-export function ImagePasteTextarea({ sessionId, disabled, textareaHeight = 44 }: Props) {
+export function ImagePasteTextarea({
+	sessionId,
+	disabled,
+	textareaHeight = 44,
+	onContentHeightChange,
+}: Props) {
 	const [text, setText] = useState("");
 	const [images, setImages] = useState<PendingImage[]>([]);
 	const [sending, setSending] = useState(false);
@@ -73,6 +80,23 @@ export function ImagePasteTextarea({ sessionId, disabled, textareaHeight = 44 }:
 		}, 0);
 		return () => window.clearTimeout(id);
 	}, [sessionId]);
+
+	// Auto-grow the textarea to fit its content. We toggle height to "auto"
+	// just long enough to read scrollHeight (the natural content height),
+	// then restore the previous height so React's controlled style prop wins
+	// on the next render. useLayoutEffect runs synchronously before paint,
+	// so the brief swap never produces a visible flash. The measured value
+	// is reported up to SessionChat, which combines it with the drag-set
+	// baseline (Math.max) and feeds the result back as `textareaHeight`.
+	useLayoutEffect(() => {
+		const ta = textareaRef.current;
+		if (!ta || !onContentHeightChange) return;
+		const prev = ta.style.height;
+		ta.style.height = "auto";
+		const sh = ta.scrollHeight;
+		ta.style.height = prev;
+		onContentHeightChange(sh);
+	}, [text, onContentHeightChange]);
 
 	const changeMode = async (next: SessionMode) => {
 		if (modeSwitching || mode === next) return;
@@ -168,10 +192,30 @@ export function ImagePasteTextarea({ sessionId, disabled, textareaHeight = 44 }:
 	};
 
 	const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-		if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+		if (e.key !== "Enter") return;
+
+		// Plain Enter → send
+		if (!e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
 			e.preventDefault();
 			void send();
+			return;
 		}
+
+		// Cmd+Enter → insert newline at cursor (not native on macOS)
+		if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+			e.preventDefault();
+			const ta = e.currentTarget;
+			const start = ta.selectionStart ?? text.length;
+			const end = ta.selectionEnd ?? text.length;
+			const next = text.slice(0, start) + "\n" + text.slice(end);
+			setText(next);
+			requestAnimationFrame(() => {
+				ta.selectionStart = ta.selectionEnd = start + 1;
+			});
+			return;
+		}
+
+		// Shift+Enter and anything else: let the browser handle it.
 	};
 
 	const canSend = !!(text.trim() || images.length > 0);
@@ -310,7 +354,7 @@ export function ImagePasteTextarea({ sessionId, disabled, textareaHeight = 44 }:
 					<ModeToggle
 						mode={mode}
 						onChange={(next) => void changeMode(next)}
-						disabled={modeSwitching}
+						disabled={disabled || modeSwitching}
 					/>
 					<button
 						onClick={send}

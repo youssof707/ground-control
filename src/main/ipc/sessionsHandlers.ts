@@ -8,12 +8,12 @@ import type {
 	UserTurn,
 } from "../../shared/schemas/claude_session";
 import * as sessionStore from "../core/store/claude_session";
-import * as minimizedStore from "../core/store/minimized_state";
+import * as notesStore from "../core/store/session_notes";
 import { broadcast } from "../windows";
 import { registerReadHandlers } from "./readHandlers";
-import { registerMinimizedHandlers } from "./minimizedHandlers";
 import { registerSettingsHandlers } from "./settingsHandlers";
 import { registerAppInfoHandlers } from "./appInfoHandlers";
+import { registerNotesHandlers } from "./notesHandlers";
 
 export function registerSessionsHandlers(): SessionManager {
 	const notifications = new NotificationManager();
@@ -28,9 +28,9 @@ export function registerSessionsHandlers(): SessionManager {
 	manager = new SessionManager(broker);
 
 	registerReadHandlers();
-	registerMinimizedHandlers();
 	registerSettingsHandlers();
 	registerAppInfoHandlers();
+	registerNotesHandlers();
 
 	ipcMain.handle("session:start", (_e, input: StartSessionInput) =>
 		manager.run(input),
@@ -123,24 +123,42 @@ export function registerSessionsHandlers(): SessionManager {
 		},
 	);
 	ipcMain.handle("session:delete", async (e, sessionId: string) => {
-		// Fully tear down the SDK loop before deleting so no late messages,
-		// status events, or store writes can arrive for this session
-		// afterwards (which would otherwise leak through to the renderer and
-		// could resurrect the session via upsertSession on diff payloads).
-		// No-op if the session isn't running.
-		await manager.cancelAndWait(sessionId);
+		// Tombstone first — synchronous. Any subsequent SDK event for this
+		// session id is dropped by SessionManager.send, so leaked status /
+		// cancelled / message / patch broadcasts from the still-winding-down
+		// loop can't reach any window and lazy-resurrect the row via
+		// upsertSession.
+		manager.markDeleted(sessionId);
+		// Trip the abort signal so the SDK loop breaks out on its next tick.
+		// We don't await its `done` here: captureDiff inside the cancelled
+		// branch can be slow on a large repo, and the tombstone above means
+		// we don't need its broadcasts anyway.
+		manager.cancel(sessionId);
 		// Resolve any pending permission promises for this session and broadcast
 		// permission:resolved so the renderer's inbox queue clears. Redundant
 		// for sessions that were running (the loop's cancelled branch already
 		// called this), but the safety net for non-running sessions.
 		broker.cancelAllForSession(sessionId, "Session deleted");
+		// Persist the deletes. The store-level tombstone in deleteSession()
+		// is set synchronously, so any appendMessage / updateSession tasks
+		// from the SDK loop that were already queued ahead of these on the
+		// shared write_queue short-circuit (Set check, no file write) and
+		// drain quickly instead of forcing a full-file flush per message.
 		await sessionStore.deleteSession(sessionId);
-		// Drop any stale "minimized" flag — the session no longer exists, so
-		// keeping the entry would just grow the file forever.
-		await minimizedStore.clear(sessionId);
+		// Cascade-delete any notes attached to this session. Awaited before
+		// broadcasting so other windows don't briefly see notes attached to a
+		// missing session during a refetch.
+		await notesStore.deleteAllForSession(sessionId);
 		// Structural ping → other windows refetch and drop this session from
 		// their stores. Originator already removed it locally.
 		broadcast("state:changed", undefined, e.sender.id);
+		// Graceful SDK loop drain in the background. This is what used to
+		// block the IPC critical path; now the renderer doesn't wait on it.
+		// The tombstone in SessionManager.send filters any of its emitted
+		// events; the store-level tombstone no-ops any of its writes.
+		void manager.cancelAndWait(sessionId).catch((err) => {
+			console.error("[ccw] background cancelAndWait failed:", err);
+		});
 	});
 
 	return manager;

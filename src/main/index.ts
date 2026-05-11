@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Menu } from "electron";
+import { app, BrowserWindow, dialog, Menu, shell } from "electron";
 import { join } from "path";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import type { FastifyInstance } from "fastify";
@@ -10,7 +10,7 @@ import {
 	deleteSession,
 } from "./core/store/claude_session";
 import { initialize as initializeReadStore } from "./core/store/read_state";
-import { initialize as initializeMinimizedStore } from "./core/store/minimized_state";
+import { initialize as initializeSessionNotesStore } from "./core/store/session_notes";
 import {
 	initialize as initializeAppSettingsStore,
 	get as getAppSettings,
@@ -45,6 +45,34 @@ function createWindow(): BrowserWindow {
 	});
 
 	win.on("ready-to-show", () => win.show());
+
+	// Hard rule: NO external URL is ever allowed to render inside this
+	// Electron app. Every http(s)/mailto/etc. URL is shoved out to the OS
+	// default browser (Chrome on this machine). Two paths to cover:
+	//
+	//   1. `window.open(...)` / `<a target="_blank">` — would default to a
+	//      new chromeless BrowserWindow. Deny, openExternal instead.
+	//   2. `<a href>` clicks on the existing webContents — would navigate
+	//      away from our app. If the destination is not our own renderer
+	//      origin, cancel and openExternal.
+	//
+	// Same-origin navigation is allowed so React Router + Vite HMR keep
+	// working (renderer is http://localhost:* in dev, file:// in prod).
+	win.webContents.setWindowOpenHandler(({ url }) => {
+		void shell.openExternal(url);
+		return { action: "deny" };
+	});
+	win.webContents.on("will-navigate", (event, url) => {
+		try {
+			const target = new URL(url);
+			const here = new URL(win.webContents.getURL());
+			if (target.origin === here.origin) return;
+		} catch {
+			// Unparseable URL — block and bounce to the OS to decide.
+		}
+		event.preventDefault();
+		void shell.openExternal(url);
+	});
 
 	win.on("close", (event) => {
 		if (isQuitting) return;
@@ -107,8 +135,8 @@ app.whenReady().then(async () => {
 	try {
 		await initializeClaudeSessionStore(dataDir);
 		await initializeReadStore(dataDir);
-		await initializeMinimizedStore(dataDir);
 		await initializeAppSettingsStore(dataDir);
+		await initializeSessionNotesStore(dataDir);
 	} catch (err) {
 		console.error(`[ccw] failed to initialize store at ${dataDir}:`, err);
 		app.exit(1);

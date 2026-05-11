@@ -4,13 +4,7 @@ import {
 	useState,
 	type PointerEvent as ReactPointerEvent,
 } from "react";
-import {
-	Route,
-	Routes,
-	useLocation,
-	useMatch,
-	useParams,
-} from "react-router-dom";
+import { Route, Routes, useMatch, useParams } from "react-router-dom";
 import { useSessionsBootstrap } from "./features/claude-sessions/hooks/useSessionsBootstrap";
 import { useNotificationRouter } from "./features/claude-sessions/hooks/useNotificationRouter";
 import { useDockUnreadBadge } from "./features/claude-sessions/hooks/useDockUnreadBadge";
@@ -18,9 +12,17 @@ import { SessionsList } from "./features/claude-sessions/components/SessionsList
 import { SessionChat } from "./features/claude-sessions/components/SessionChat";
 import { DiffViewer } from "./features/claude-sessions/components/DiffViewer";
 import { InboxSidebar } from "./features/claude-sessions/components/InboxSidebar";
+import { NotesSidebarShell } from "./features/claude-sessions/components/notes/NotesSidebarShell";
 import { AppNav } from "./features/claude-sessions/components/AppNav";
 import { useSettingsStore } from "./features/claude-sessions/stores/useSettingsStore";
 import { T } from "./design/tokens";
+
+/**
+ * Discriminated state for the right-hand panel. Inbox and Notes share
+ * one slot and are mutually exclusive — opening one closes the other.
+ * `null` means no right panel is open.
+ */
+export type RightPanel = "inbox" | "notes" | null;
 
 const SIDEBAR_DEFAULT_WIDTH = 320;
 const SIDEBAR_MIN_WIDTH = 260;
@@ -29,7 +31,7 @@ export default function MainApp() {
 	useSessionsBootstrap();
 	useNotificationRouter();
 	useDockUnreadBadge();
-	const [inboxOpen, setInboxOpen] = useState(false);
+	const [rightPanel, setRightPanel] = useState<RightPanel>(null);
 	const [appInfo, setAppInfo] = useState<{
 		env: "dev" | "prod";
 		storeFolder: string;
@@ -55,7 +57,10 @@ export default function MainApp() {
 			}}
 		>
 			<span
-				aria-hidden="true"
+				title="Double-click to toggle DevTools"
+				onDoubleClick={() => {
+					void window.claude.toggleDevTools();
+				}}
 				style={{
 					position: "fixed",
 					left: 6,
@@ -63,7 +68,6 @@ export default function MainApp() {
 					fontSize: 10,
 					fontFamily: T.mono,
 					color: T.textFaint,
-					pointerEvents: "none",
 					userSelect: "none",
 					zIndex: 1,
 					letterSpacing: 0.2,
@@ -72,39 +76,49 @@ export default function MainApp() {
 				v{__APP_VERSION__}
 				{appInfo ? ` · ${appInfo.env} · ${appInfo.storeFolder}` : ""}
 			</span>
-			<AppNav
-				inboxOpen={inboxOpen}
-				onToggleInbox={() => setInboxOpen((v) => !v)}
-			/>
-			<MainBody inboxOpen={inboxOpen} setInboxOpen={setInboxOpen} />
+			<AppNav rightPanel={rightPanel} setRightPanel={setRightPanel} />
+			<MainBody rightPanel={rightPanel} setRightPanel={setRightPanel} />
 		</div>
 	);
 }
 
 function MainBody({
-	inboxOpen,
-	setInboxOpen,
+	rightPanel,
+	setRightPanel,
 }: {
-	inboxOpen: boolean;
-	setInboxOpen: (v: boolean) => void;
+	rightPanel: RightPanel;
+	setRightPanel: (v: RightPanel) => void;
 }) {
-	// Detail routes (`/sessions/:id`, `/sessions/:id/diff`) get the SessionsList
-	// as a left sidebar; the index route (`/`) renders SessionsList full-width
-	// inside <Routes> exactly as before.
-	const location = useLocation();
-	const detailMode = location.pathname.startsWith("/sessions/");
+	// The SessionsList sidebar is always rendered on the left. The right pane
+	// holds the active session (`/sessions/:id`, `/sessions/:id/diff`) and is
+	// empty at the index route `/` — that's the "no session selected" state.
+	const sessionMatch = useMatch("/sessions/:id/*");
+	const activeSessionId = sessionMatch?.params.id;
+
+	// Auto-close Notes when navigating away from a session route — the panel
+	// is session-scoped, so rendering it for an undefined session is wrong.
+	useEffect(() => {
+		if (rightPanel === "notes" && !activeSessionId) setRightPanel(null);
+	}, [rightPanel, activeSessionId, setRightPanel]);
+
 	return (
 		<div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-			{detailMode ? <SessionsListSidebarShell /> : null}
+			<SessionsListSidebarShell />
 			<div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
 				<Routes>
-					<Route path="/" element={<SessionsList />} />
+					<Route path="/" element={null} />
 					<Route path="/sessions/:id" element={<SessionRoute />} />
 					<Route path="/sessions/:id/diff" element={<DiffRoute />} />
 				</Routes>
 			</div>
-			{inboxOpen ? (
-				<InboxSidebar onClose={() => setInboxOpen(false)} />
+			{rightPanel === "inbox" ? (
+				<InboxSidebar onClose={() => setRightPanel(null)} />
+			) : null}
+			{rightPanel === "notes" && activeSessionId ? (
+				<NotesSidebarShell
+					sessionId={activeSessionId}
+					onClose={() => setRightPanel(null)}
+				/>
 			) : null}
 		</div>
 	);
@@ -152,9 +166,13 @@ function SessionsListSidebarShell() {
 		const d = dragRef.current;
 		if (!d) return;
 		const max = computeMax();
-		const next = Math.min(
-			max,
-			Math.max(SIDEBAR_MIN_WIDTH, d.startWidth + (e.clientX - d.startX)),
+		// Round to int — clientX is fractional on high-DPI displays, and we
+		// persist this value through a Zod `int()` schema on pointer-up.
+		const next = Math.round(
+			Math.min(
+				max,
+				Math.max(SIDEBAR_MIN_WIDTH, d.startWidth + (e.clientX - d.startX)),
+			),
 		);
 		setWidth(next);
 	};
@@ -181,10 +199,7 @@ function SessionsListSidebarShell() {
 					background: T.win,
 				}}
 			>
-				<SessionsList
-					variant="sidebar"
-					activeSessionId={activeSessionId}
-				/>
+				<SessionsList activeSessionId={activeSessionId} />
 			</div>
 			<div
 				role="separator"

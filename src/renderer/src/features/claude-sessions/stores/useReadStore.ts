@@ -15,6 +15,7 @@ interface State {
 	lastReadAt: Record<string, number>;
 	hydrate: (map: Record<string, number>) => void;
 	markRead: (sessionId: string, ts?: number) => void;
+	markUnread: (sessionId: string) => void;
 }
 
 export const useReadStore = create<State>((set) => ({
@@ -32,5 +33,17 @@ export const useReadStore = create<State>((set) => ({
 			// their refetch.
 			void window.claude?.markRead(sessionId, next);
 			return { lastReadAt: { ...s.lastReadAt, [sessionId]: next } };
+		}),
+	markUnread: (sessionId) =>
+		set((s) => {
+			// Bypasses the monotonic guard — the whole point is to roll back.
+			// Drop the entry entirely so `lastReadAt[sessionId] ?? 0` evaluates
+			// to 0 next render, and any incoming-message timestamp will exceed
+			// it, flipping the row back to unread.
+			if (!(sessionId in s.lastReadAt)) return s;
+			void window.claude?.markUnread(sessionId);
+			const next = { ...s.lastReadAt };
+			delete next[sessionId];
+			return { lastReadAt: next };
 		}),
 }));

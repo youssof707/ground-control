@@ -70,3 +70,20 @@ export async function mark(sessionId: string, ts?: number): Promise<void> {
 		await persist();
 	});
 }
+
+/**
+ * Roll a session back to "unread" by deleting its entry. Bypasses the
+ * monotonic guard in `mark` — the whole point is to undo a previous read.
+ * Next time the row is rendered, `lastReadAt` defaults to 0 and any
+ * incoming-message timestamp will exceed it, so the unread dot returns.
+ */
+export async function unmark(sessionId: string): Promise<void> {
+	assertInitialized();
+	return enqueue(async () => {
+		if (!(sessionId in db.lastReadAt)) return;
+		const next = { ...db.lastReadAt };
+		delete next[sessionId];
+		db.lastReadAt = next;
+		await persist();
+	});
+}

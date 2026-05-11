@@ -1,9 +1,10 @@
-import { Link } from "react-router-dom";
+import { Link, useMatch } from "react-router-dom";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { useReadStore } from "../stores/useReadStore";
 import { T } from "../../../design/tokens";
 import type { ClaudeSessionFull } from "@shared/claude-sessions/types";
+import type { RightPanel } from "../../../MainApp";
 
 function lastIncomingMessageTs(session: ClaudeSessionFull): number {
 	for (let i = session.messages.length - 1; i >= 0; i--) {
@@ -14,16 +15,17 @@ function lastIncomingMessageTs(session: ClaudeSessionFull): number {
 }
 
 export function AppNav({
-	inboxOpen,
-	onToggleInbox,
+	rightPanel,
+	setRightPanel,
 }: {
-	inboxOpen: boolean;
-	onToggleInbox: () => void;
+	rightPanel: RightPanel;
+	setRightPanel: (v: RightPanel) => void;
 }) {
 	const queue = usePermissionsStore((s) => s.queue);
 	const sessionsMap = useSessionsStore((s) => s.sessions);
 	const sessionsOrder = useSessionsStore((s) => s.order);
 	const lastReadAt = useReadStore((s) => s.lastReadAt);
+	const inSession = !!useMatch("/sessions/:id/*");
 
 	const runningCount = sessionsOrder.filter(
 		(id) => sessionsMap[id]?.status === "running",
@@ -113,12 +115,55 @@ export function AppNav({
 				/>
 			</div>
 			<div style={{ flex: 1 }} />
+			{inSession ? (
+				<NotesToggle
+					active={rightPanel === "notes"}
+					onClick={() =>
+						setRightPanel(rightPanel === "notes" ? null : "notes")
+					}
+				/>
+			) : null}
 			<InboxToggle
-				active={inboxOpen}
+				active={rightPanel === "inbox"}
 				badge={queue.length}
-				onClick={onToggleInbox}
+				onClick={() =>
+					setRightPanel(rightPanel === "inbox" ? null : "inbox")
+				}
 			/>
 		</nav>
+	);
+}
+
+function NotesToggle({
+	active,
+	onClick,
+}: {
+	active: boolean;
+	onClick: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			aria-pressed={active}
+			style={{
+				display: "inline-flex",
+				alignItems: "center",
+				gap: 8,
+				padding: "6px 12px",
+				borderRadius: 8,
+				fontSize: 13,
+				fontWeight: 500,
+				color: active ? T.text : T.textMute,
+				background: active ? T.surface : "transparent",
+				boxShadow: active ? `inset 0 0 0 0.5px ${T.border}` : "none",
+				border: "none",
+				cursor: "pointer",
+				marginRight: 6,
+			}}
+		>
+			<span>Notes</span>
+		</button>
 	);
 }
 
