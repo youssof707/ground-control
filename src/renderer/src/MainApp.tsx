@@ -26,6 +26,23 @@ export default function MainApp() {
 				fontFamily: T.sans,
 			}}
 		>
+			<span
+				aria-hidden="true"
+				style={{
+					position: "fixed",
+					left: 6,
+					bottom: 4,
+					fontSize: 10,
+					fontFamily: T.mono,
+					color: T.textFaint,
+					pointerEvents: "none",
+					userSelect: "none",
+					zIndex: 1,
+					letterSpacing: 0.2,
+				}}
+			>
+				v{__APP_VERSION__}
+			</span>
 			<AppNav
 				inboxOpen={inboxOpen}
 				onToggleInbox={() => setInboxOpen((v) => !v)}
