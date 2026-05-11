@@ -27,12 +27,58 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	const [editingTitle, setEditingTitle] = useState(false);
 	const [titleDraft, setTitleDraft] = useState("");
 	const titleInputRef = useRef<HTMLInputElement>(null);
+	// `inputHeight` is the single source of truth for the chat textarea's
+	// rendered height. It's updated by either:
+	//   (1) the drag handle (any direction, sets it directly), or
+	//   (2) content measurement via `onContentHeightChange` — but ONLY
+	//       to push the height UP when scrollHeight exceeds the current
+	//       height. Content measurement never shrinks `inputHeight`, so
+	//       a manual drag-down is preserved and the textarea scrolls
+	//       internally (overflowY: auto) past the dragged height.
 	const [inputHeight, setInputHeight] = useState(44);
-	const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+	// Cap the chat textarea at 45% of the window so the message transcript
+	// always keeps the majority of the viewport. The 120px floor keeps the
+	// textarea usable on tiny windows where 45% would be cramped.
+	const maxInputHeight = Math.max(120, Math.floor(window.innerHeight * 0.45));
+	const dragRef = useRef<{
+		startY: number;
+		startHeight: number;
+		lastHeight: number;
+	} | null>(null);
+	// Manual-size lock: set true after a drag-DOWN so subsequent typing
+	// can't undo the user's deliberate shrink. Released by either a
+	// drag-UP past the original size or by the textarea emptying out
+	// (e.g. after sending), so each new message starts in auto-grow mode.
+	const isManualRef = useRef(false);
+
+	const onContentHeightChange = useCallback(
+		(sh: number) => {
+			// Textarea is essentially empty (post-send, or all text deleted).
+			// Reset the manual lock so the next typing session auto-grows.
+			// Empty Chromium textarea with default rows=2 reports
+			// scrollHeight ≈ 42–46, so 50 is a safe threshold.
+			if (sh <= 50) {
+				isManualRef.current = false;
+			}
+			// While locked (after a drag-down), don't auto-grow — let the
+			// textarea's overflowY: auto scroll content internally instead.
+			if (isManualRef.current) return;
+			setInputHeight((prev) =>
+				sh > prev
+					? Math.min(maxInputHeight, Math.max(44, sh))
+					: prev,
+			);
+		},
+		[maxInputHeight],
+	);
 
 	const onDividerPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
 		e.preventDefault();
-		dragRef.current = { startY: e.clientY, startHeight: inputHeight };
+		dragRef.current = {
+			startY: e.clientY,
+			startHeight: inputHeight,
+			lastHeight: inputHeight,
+		};
 		e.currentTarget.setPointerCapture(e.pointerId);
 		document.body.style.userSelect = "none";
 		document.body.style.cursor = "ns-resize";
@@ -41,11 +87,24 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 		const d = dragRef.current;
 		if (!d) return;
 		const delta = e.clientY - d.startY;
-		const max = Math.max(120, window.innerHeight - 260);
-		setInputHeight(Math.min(max, Math.max(44, d.startHeight - delta)));
+		const newHeight = Math.min(
+			maxInputHeight,
+			Math.max(44, d.startHeight - delta),
+		);
+		d.lastHeight = newHeight;
+		setInputHeight(newHeight);
 	};
 	const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
-		if (!dragRef.current) return;
+		const d = dragRef.current;
+		if (!d) return;
+		// Apply the manual-lock rule from the drag's final direction:
+		// drag-down locks the smaller size; drag-up releases any prior lock.
+		// A click without movement leaves the flag unchanged.
+		if (d.lastHeight < d.startHeight) {
+			isManualRef.current = true;
+		} else if (d.lastHeight > d.startHeight) {
+			isManualRef.current = false;
+		}
 		dragRef.current = null;
 		e.currentTarget.releasePointerCapture(e.pointerId);
 		document.body.style.userSelect = "";
@@ -475,6 +534,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 				<ImagePasteTextarea
 					sessionId={sessionId}
 					textareaHeight={inputHeight}
+					onContentHeightChange={onContentHeightChange}
 					disabled={pending.length > 0}
 				/>
 			) : null}
