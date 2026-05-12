@@ -33,6 +33,7 @@ import {
 	switchBranch,
 } from "./git";
 import * as sessionStore from "../core/store/claude_session";
+import * as rateLimitTracker from "./RateLimitTracker";
 import * as windows from "../windows";
 
 interface RunningEntry {
@@ -504,6 +505,15 @@ export class SessionManager {
 			queryRef.current = q;
 			for await (const msg of q) {
 				if (abort.signal.aborted) break;
+
+				// Subscription rate-limit signal — transient state, not part of the
+				// transcript. Hand off to the tracker (which broadcasts to renderers)
+				// and skip the persist/append path so it doesn't bloat the session
+				// JSON or render in the chat scroll.
+				if (msg.type === "rate_limit_event") {
+					rateLimitTracker.update(msg.rate_limit_info);
+					continue;
+				}
 
 				logSdkErrors(id, msg);
 

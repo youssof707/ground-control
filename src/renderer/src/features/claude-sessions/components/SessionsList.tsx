@@ -79,14 +79,31 @@ export function SessionsList({
 			: lastUsedCwd ?? null;
 
 	const startWith = async (cwd: string) => {
+		// Subscribe before the IPC so we don't miss the `session:started`
+		// broadcast. Captured in `off` so the error path can also tear it
+		// down — previously this listener leaked any time startSession threw.
+		let off: (() => void) | null = null;
 		try {
 			setStartError(null);
 			// Remember this workspace for the next New Session click. Optimistic
 			// local update + fire-and-forget IPC — mirrors the markRead pattern.
+			// May be reconciled inside the `session:started` handler below if
+			// the main process substituted a different cwd (missing-folder
+			// recovery via the native picker).
 			useSettingsStore.getState().setLastUsedWorkspace(cwd);
-			const off = window.claude.on("session:started", (p) => {
-				const s = p as { id: string };
-				off();
+			off = window.claude.on("session:started", (p) => {
+				const s = p as { id: string; cwd?: string };
+				off?.();
+				off = null;
+				// Reconcile lastUsedWorkspace if the main process swapped the
+				// cwd. We can't read the return value of startSession for
+				// this — manager.run awaits the SDK loop, so its promise
+				// doesn't resolve until the session ends. The session:started
+				// event carries the same ClaudeSession payload and fires
+				// immediately, so use it as the source of truth.
+				if (s.cwd && s.cwd !== cwd) {
+					useSettingsStore.getState().setLastUsedWorkspace(s.cwd);
+				}
 				navigate(`/sessions/${s.id}`);
 			});
 			await window.claude.startSession({
@@ -94,6 +111,8 @@ export function SessionsList({
 				cwd,
 			});
 		} catch (err) {
+			off?.();
+			off = null;
 			setStartError(err instanceof Error ? err.message : String(err));
 		}
 	};

@@ -10,6 +10,10 @@ import type {
 import type { ReadStateFile } from "../shared/schemas/read_state";
 import type { AppSettingsFile } from "../shared/schemas/app_settings";
 import type { Note } from "../shared/schemas/session_notes";
+import type { SDKRateLimitInfo } from "@anthropic-ai/claude-agent-sdk";
+
+export type RateLimitType = NonNullable<SDKRateLimitInfo["rateLimitType"]>;
+export type RateLimitSnapshot = Partial<Record<RateLimitType, SDKRateLimitInfo>>;
 
 declare global {
 	interface Window {
@@ -49,6 +53,7 @@ declare global {
 			updateNote: (id: string, markdown: string) => Promise<Note | null>;
 			deleteNote: (id: string) => Promise<void>;
 			listPermissions: () => Promise<PermissionRequest[]>;
+			getRateLimit: () => Promise<RateLimitSnapshot>;
 			getAppInfo: () => Promise<{
 				env: "dev" | "prod";
 				storeFolder: string;

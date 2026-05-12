@@ -61,6 +61,7 @@ const claude = {
 		ipcRenderer.invoke("notes:update", { id, markdown }),
 	deleteNote: (id: string) => ipcRenderer.invoke("notes:delete", id),
 	listPermissions: () => ipcRenderer.invoke("permissions:list"),
+	getRateLimit: () => ipcRenderer.invoke("rateLimit:get"),
 	getAppInfo: () => ipcRenderer.invoke("appInfo:get"),
 	toggleDevTools: () => ipcRenderer.invoke("devtools:toggle"),
 	on: (channel: string, fn: (payload: unknown) => void) => {

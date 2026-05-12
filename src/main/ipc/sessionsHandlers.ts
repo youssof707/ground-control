@@ -1,4 +1,6 @@
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { promises as fs } from "node:fs";
+import { dirname } from "node:path";
 import { SessionManager } from "../sessions/SessionManager";
 import { PermissionBroker } from "../sessions/PermissionBroker";
 import { NotificationManager } from "./notifications";
@@ -14,6 +16,45 @@ import { registerReadHandlers } from "./readHandlers";
 import { registerSettingsHandlers } from "./settingsHandlers";
 import { registerAppInfoHandlers } from "./appInfoHandlers";
 import { registerNotesHandlers } from "./notesHandlers";
+import { registerRateLimitHandlers } from "./rateLimitHandlers";
+
+/**
+ * Open the native macOS "choose a directory" dialog. Returns the absolute
+ * path the user picked, or null if they cancelled / closed the sheet.
+ *
+ * Modal-parents itself to `win` when one is provided so the dialog is a
+ * sheet on macOS rather than a free-floating window. `defaultPath` is the
+ * folder the picker opens into (e.g. the parent of a missing cwd).
+ */
+async function showFolderPicker(
+	win: BrowserWindow | null,
+	defaultPath?: string,
+): Promise<string | null> {
+	const options: Electron.OpenDialogOptions = {
+		properties: ["openDirectory", "createDirectory"],
+		defaultPath,
+	};
+	const result = win
+		? await dialog.showOpenDialog(win, options)
+		: await dialog.showOpenDialog(options);
+	if (result.canceled || result.filePaths.length === 0) return null;
+	return result.filePaths[0];
+}
+
+/**
+ * Best-effort directory-existence check. Returns false on any stat failure
+ * (missing path, permission error, broken symlink) and also for paths that
+ * exist but aren't directories (e.g. a stale entry that now points at a
+ * file). Callers treat false as "ask the user to pick a real folder".
+ */
+async function directoryExists(path: string): Promise<boolean> {
+	try {
+		const stat = await fs.stat(path);
+		return stat.isDirectory();
+	} catch {
+		return false;
+	}
+}
 
 export function registerSessionsHandlers(): SessionManager {
 	const notifications = new NotificationManager();
@@ -31,10 +72,29 @@ export function registerSessionsHandlers(): SessionManager {
 	registerSettingsHandlers();
 	registerAppInfoHandlers();
 	registerNotesHandlers();
+	registerRateLimitHandlers();
 
-	ipcMain.handle("session:start", (_e, input: StartSessionInput) =>
-		manager.run(input),
-	);
+	ipcMain.handle("session:start", async (e, input: StartSessionInput) => {
+		// Guard against stale `cwd` values (e.g. a `lastUsedWorkspace` whose
+		// folder has been moved or deleted between app launches). Without
+		// this check the session is created with a bogus path and the SDK
+		// only errors out much later on its first tool call — by which point
+		// there's no obvious recovery affordance in the UI.
+		let cwd = input.cwd;
+		if (!(await directoryExists(cwd))) {
+			const win = BrowserWindow.fromWebContents(e.sender);
+			// Open the picker at the parent of the missing path so the user
+			// lands close to where they expected the folder to live.
+			const picked = await showFolderPicker(win, dirname(cwd));
+			if (!picked) {
+				throw new Error(
+					`Folder "${cwd}" no longer exists and no replacement was selected.`,
+				);
+			}
+			cwd = picked;
+		}
+		return manager.run({ ...input, cwd });
+	});
 	ipcMain.handle("session:cancel", (_e, sessionId: string) => {
 		manager.cancel(sessionId);
 	});
@@ -92,17 +152,7 @@ export function registerSessionsHandlers(): SessionManager {
 			opts: { defaultPath?: string } = {},
 		): Promise<string | null> => {
 			const win = BrowserWindow.fromWebContents(e.sender);
-			const result = win
-				? await dialog.showOpenDialog(win, {
-					properties: ["openDirectory", "createDirectory"],
-					defaultPath: opts.defaultPath,
-				})
-				: await dialog.showOpenDialog({
-					properties: ["openDirectory", "createDirectory"],
-					defaultPath: opts.defaultPath,
-				});
-			if (result.canceled || result.filePaths.length === 0) return null;
-			return result.filePaths[0];
+			return showFolderPicker(win, opts.defaultPath);
 		},
 	);
 	ipcMain.handle("shell:revealPath", async (_e, path: string) => {

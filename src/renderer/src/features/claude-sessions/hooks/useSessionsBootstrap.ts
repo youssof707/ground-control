@@ -9,6 +9,10 @@ import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useReadStore } from "../stores/useReadStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
+import {
+	useRateLimitStore,
+	type RateLimitSnapshot,
+} from "../stores/useRateLimitStore";
 
 export function useSessionsBootstrap() {
 	const upsertSession = useSessionsStore((s) => s.upsertSession);
@@ -35,6 +39,7 @@ export function useSessionsBootstrap() {
 			read: 0,
 			permissions: 0,
 			settings: 0,
+			rateLimit: 0,
 		};
 
 		async function refetchSessions(): Promise<void> {
@@ -65,11 +70,20 @@ export function useSessionsBootstrap() {
 			useSettingsStore.getState().hydrate(settings);
 		}
 
+		async function refetchRateLimit(): Promise<void> {
+			const my = ++seq.rateLimit;
+			const snapshot = await window.claude.getRateLimit();
+			if (my !== seq.rateLimit) return;
+			console.log("[ccw][rate-limit] hydrate:", snapshot);
+			useRateLimitStore.getState().hydrate(snapshot);
+		}
+
 		function refetchAll(): void {
 			void refetchSessions();
 			void refetchReadState();
 			void refetchPermissions();
 			void refetchSettings();
+			void refetchRateLimit();
 		}
 
 		// CRITICAL ORDERING: register the per-event listeners FIRST so that
@@ -137,6 +151,14 @@ export function useSessionsBootstrap() {
 			window.claude.on("permission:resolved", (p) => {
 				const { requestId } = p as { requestId: string };
 				removePermission(requestId);
+			}),
+			// Push channel for the claude.ai subscription rate-limit meter.
+			// Main broadcasts the full snapshot every time the SDK emits a
+			// `rate_limit_event` (see RateLimitTracker.update), so we can hot-
+			// swap our hydrated copy on each push — no diffing needed.
+			window.claude.on("rateLimit:update", (p) => {
+				console.log("[ccw][rate-limit] push:", p);
+				useRateLimitStore.getState().hydrate(p as RateLimitSnapshot);
 			}),
 			// The structural-change ping. Originating window is skipped by main,
 			// so we only get here when *another* window mutated something.
