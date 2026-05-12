@@ -309,6 +309,7 @@ export function BranchChipWithDelta({
 	lastUserMessageBranch,
 	sessionId,
 	showCurrentHint = true,
+	suppressStale = false,
 }: {
 	branch?: string;
 	lastUserMessageBranch?: string;
@@ -319,16 +320,23 @@ export function BranchChipWithDelta({
 	 * `sessionId` is also provided) when stale. Default true; pass false in
 	 * tight layouts where the extra text would overflow. */
 	showCurrentHint?: boolean;
+	/** Suppress the red "stale" treatment entirely — the pill renders in its
+	 * neutral palette regardless of whether the branch has diverged, and the
+	 * hint + Switch button are skipped. Use in list / sidebar contexts where
+	 * the warning would be noisy; the SessionChat header keeps it on so the
+	 * user sees the warning in the actual session view. */
+	suppressStale?: boolean;
 }) {
 	if (!branch) return null;
-	const stale = isBranchStale({ branch, lastUserMessageBranch });
+	const stale =
+		!suppressStale && isBranchStale({ branch, lastUserMessageBranch });
 	const showHint = stale && showCurrentHint && !!lastUserMessageBranch;
 	return (
 		<>
 			<BranchChip
 				name={branch}
 				stale={stale}
-				staleFrom={lastUserMessageBranch}
+				staleFrom={stale ? lastUserMessageBranch : undefined}
 			/>
 			{showHint ? (
 				<span

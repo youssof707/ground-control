@@ -11,6 +11,12 @@ interface Props {
 	busy?: boolean;
 	onConfirm: () => void;
 	onCancel: () => void;
+	/**
+	 * Optional third action rendered on the left of the action row (e.g. a
+	 * tertiary "Copy path" button). Keyboard shortcuts still map only to
+	 * Cancel (Escape) and Confirm (Enter); the extra action is mouse-only.
+	 */
+	extraAction?: { label: string; onClick: () => void } | null;
 }
 
 export function ConfirmModal({
@@ -24,6 +30,7 @@ export function ConfirmModal({
 	busy = false,
 	onConfirm,
 	onCancel,
+	extraAction = null,
 }: Props) {
 	useEffect(() => {
 		if (!open) return;
@@ -54,6 +61,16 @@ export function ConfirmModal({
 				{error ? <div className="modal-error">{error}</div> : null}
 
 				<div className="modal-actions">
+					{extraAction ? (
+						<button
+							className="btn"
+							onClick={extraAction.onClick}
+							disabled={busy}
+							style={{ marginRight: "auto" }}
+						>
+							{extraAction.label}
+						</button>
+					) : null}
 					<button className="btn" onClick={onCancel} disabled={busy}>
 						{cancelLabel}
 					</button>

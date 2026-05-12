@@ -32,6 +32,60 @@ export async function getHeadCommit(cwd: string): Promise<string | undefined> {
 }
 
 /**
+ * Best-effort detection of the project's default base branch (typically
+ * `main` or `master`). Used to seed `lastUserMessageBranch` on brand-new
+ * sessions so the staleness chip fires immediately if the user creates a
+ * session while sitting on a feature branch — without having to wait for
+ * the first message.
+ *
+ * Strategy:
+ *   1. `git symbolic-ref --short refs/remotes/origin/HEAD` — this is what
+ *      origin advertises as its default branch. `git clone` sets it
+ *      locally, so it works offline.
+ *   2. Fallback: local `refs/heads/main`.
+ *   3. Fallback: local `refs/heads/master`.
+ *   4. Otherwise undefined.
+ *
+ * Shell-free (`execFile`) and swallows errors — callers treat `undefined`
+ * the same as "no baseline available", so the chip simply doesn't fire.
+ */
+export async function getDefaultBaseBranch(
+	cwd: string,
+): Promise<string | undefined> {
+	// 1. origin's advertised HEAD (e.g. "origin/main").
+	try {
+		const { stdout } = await execFileAsync(
+			"git",
+			["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+			{ cwd },
+		);
+		const name = stdout.trim();
+		if (name.startsWith("origin/")) {
+			const stripped = name.slice("origin/".length);
+			if (stripped) return stripped;
+		} else if (name) {
+			return name;
+		}
+	} catch {
+		// fall through to local fallbacks
+	}
+	// 2 + 3. Local main / master.
+	for (const candidate of ["main", "master"]) {
+		try {
+			await execFileAsync(
+				"git",
+				["rev-parse", "--verify", "--quiet", `refs/heads/${candidate}`],
+				{ cwd },
+			);
+			return candidate;
+		} catch {
+			// try next
+		}
+	}
+	return undefined;
+}
+
+/**
  * Run `git switch <branch>` in the given cwd. Unlike the read-only helpers
  * above this one *throws* on failure — the caller wants the error so it can
  * surface "branch doesn't exist", "uncommitted changes would be lost", etc.

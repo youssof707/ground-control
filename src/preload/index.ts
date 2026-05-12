@@ -39,6 +39,7 @@ const claude = {
 		ipcRenderer.invoke("session:rename", { sessionId, title }),
 	pickFolder: (opts?: { defaultPath?: string }) =>
 		ipcRenderer.invoke("dialog:pickFolder", opts ?? {}),
+	revealPath: (path: string) => ipcRenderer.invoke("shell:revealPath", path),
 	setUnreadCount: (count: number) =>
 		ipcRenderer.send("notifications:setUnreadCount", count),
 	listReadState: () => ipcRenderer.invoke("read:list"),

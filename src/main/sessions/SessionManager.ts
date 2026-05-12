@@ -27,6 +27,7 @@ import type {
 import { PermissionBroker } from "./PermissionBroker";
 import {
 	getCurrentBranch,
+	getDefaultBaseBranch,
 	getDiffSinceCommit,
 	getHeadCommit,
 	switchBranch,
@@ -136,9 +137,10 @@ export class SessionManager {
 
 	async run(input: StartSessionInput): Promise<ClaudeSession> {
 		const id = randomUUID();
-		const [branch, startCommit] = await Promise.all([
+		const [branch, startCommit, defaultBaseBranch] = await Promise.all([
 			getCurrentBranch(input.cwd),
 			getHeadCommit(input.cwd),
+			getDefaultBaseBranch(input.cwd),
 		]);
 		const hasInitialPrompt = !!input.prompt && input.prompt.trim().length > 0;
 		const derivedTitle = hasInitialPrompt
@@ -153,6 +155,14 @@ export class SessionManager {
 			createdAt: Date.now(),
 			branch,
 			startCommit,
+			// Seed the staleness baseline with the project's default base
+			// branch so the BranchChip immediately flags drift when the user
+			// creates a session on a feature branch — without having to wait
+			// for the first user message. `snapshotBranchCheckpoint` will
+			// naturally overwrite this on the first user input, so it's a
+			// pure pre-message hint. Stays undefined when detection fails
+			// (no git repo, no origin/HEAD, no main/master) — same as today.
+			lastUserMessageBranch: defaultBaseBranch,
 			// Every session is created in one of the two app-level modes.
 			// New sessions default to "plan"; the renderer can pre-pick a mode
 			// in StartSessionInput if it ever wants to.

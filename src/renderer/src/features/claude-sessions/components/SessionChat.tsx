@@ -26,6 +26,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	>(null);
 	const [editingTitle, setEditingTitle] = useState(false);
 	const [titleDraft, setTitleDraft] = useState("");
+	const [openFolderModal, setOpenFolderModal] = useState(false);
 	const titleInputRef = useRef<HTMLInputElement>(null);
 	// `inputHeight` is the single source of truth for the chat textarea's
 	// rendered height. It's updated by either:
@@ -373,8 +374,10 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 						</div>
 					)}
 					{session.cwd ? (
-						<span
-							title={session.cwd}
+						<button
+							type="button"
+							title={`${session.cwd}\n(click to open in Finder)`}
+							onClick={() => setOpenFolderModal(true)}
 							style={{
 								fontFamily: T.mono,
 								fontSize: 11.5,
@@ -384,10 +387,24 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 								whiteSpace: "nowrap",
 								minWidth: 0,
 								flex: 1,
+								textAlign: "left",
+								background: "transparent",
+								border: "none",
+								padding: 0,
+								margin: 0,
+								cursor: "pointer",
+							}}
+							onMouseEnter={(e) => {
+								e.currentTarget.style.color = T.text;
+								e.currentTarget.style.textDecoration = "underline";
+							}}
+							onMouseLeave={(e) => {
+								e.currentTarget.style.color = T.textFaint;
+								e.currentTarget.style.textDecoration = "none";
 							}}
 						>
 							{session.cwd.replace(/[\/\\]+$/, "").split(/[\/\\]/).pop() || session.cwd}
-						</span>
+						</button>
 					) : (
 						<div style={{ flex: 1 }} />
 					)}
@@ -549,6 +566,38 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 				error={forkError}
 				onConfirm={confirmFork}
 				onCancel={cancelFork}
+			/>
+
+			<ConfirmModal
+				open={openFolderModal}
+				title="Open folder in Finder?"
+				message={
+					<>
+						Reveal{" "}
+						<code style={{ fontFamily: T.mono, fontSize: 12 }}>
+							{session.cwd}
+						</code>{" "}
+						in Finder?
+					</>
+				}
+				confirmLabel="Open in Finder"
+				cancelLabel="Cancel"
+				extraAction={{
+					label: "Copy path",
+					onClick: async () => {
+						try {
+							await navigator.clipboard.writeText(session.cwd ?? "");
+						} catch {
+							// noop — clipboard write can fail in some contexts
+						}
+						setOpenFolderModal(false);
+					},
+				}}
+				onConfirm={() => {
+					void window.claude.revealPath(session.cwd ?? "");
+					setOpenFolderModal(false);
+				}}
+				onCancel={() => setOpenFolderModal(false)}
 			/>
 		</div>
 	);

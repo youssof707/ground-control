@@ -28,7 +28,7 @@ export function SessionsList({
 	const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 	const [deleteError, setDeleteError] = useState<string | null>(null);
 	const [deleting, setDeleting] = useState(false);
-	const [workspaceFilter, setWorkspaceFilter] = useState<string | null>(null);
+	const [workspaceFilter, setWorkspaceFilter] = useState<string[]>([]);
 
 	const sortedOrder = useMemo(() => {
 		return [...order].sort(
@@ -53,21 +53,30 @@ export function SessionsList({
 		);
 	}, [sortedOrder, sessions]);
 
-	// If the active filter no longer matches any session (e.g. last session in
-	// that workspace was deleted), fall back to ALL.
+	// Prune selected workspaces that no longer have any sessions (e.g. last
+	// session in that workspace was deleted). Empty array means "All", so it's
+	// fine to land there.
 	useEffect(() => {
-		if (workspaceFilter && !workspaces.includes(workspaceFilter)) {
-			setWorkspaceFilter(null);
-		}
+		if (workspaceFilter.length === 0) return;
+		const valid = workspaceFilter.filter((w) => workspaces.includes(w));
+		if (valid.length !== workspaceFilter.length) setWorkspaceFilter(valid);
 	}, [workspaces, workspaceFilter]);
 
 	const visibleOrder = useMemo(() => {
-		if (!workspaceFilter) return sortedOrder;
-		return sortedOrder.filter((id) => sessions[id]?.cwd === workspaceFilter);
+		if (workspaceFilter.length === 0) return sortedOrder;
+		const allowed = new Set(workspaceFilter);
+		return sortedOrder.filter((id) => {
+			const cwd = sessions[id]?.cwd;
+			return cwd != null && allowed.has(cwd);
+		});
 	}, [sortedOrder, sessions, workspaceFilter]);
 
-	// New-session target cwd: filter takes precedence, then last-used cwd.
-	const targetCwd = workspaceFilter ?? lastUsedCwd ?? null;
+	// New-session target cwd: only use the filter when exactly one workspace is
+	// selected (ambiguous otherwise). Otherwise fall back to last-used cwd.
+	const targetCwd =
+		workspaceFilter.length === 1
+			? workspaceFilter[0]
+			: lastUsedCwd ?? null;
 
 	const startWith = async (cwd: string) => {
 		try {
@@ -229,14 +238,17 @@ export function SessionsList({
 					</div>
 				) : visibleOrder.length === 0 ? (
 					<div className="message" style={{ margin: 12 }}>
-						No sessions in{" "}
-						<code>
-							{workspaceFilter ? folderName(workspaceFilter) : ""}
-						</code>
-						.{" "}
+						{workspaceFilter.length === 1 ? (
+							<>
+								No sessions in{" "}
+								<code>{folderName(workspaceFilter[0])}</code>.{" "}
+							</>
+						) : (
+							<>No sessions in the selected workspaces. </>
+						)}
 						<button
 							type="button"
-							onClick={() => setWorkspaceFilter(null)}
+							onClick={() => setWorkspaceFilter([])}
 							style={{
 								border: "none",
 								background: "transparent",
@@ -441,6 +453,7 @@ function SessionRowSidebar({
 								branch={session.branch}
 								lastUserMessageBranch={session.lastUserMessageBranch}
 								showCurrentHint={false}
+								suppressStale
 							/>
 						) : null}
 					</div>
@@ -472,8 +485,8 @@ function WorkspaceFilter({
 	fullWidth = false,
 }: {
 	workspaces: string[];
-	value: string | null;
-	onChange: (v: string | null) => void;
+	value: string[];
+	onChange: (v: string[]) => void;
 	fullWidth?: boolean;
 }) {
 	const [open, setOpen] = useState(false);
@@ -497,7 +510,13 @@ function WorkspaceFilter({
 		};
 	}, [open]);
 
-	const label = value ? folderName(value) : "All workspaces";
+	const label =
+		value.length === 0
+			? "All workspaces"
+			: value.length === 1
+				? folderName(value[0])
+				: `${value.length} workspaces`;
+	const labelMono = value.length === 1;
 
 	return (
 		<div
@@ -511,7 +530,11 @@ function WorkspaceFilter({
 				type="button"
 				className="btn"
 				onClick={() => setOpen((o) => !o)}
-				title={value ?? "Show sessions from all workspaces"}
+				title={
+					value.length === 0
+						? "Show sessions from all workspaces"
+						: value.join("\n")
+				}
 				style={{
 					display: fullWidth ? "flex" : "inline-flex",
 					width: fullWidth ? "100%" : undefined,
@@ -535,7 +558,7 @@ function WorkspaceFilter({
 				<span
 					style={{
 						color: T.text,
-						fontFamily: value ? T.mono : undefined,
+						fontFamily: labelMono ? T.mono : undefined,
 					}}
 				>
 					{label}
@@ -571,10 +594,10 @@ function WorkspaceFilter({
 					}}
 				>
 					<MenuItem
-						active={value === null}
+						active={value.length === 0}
 						label="All workspaces"
 						onClick={() => {
-							onChange(null);
+							onChange([]);
 							setOpen(false);
 						}}
 					/>
@@ -590,13 +613,19 @@ function WorkspaceFilter({
 					{workspaces.map((w) => (
 						<MenuItem
 							key={w}
-							active={value === w}
+							active={value.includes(w)}
 							label={folderName(w)}
 							hint={w}
 							mono
+							checkbox
 							onClick={() => {
-								onChange(w);
-								setOpen(false);
+								onChange(
+									value.includes(w)
+										? value.filter((v) => v !== w)
+										: [...value, w],
+								);
+								// Stay open for multi-select toggling — outside-click
+								// or Escape dismisses.
 							}}
 						/>
 					))}
@@ -612,6 +641,7 @@ function MenuItem({
 	hint,
 	mono,
 	danger,
+	checkbox,
 	onClick,
 }: {
 	active: boolean;
@@ -619,6 +649,7 @@ function MenuItem({
 	hint?: string;
 	mono?: boolean;
 	danger?: boolean;
+	checkbox?: boolean;
 	onClick: () => void;
 }) {
 	// Active wins over danger — workspace filter uses `active` to mark the
@@ -631,7 +662,9 @@ function MenuItem({
 			onClick={onClick}
 			title={hint}
 			style={{
-				display: "block",
+				display: "flex",
+				alignItems: "center",
+				gap: 8,
 				width: "100%",
 				textAlign: "left",
 				padding: "6px 10px",
@@ -654,7 +687,38 @@ function MenuItem({
 				if (!active) e.currentTarget.style.background = "transparent";
 			}}
 		>
-			{label}
+			{checkbox ? (
+				<span
+					aria-hidden
+					style={{
+						width: 12,
+						height: 12,
+						borderRadius: 3,
+						flexShrink: 0,
+						border: `1.5px solid ${active ? T.accent : T.border}`,
+						background: active ? T.accent : "transparent",
+						display: "inline-flex",
+						alignItems: "center",
+						justifyContent: "center",
+					}}
+				>
+					{active ? (
+						<svg width="8" height="8" viewBox="0 0 8 8">
+							<path
+								d="M1.5 4l1.8 1.8L6.5 2.2"
+								stroke={T.accentInk}
+								strokeWidth="1.6"
+								fill="none"
+								strokeLinecap="round"
+								strokeLinejoin="round"
+							/>
+						</svg>
+					) : null}
+				</span>
+			) : null}
+			<span style={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+				{label}
+			</span>
 		</button>
 	);
 }

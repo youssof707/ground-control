@@ -111,6 +111,7 @@ export function DiffViewer({ sessionId }: { sessionId: string }) {
 				<BranchChipWithDelta
 					branch={session.branch}
 					lastUserMessageBranch={session.lastUserMessageBranch}
+					suppressStale
 				/>
 				<div style={{ fontSize: 12, color: T.textFaint, fontFamily: T.mono }}>
 					diff since {session.startCommit.slice(0, 8)}

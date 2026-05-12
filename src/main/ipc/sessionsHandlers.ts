@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain } from "electron";
+import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { SessionManager } from "../sessions/SessionManager";
 import { PermissionBroker } from "../sessions/PermissionBroker";
 import { NotificationManager } from "./notifications";
@@ -105,6 +105,10 @@ export function registerSessionsHandlers(): SessionManager {
 			return result.filePaths[0];
 		},
 	);
+	ipcMain.handle("shell:revealPath", async (_e, path: string) => {
+		if (typeof path !== "string" || !path) return;
+		shell.showItemInFolder(path);
+	});
 	ipcMain.handle(
 		"session:rename",
 		async (e, payload: { sessionId: string; title: string }) => {

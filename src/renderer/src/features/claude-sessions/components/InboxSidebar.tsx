@@ -183,6 +183,7 @@ function InboxCard({
 					branch={session?.branch}
 					lastUserMessageBranch={session?.lastUserMessageBranch}
 					showCurrentHint={false}
+					suppressStale
 				/>
 				<span
 					style={{

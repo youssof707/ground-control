@@ -118,11 +118,17 @@ export const ClaudeSessionSchema = z.object({
 	finishedAt: z.number().optional(),
 	error: z.string().optional(),
 	branch: z.string().optional(),
-	/** Branch in effect the last time the user sent a message in this
-	 * session. Compared with `branch` (the live value) to decide whether the
-	 * chip should render in a "stale" / red state. Only set inside
-	 * SessionManager.pushUserMessage so it always tracks user-driven
-	 * checkpoints, never lifecycle events. */
+	/** Branch tracked by the staleness chip. Compared with `branch` (the
+	 * live value) to decide whether the chip should render in a "stale" /
+	 * red state. Set in two places:
+	 *   - SessionManager.run seeds it with the project's detected default
+	 *     base branch (origin/HEAD, else local main, else master, else
+	 *     unset) so the chip flags drift the moment a session is created
+	 *     on a feature branch — no first message required.
+	 *   - SessionManager.snapshotBranchCheckpoint overwrites it with the
+	 *     live branch on every user-driven checkpoint (message sent,
+	 *     permission/plan/ask-user prompt answered), so it converges on
+	 *     "branch in effect the last time the user acted". */
 	lastUserMessageBranch: z.string().optional(),
 	startCommit: z.string().optional(),
 	diff: z.string().optional(),
