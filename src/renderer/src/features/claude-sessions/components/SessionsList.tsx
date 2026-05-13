@@ -4,6 +4,11 @@ import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useReadStore } from "../stores/useReadStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
+import { useWorktreesStore } from "../stores/useWorktreesStore";
+import {
+	useEphemeralSessionsStore,
+	type EphemeralSession,
+} from "../stores/useEphemeralSessionsStore";
 import { ConfirmModal } from "../../../components/ConfirmModal";
 import { T } from "../../../design/tokens";
 import { BranchChipWithDelta, StatusPill } from "../../../design/Atoms";
@@ -21,6 +26,14 @@ export function SessionsList({
 	const sessions = useSessionsStore((s) => s.sessions);
 	const order = useSessionsStore((s) => s.order);
 	const removeSession = useSessionsStore((s) => s.removeSession);
+	// Ephemeral drafts (renderer-only, never persisted). Merged into the
+	// sidebar list below so users can see + delete + open them just like
+	// real sessions. An ephemeral row is adapted to `ClaudeSessionFull`
+	// shape via `adaptEphemeral` so the existing `SessionRowSidebar`
+	// renderer doesn't need to branch on draft-ness.
+	const drafts = useEphemeralSessionsStore((s) => s.drafts);
+	const draftOrder = useEphemeralSessionsStore((s) => s.order);
+	const removeDraft = useEphemeralSessionsStore((s) => s.remove);
 	const queue = usePermissionsStore((s) => s.queue);
 	const navigate = useNavigate();
 	const [startError, setStartError] = useState<string | null>(null);
@@ -28,14 +41,55 @@ export function SessionsList({
 	const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 	const [deleteError, setDeleteError] = useState<string | null>(null);
 	const [deleting, setDeleting] = useState(false);
+	// Whether the user ticked "also delete worktree" in the delete confirm
+	// modal. Defaults false on every open (the modal resets it when
+	// `pendingDeleteId` flips). Only meaningful when the pending session is
+	// the sole user of its worktree — see deleteWorktreeEligible below.
+	const [alsoDeleteWorktree, setAlsoDeleteWorktree] = useState(false);
+	const [pendingArchiveId, setPendingArchiveId] = useState<string | null>(
+		null,
+	);
+	const [archiveError, setArchiveError] = useState<string | null>(null);
+	const [archiving, setArchiving] = useState(false);
 	const [workspaceFilter, setWorkspaceFilter] = useState<string[]>([]);
+	// Non-persistent view toggle: when true, archived sessions are no longer
+	// filtered out of the sidebar list (and their cwds appear in the
+	// workspace filter). Resets to false on reload — mirrors how
+	// workspaceFilter behaves.
+	const [showArchived, setShowArchived] = useState(false);
 
+	// Unified view of real + ephemeral sessions. Ephemeral entries are
+	// adapted to `ClaudeSessionFull` shape (empty messages, status="idle",
+	// no sdkSessionId, etc.) so the row renderer + filter pipeline doesn't
+	// need to branch on draft-ness. Lookup is by id; the order of ids
+	// (real ids + draft ids) drives the sort below.
+	const allSessions = useMemo(() => {
+		const merged: Record<string, ClaudeSessionFull> = { ...sessions };
+		for (const id of draftOrder) {
+			const d = drafts[id];
+			if (!d) continue;
+			merged[id] = adaptEphemeral(d);
+		}
+		return merged;
+	}, [sessions, drafts, draftOrder]);
+	const allOrder = useMemo(
+		() => [...order, ...draftOrder],
+		[order, draftOrder],
+	);
 	const sortedOrder = useMemo(() => {
-		return [...order].sort(
-			(a, b) =>
-				(sessions[b]?.createdAt ?? 0) - (sessions[a]?.createdAt ?? 0),
-		);
-	}, [order, sessions]);
+		return [...allOrder].sort((a, b) => {
+			// Archived sessions sink to the bottom regardless of recency, so
+			// the active list stays at eye level when "Show archived
+			// sessions" is enabled. Within each group, newest first.
+			const archivedA = allSessions[a]?.archivedAt != null ? 1 : 0;
+			const archivedB = allSessions[b]?.archivedAt != null ? 1 : 0;
+			if (archivedA !== archivedB) return archivedA - archivedB;
+			return (
+				(allSessions[b]?.createdAt ?? 0) -
+				(allSessions[a]?.createdAt ?? 0)
+			);
+		});
+	}, [allOrder, allSessions]);
 
 	// Source of truth for "the workspace the user most recently created a
 	// session in" is the app_settings store — it survives deleting every
@@ -45,13 +99,30 @@ export function SessionsList({
 	const workspaces = useMemo(() => {
 		const set = new Set<string>();
 		for (const id of sortedOrder) {
-			const c = sessions[id]?.cwd;
-			if (c) set.add(c);
+			const s = allSessions[id];
+			if (!s) continue;
+			// Archived sessions are invisible to the sidebar — that includes
+			// the workspace filter dropdown. Once the user enables "Show
+			// archived sessions", their cwds become eligible too so the
+			// filter dropdown can target them.
+			if (!showArchived && s.archivedAt != null) continue;
+			if (s.cwd) set.add(s.cwd);
 		}
 		return Array.from(set).sort((a, b) =>
 			folderName(a).localeCompare(folderName(b)),
 		);
-	}, [sortedOrder, sessions]);
+	}, [sortedOrder, allSessions, showArchived]);
+
+	// How many archived sessions exist anywhere. Drives whether to render
+	// the view-options button when there's no workspace filter to anchor
+	// the second header row.
+	const archivedCount = useMemo(() => {
+		let n = 0;
+		for (const id of sortedOrder) {
+			if (allSessions[id]?.archivedAt != null) n++;
+		}
+		return n;
+	}, [sortedOrder, allSessions]);
 
 	// Prune selected workspaces that no longer have any sessions (e.g. last
 	// session in that workspace was deleted). Empty array means "All", so it's
@@ -63,13 +134,22 @@ export function SessionsList({
 	}, [workspaces, workspaceFilter]);
 
 	const visibleOrder = useMemo(() => {
-		if (workspaceFilter.length === 0) return sortedOrder;
-		const allowed = new Set(workspaceFilter);
+		const allowed =
+			workspaceFilter.length > 0 ? new Set(workspaceFilter) : null;
 		return sortedOrder.filter((id) => {
-			const cwd = sessions[id]?.cwd;
-			return cwd != null && allowed.has(cwd);
+			const s = allSessions[id];
+			if (!s) return false;
+			// Archive hides the row from the sidebar unless the user has
+			// explicitly enabled "Show archived sessions". The session is
+			// otherwise untouched (still in the store, still openable by
+			// URL).
+			if (!showArchived && s.archivedAt != null) return false;
+			if (allowed) {
+				if (s.cwd == null || !allowed.has(s.cwd)) return false;
+			}
+			return true;
 		});
-	}, [sortedOrder, sessions, workspaceFilter]);
+	}, [sortedOrder, allSessions, workspaceFilter, showArchived]);
 
 	// New-session target cwd: only use the filter when exactly one workspace is
 	// selected (ambiguous otherwise). Otherwise fall back to last-used cwd.
@@ -78,59 +158,43 @@ export function SessionsList({
 			? workspaceFilter[0]
 			: lastUsedCwd ?? null;
 
-	const startWith = async (cwd: string) => {
-		// Subscribe before the IPC so we don't miss the `session:started`
-		// broadcast. Captured in `off` so the error path can also tear it
-		// down — previously this listener leaked any time startSession threw.
-		let off: (() => void) | null = null;
-		try {
-			setStartError(null);
-			// Remember this workspace for the next New Session click. Optimistic
-			// local update + fire-and-forget IPC — mirrors the markRead pattern.
-			// May be reconciled inside the `session:started` handler below if
-			// the main process substituted a different cwd (missing-folder
-			// recovery via the native picker).
-			useSettingsStore.getState().setLastUsedWorkspace(cwd);
-			off = window.claude.on("session:started", (p) => {
-				const s = p as { id: string; cwd?: string };
-				off?.();
-				off = null;
-				// Reconcile lastUsedWorkspace if the main process swapped the
-				// cwd. We can't read the return value of startSession for
-				// this — manager.run awaits the SDK loop, so its promise
-				// doesn't resolve until the session ends. The session:started
-				// event carries the same ClaudeSession payload and fires
-				// immediately, so use it as the source of truth.
-				if (s.cwd && s.cwd !== cwd) {
-					useSettingsStore.getState().setLastUsedWorkspace(s.cwd);
-				}
-				navigate(`/sessions/${s.id}`);
-			});
-			await window.claude.startSession({
-				title: `Session ${order.length + 1}`,
-				cwd,
-			});
-		} catch (err) {
-			off?.();
-			off = null;
-			setStartError(err instanceof Error ? err.message : String(err));
-		}
+	const startWith = (cwd: string) => {
+		// New Session no longer talks to the backend — it spins up an
+		// **ephemeral draft** in the renderer. The session is promoted to a
+		// real, persisted one only when the user either sends a first
+		// message or links a worktree from the chip in the header (see
+		// SessionChat). Promotion drops the draft and navigates to the
+		// real session's id.
+		//
+		// Side benefit: instant UI, no listener race for `session:started`,
+		// no SDK process started until the user commits to a direction.
+		setStartError(null);
+		useSettingsStore.getState().setLastUsedWorkspace(cwd);
+		const draft = useEphemeralSessionsStore
+			.getState()
+			.create(cwd, `Session ${order.length + 1}`);
+		// Same workspace-filter visibility nudge as before — if the user
+		// has narrowed the filter, make sure the draft's cwd is visible.
+		setWorkspaceFilter((prev) =>
+			prev.length === 0 || prev.includes(cwd) ? prev : [...prev, cwd],
+		);
+		navigate(`/sessions/${draft.id}`);
 	};
 
 	const start = async () => {
 		if (targetCwd) {
-			await startWith(targetCwd);
+			startWith(targetCwd);
 			return;
 		}
 		const picked = await window.claude.pickFolder();
-		if (picked) await startWith(picked);
+		if (picked) startWith(picked);
 	};
 
 	const startInPickedFolder = async () => {
 		const picked = await window.claude.pickFolder({
 			defaultPath: lastUsedCwd,
 		});
-		if (picked) await startWith(picked);
+		if (picked) startWith(picked);
 	};
 
 	const confirmDelete = async () => {
@@ -138,13 +202,33 @@ export function SessionsList({
 		// Capture before the async work — pendingDeleteId may be cleared
 		// by the time we want to make the routing decision.
 		const wasActive = pendingDeleteId === activeSessionId;
+		// Ephemeral drafts never reach the backend, so "delete" is a pure
+		// renderer-side operation. Short-circuit before any IPC.
+		const isEphemeral = !!drafts[pendingDeleteId];
+		if (isEphemeral) {
+			removeDraft(pendingDeleteId);
+			setPendingDeleteId(null);
+			setAlsoDeleteWorktree(false);
+			if (wasActive) navigate("/");
+			return;
+		}
+		// Only pass the worktree-delete flag through when it's actually
+		// eligible — guards against state that's gotten stale between
+		// modal-open and confirm (e.g. another window linked a new session
+		// to the same worktree in the meantime). Server re-checks this too.
+		const shouldDeleteWorktree =
+			alsoDeleteWorktree && deleteWorktreeEligible;
 		setDeleting(true);
 		setDeleteError(null);
 		try {
-			await window.claude.deleteSession(pendingDeleteId);
+			await window.claude.deleteSession(
+				pendingDeleteId,
+				shouldDeleteWorktree ? { alsoDeleteWorktree: true } : undefined,
+			);
 			removeSession(pendingDeleteId);
 			usePermissionsStore.getState().removeBySessionId(pendingDeleteId);
 			setPendingDeleteId(null);
+			setAlsoDeleteWorktree(false);
 			// If the deleted session was the one currently open in the right
 			// pane, drop back to "/" so the right pane goes empty — otherwise
 			// SessionChat would render its "Session not found." state.
@@ -160,11 +244,38 @@ export function SessionsList({
 		if (deleting) return;
 		setPendingDeleteId(null);
 		setDeleteError(null);
+		setAlsoDeleteWorktree(false);
 	};
 
 	const pendingDeleteSession = pendingDeleteId
-		? sessions[pendingDeleteId]
+		? allSessions[pendingDeleteId]
 		: null;
+	// "Also delete worktree" only appears when:
+	//   (a) the pending session has a worktreeId, AND
+	//   (b) no other session in the local store references the same
+	//       worktreeId — i.e. this is the sole user of the worktree.
+	// (b) is computed against the renderer's session map, which is the
+	// same one the sidebar renders. The IPC handler re-checks this
+	// server-side too in case another window mutates between modal-open
+	// and confirm.
+	const pendingWorktreeId = pendingDeleteSession?.worktreeId;
+	const linkedWorktreeForPending = useWorktreesStore((s) =>
+		pendingWorktreeId ? s.worktrees[pendingWorktreeId] : undefined,
+	);
+	const deleteWorktreeEligible = useMemo(() => {
+		if (!pendingWorktreeId) return false;
+		// Only real sessions can have a worktreeId — ephemeral drafts are
+		// renderer-only and never reach the backend, so they're always
+		// excluded from this count.
+		let count = 0;
+		for (const id in sessions) {
+			if (sessions[id].worktreeId === pendingWorktreeId) {
+				count++;
+				if (count > 1) return false;
+			}
+		}
+		return count === 1;
+	}, [pendingWorktreeId, sessions]);
 
 	const deleteModal = (
 		<ConfirmModal
@@ -172,9 +283,104 @@ export function SessionsList({
 			title="Delete session?"
 			message={
 				<>
-					Remove <strong>{pendingDeleteSession?.title ?? "this session"}</strong>{" "}
+					Remove{" "}
+					<strong>{pendingDeleteSession?.title ?? "this session"}</strong>{" "}
 					from this app. Claude Code's own session history (in{" "}
 					<code>~/.claude</code>) is not affected.
+					{deleteWorktreeEligible && linkedWorktreeForPending ? (
+						<label
+							style={{
+								display: "flex",
+								alignItems: "flex-start",
+								gap: 10,
+								marginTop: 14,
+								cursor: deleting ? "not-allowed" : "pointer",
+								userSelect: "none",
+							}}
+						>
+							{/* Native checkbox is visually hidden but stays in
+							    the a11y tree (focus, screen readers, label
+							    click) — the visible square below mirrors
+							    `checked`. */}
+							<input
+								type="checkbox"
+								checked={alsoDeleteWorktree}
+								disabled={deleting}
+								onChange={(e) =>
+									setAlsoDeleteWorktree(e.target.checked)
+								}
+								style={{
+									position: "absolute",
+									opacity: 0,
+									width: 0,
+									height: 0,
+									pointerEvents: "none",
+								}}
+							/>
+							<span
+								aria-hidden="true"
+								style={{
+									flexShrink: 0,
+									marginTop: 2,
+									width: 14,
+									height: 14,
+									borderRadius: 4,
+									border: `0.5px solid ${
+										alsoDeleteWorktree ? T.accent : T.border
+									}`,
+									background: alsoDeleteWorktree
+										? T.accent
+										: T.surface,
+									display: "inline-flex",
+									alignItems: "center",
+									justifyContent: "center",
+									transition:
+										"background 0.12s, border-color 0.12s",
+								}}
+							>
+								{alsoDeleteWorktree ? (
+									<svg
+										width="10"
+										height="10"
+										viewBox="0 0 12 12"
+										fill="none"
+									>
+										<path
+											d="M2.5 6.5l2.3 2.3 4.7-5.1"
+											stroke={T.accentInk}
+											strokeWidth="1.8"
+											strokeLinecap="round"
+											strokeLinejoin="round"
+										/>
+									</svg>
+								) : null}
+							</span>
+							<span
+								style={{
+									fontSize: 12.5,
+									color: T.text,
+									lineHeight: 1.5,
+								}}
+							>
+								Also delete worktree{" "}
+								<code
+									style={{
+										fontFamily: T.mono,
+										fontSize: 11.5,
+										color: T.textDim,
+									}}
+								>
+									{linkedWorktreeForPending.branch}
+								</code>
+								<br />
+								<span style={{ color: T.textFaint, fontSize: 11.5 }}>
+									Removes the isolated working tree and the branch
+									(force-removed even if uncommitted). No other
+									session uses this worktree.
+								</span>
+							</span>
+						</label>
+					) : null}
 				</>
 			}
 			confirmLabel="Delete"
@@ -184,6 +390,99 @@ export function SessionsList({
 			error={deleteError}
 			onConfirm={confirmDelete}
 			onCancel={cancelDelete}
+		/>
+	);
+
+	const confirmArchive = async () => {
+		if (!pendingArchiveId || archiving) return;
+		// Ephemeral drafts have no backend record, so archive is a no-op.
+		// The row menu hides Archive on drafts (see SessionRowSidebar), so
+		// reaching this with an ephemeral id only happens via stale state.
+		if (drafts[pendingArchiveId]) {
+			setPendingArchiveId(null);
+			return;
+		}
+		// Capture before the async work — pendingArchiveId may be cleared
+		// by the time we want to make the routing decision.
+		const wasActive = pendingArchiveId === activeSessionId;
+		const targetId = pendingArchiveId;
+		setArchiving(true);
+		setArchiveError(null);
+		try {
+			await window.claude.archiveSession(targetId);
+			// Intentionally do NOT call removeSession or
+			// permissions.removeBySessionId here. Archive is reversible and
+			// the session must remain in the renderer store so URL access
+			// (`/sessions/:id`) still resolves. The main process broadcasts
+			// a `session:patch` with `archivedAt`, which upserts the field
+			// on the row; the sidebar's `visibleOrder` filter then hides
+			// it.
+			//
+			// Mirror the backend's mark-read locally so the originating
+			// window's AppNav unread count drops immediately. Main has
+			// already persisted the same mark (monotonic), so this is a
+			// no-op IPC on the persistence side but updates the in-memory
+			// cache for this window.
+			useReadStore.getState().markRead(targetId);
+			// Backend also broadcasts `permission:resolved` for any
+			// pending tool-use prompts it cancelled, which drains them
+			// from the permissions store automatically — no local clear
+			// needed.
+			setPendingArchiveId(null);
+			// Drop back to "/" if the archived session was the one open in
+			// the right pane — there's no UI surface to find it again from
+			// the sidebar after archiving (matches Delete's UX).
+			if (wasActive) navigate("/");
+		} catch (err) {
+			setArchiveError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setArchiving(false);
+		}
+	};
+
+	const unarchive = async (sessionId: string) => {
+		// No confirm modal — unarchive is benign (it just makes a hidden
+		// row visible again) and acts as the "undo" affordance for an
+		// accidental archive.
+		try {
+			await window.claude.unarchiveSession(sessionId);
+		} catch (err) {
+			// Surface failures the same way startError does so the user
+			// isn't left wondering why nothing happened.
+			setStartError(err instanceof Error ? err.message : String(err));
+		}
+	};
+
+	const cancelArchive = () => {
+		if (archiving) return;
+		setPendingArchiveId(null);
+		setArchiveError(null);
+	};
+
+	const pendingArchiveSession = pendingArchiveId
+		? sessions[pendingArchiveId]
+		: null;
+
+	const archiveModal = (
+		<ConfirmModal
+			open={!!pendingArchiveId}
+			title="Archive session?"
+			message={
+				<>
+					Hide{" "}
+					<strong>
+						{pendingArchiveSession?.title ?? "this session"}
+					</strong>{" "}
+					from the sidebar. The session is preserved and can be reopened
+					by URL.
+				</>
+			}
+			confirmLabel="Archive"
+			cancelLabel="Cancel"
+			busy={archiving}
+			error={archiveError}
+			onConfirm={confirmArchive}
+			onCancel={cancelArchive}
 		/>
 	);
 
@@ -217,7 +516,7 @@ export function SessionsList({
 								? `Start a session in ${targetCwd}`
 								: "Pick a folder and start a session there"
 						}
-						style={{ flex: 1, justifyContent: "center" }}
+						style={{ flex: 1, justifyContent: "center", minWidth: 0 }}
 					>
 						<svg width="13" height="13" viewBox="0 0 14 14" fill="none">
 							<path
@@ -227,17 +526,52 @@ export function SessionsList({
 								strokeLinecap="round"
 							/>
 						</svg>
-						New Session
+						<span style={{ flexShrink: 0 }}>New Session</span>
+						{targetCwd ? (
+							<>
+								<span style={{ flexShrink: 0 }}>-</span>
+								<span
+									style={{
+										overflow: "hidden",
+										textOverflow: "ellipsis",
+										whiteSpace: "nowrap",
+										minWidth: 0,
+										flexShrink: 1,
+									}}
+								>
+									{folderName(targetCwd)}
+								</span>
+							</>
+						) : null}
 					</button>
 					<FolderButton onClick={startInPickedFolder} />
 				</div>
-				{workspaces.length > 0 ? (
-					<WorkspaceFilter
-						workspaces={workspaces}
-						value={workspaceFilter}
-						onChange={setWorkspaceFilter}
-						fullWidth
-					/>
+				{workspaces.length > 0 || archivedCount > 0 ? (
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							gap: 6,
+						}}
+					>
+						{workspaces.length > 0 ? (
+							<div style={{ flex: 1, minWidth: 0 }}>
+								<WorkspaceFilter
+									workspaces={workspaces}
+									value={workspaceFilter}
+									onChange={setWorkspaceFilter}
+									fullWidth
+								/>
+							</div>
+						) : null}
+						<ViewOptionsButton
+							showArchived={showArchived}
+							onToggleArchived={() =>
+								setShowArchived((v) => !v)
+							}
+							alignRight={workspaces.length === 0}
+						/>
+					</div>
 				) : null}
 			</div>
 
@@ -250,8 +584,18 @@ export function SessionsList({
 				</div>
 			) : null}
 
-			<div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-				{order.length === 0 ? (
+			{/* paddingBottom reserves dead space for the absolute-positioned
+			    `SidebarFooter` so the last session row can be scrolled fully
+			    into view instead of being clipped behind the footer. */}
+			<div
+				style={{
+					flex: 1,
+					overflowY: "auto",
+					minHeight: 0,
+					paddingBottom: 56,
+				}}
+			>
+				{allOrder.length === 0 ? (
 					<div className="message" style={{ margin: 12 }}>
 						No sessions yet. Click "New Session".
 					</div>
@@ -284,10 +628,11 @@ export function SessionsList({
 				) : (
 					<div>
 						{visibleOrder.map((id, i) => {
-							const s = sessions[id];
+							const s = allSessions[id];
 							const sessionPending = queue.filter(
 								(q) => q.sessionId === id,
 							);
+							const isEphemeral = !!drafts[id];
 							return (
 								<SessionRowSidebar
 									key={id}
@@ -295,10 +640,20 @@ export function SessionsList({
 									last={i === visibleOrder.length - 1}
 									pending={sessionPending}
 									active={id === activeSessionId}
+									isEphemeral={isEphemeral}
 									onDelete={() => {
 										setPendingDeleteId(id);
 										setDeleteError(null);
+										// Reset the "also delete worktree" tick from any
+										// prior delete attempt — checkbox always starts
+										// unchecked on a fresh modal open.
+										setAlsoDeleteWorktree(false);
 									}}
+									onArchive={() => {
+										setPendingArchiveId(id);
+										setArchiveError(null);
+									}}
+									onUnarchive={() => void unarchive(id)}
 								/>
 							);
 						})}
@@ -307,6 +662,7 @@ export function SessionsList({
 			</div>
 
 			{deleteModal}
+			{archiveModal}
 		</div>
 	);
 }
@@ -337,24 +693,55 @@ function SessionRowSidebar({
 	last,
 	pending,
 	active,
+	isEphemeral,
 	onDelete,
+	onArchive,
+	onUnarchive,
 }: {
 	session: ClaudeSessionFull;
 	last: boolean;
 	pending: PermissionRequest[];
 	active: boolean;
+	/** Ephemeral drafts are renderer-only — hide Archive in the row menu
+	 * (archive requires a persisted backend record). Delete is still
+	 * available and short-circuits to the ephemeral store. */
+	isEphemeral: boolean;
 	onDelete: () => void;
+	onArchive: () => void;
+	onUnarchive: () => void;
 }) {
 	const { hasPending, summary, unread } = useRowDerived(session, pending);
 	const markUnread = useReadStore((s) => s.markUnread);
+	const archived = session.archivedAt != null;
+	// Worktree-linked sessions: surface the source repo path instead of
+	// the opaque `<dataDir>/worktrees/<uuid>` working directory. The
+	// SessionChat header does the same — keep both views consistent so
+	// users never see worktree implementation details.
+	const linkedWorktree = useWorktreesStore((s) =>
+		session.worktreeId ? s.worktrees[session.worktreeId] : undefined,
+	);
+	const displayCwd = linkedWorktree?.originalCwd ?? session.cwd ?? "";
 	return (
 		<div
 			style={{
 				borderBottom: last ? "none" : `0.5px solid ${T.borderSoft}`,
 				// Only highlight the active row. Pending state is conveyed by the
 				// "waiting for input" StatusPill and the count badge below.
-				background: active ? T.surfaceHi : "transparent",
+				// Same lightness as T.surfaceHi but with a very subtle cool blue
+				// tint (hue 250, matching T.accent) instead of the warm hue-60
+				// the rest of the app uses — that way the active row reads as
+				// "selected" rather than as a desaturated version of the warn
+				// orange the chips/cards now use.
+				background: active ? "oklch(0.245 0.012 250)" : "transparent",
 				position: "relative",
+				// Archived rows dim heavily so they read as "set aside"
+				// against the active list. The full row dims — including
+				// the ⋯ menu — but the button stays fully clickable. The
+				// accent stripe on the active row also dims, which is
+				// fine: archived sessions rarely sit in the active slot,
+				// and when they do the dim acts as a useful "you're
+				// viewing an archived session" cue.
+				opacity: archived ? 0.4 : 1,
 			}}
 		>
 			{active ? (
@@ -419,8 +806,12 @@ function SessionRowSidebar({
 						</span>
 						<RowMenuButton
 							onDelete={onDelete}
+							onArchive={onArchive}
+							onUnarchive={onUnarchive}
+							archived={archived}
 							onMarkUnread={() => markUnread(session.id)}
-							showMarkUnread={!unread}
+							showMarkUnread={!unread && !isEphemeral}
+							showArchive={!isEphemeral}
 						/>
 					</div>
 					{/* Summary — two-line clamp */}
@@ -456,9 +847,9 @@ function SessionRowSidebar({
 								style={{
 									fontSize: 10.5,
 									fontWeight: 600,
-									color: T.accent,
-									background: T.accentSoft,
-									border: `0.5px solid ${T.accentBorder}`,
+									color: T.warn,
+									background: T.warnSoft,
+									border: `0.5px solid ${T.warnBorder}`,
 									borderRadius: 4,
 									padding: "1px 5px",
 									letterSpacing: 0.3,
@@ -473,12 +864,13 @@ function SessionRowSidebar({
 								lastUserMessageBranch={session.lastUserMessageBranch}
 								showCurrentHint={false}
 								suppressStale
+								isWorktree={!!linkedWorktree}
 							/>
 						) : null}
 					</div>
-					{session.cwd ? (
+					{displayCwd ? (
 						<div
-							title={session.cwd}
+							title={displayCwd}
 							style={{
 								fontSize: 11,
 								color: T.textFaint,
@@ -488,7 +880,7 @@ function SessionRowSidebar({
 								whiteSpace: "nowrap",
 							}}
 						>
-							{folderName(session.cwd)}
+							{folderName(displayCwd)}
 						</div>
 					) : null}
 				</div>
@@ -742,6 +1134,118 @@ function MenuItem({
 	);
 }
 
+/**
+ * Sidebar view-options dropdown. Visually a 32×32 icon button matching
+ * FolderButton — stacks below it as the right-edge control of the second
+ * header row, with the WorkspaceFilter taking the remaining width on the
+ * left. Currently exposes one option: a toggle for "Show archived
+ * sessions" / "Hide archived sessions". Sized as a dropdown rather than
+ * an inline button so future view controls can land here without
+ * crowding the header.
+ *
+ * `alignRight` pushes the button to the right edge when there's no
+ * WorkspaceFilter sharing the row — keeps it stacked under FolderButton
+ * regardless of what else is rendered.
+ */
+function ViewOptionsButton({
+	showArchived,
+	onToggleArchived,
+	alignRight,
+}: {
+	showArchived: boolean;
+	onToggleArchived: () => void;
+	alignRight?: boolean;
+}) {
+	const [open, setOpen] = useState(false);
+	const ref = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		if (!open) return;
+		const onDocClick = (e: MouseEvent) => {
+			if (ref.current && !ref.current.contains(e.target as Node)) {
+				setOpen(false);
+			}
+		};
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") setOpen(false);
+		};
+		document.addEventListener("mousedown", onDocClick);
+		document.addEventListener("keydown", onKey);
+		return () => {
+			document.removeEventListener("mousedown", onDocClick);
+			document.removeEventListener("keydown", onKey);
+		};
+	}, [open]);
+
+	return (
+		<div
+			ref={ref}
+			style={{
+				position: "relative",
+				marginLeft: alignRight ? "auto" : undefined,
+			}}
+		>
+			<button
+				type="button"
+				className="btn"
+				onClick={() => setOpen((o) => !o)}
+				aria-haspopup="menu"
+				aria-expanded={open}
+				title="View options"
+				style={{ width: 32, padding: 0, color: T.textDim }}
+			>
+				{/* Eye icon — the only option today controls visibility. */}
+				<svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+					<path
+						d="M1 7s2-4 6-4 6 4 6 4-2 4-6 4-6-4-6-4z"
+						stroke="currentColor"
+						strokeWidth="1.2"
+						fill="none"
+					/>
+					<circle
+						cx="7"
+						cy="7"
+						r="1.6"
+						stroke="currentColor"
+						strokeWidth="1.2"
+						fill="none"
+					/>
+				</svg>
+			</button>
+			{open ? (
+				<div
+					role="menu"
+					style={{
+						position: "absolute",
+						top: "calc(100% + 4px)",
+						right: 0,
+						minWidth: 200,
+						background: T.surfaceHi,
+						border: `0.5px solid ${T.border}`,
+						borderRadius: 8,
+						padding: 4,
+						zIndex: 50,
+						boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+					}}
+				>
+					<MenuItem
+						active={false}
+						label={
+							showArchived
+								? "Hide archived sessions"
+								: "Show archived sessions"
+						}
+						onClick={() => {
+							setOpen(false);
+							onToggleArchived();
+						}}
+					/>
+				</div>
+			) : null}
+		</div>
+	);
+}
+
 function FolderButton({ onClick }: { onClick: () => void }) {
 	return (
 		<button
@@ -777,12 +1281,21 @@ function FolderButton({ onClick }: { onClick: () => void }) {
  */
 function RowMenuButton({
 	onDelete,
+	onArchive,
+	onUnarchive,
+	archived,
 	onMarkUnread,
 	showMarkUnread,
+	showArchive = true,
 }: {
 	onDelete: () => void;
+	onArchive: () => void;
+	onUnarchive: () => void;
+	archived: boolean;
 	onMarkUnread: () => void;
 	showMarkUnread: boolean;
+	/** Hide the Archive entry — ephemeral drafts can't be archived. */
+	showArchive?: boolean;
 }) {
 	const [open, setOpen] = useState(false);
 	const ref = useRef<HTMLDivElement>(null);
@@ -885,6 +1398,19 @@ function RowMenuButton({
 							onClick={runAndClose(onMarkUnread)}
 						/>
 					) : null}
+					{archived ? (
+						<MenuItem
+							active={false}
+							label="Unarchive"
+							onClick={runAndClose(onUnarchive)}
+						/>
+					) : showArchive ? (
+						<MenuItem
+							active={false}
+							label="Archive"
+							onClick={runAndClose(onArchive)}
+						/>
+					) : null}
 					<MenuItem
 						active={false}
 						label="Delete"
@@ -901,6 +1427,26 @@ function folderName(path: string): string {
 	const trimmed = path.replace(/\/+$/, "");
 	const idx = trimmed.lastIndexOf("/");
 	return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
+/**
+ * Adapt an ephemeral draft to the `ClaudeSessionFull` shape so the
+ * existing sidebar row + delete/archive code paths can render it
+ * without branching on draft-ness everywhere. All "real session"
+ * fields default to safe empties: status "idle", no messages, no
+ * sdkSessionId / branch / worktreeId, never archived.
+ */
+function adaptEphemeral(d: EphemeralSession): ClaudeSessionFull {
+	return {
+		id: d.id,
+		title: d.title,
+		prompt: "",
+		cwd: d.cwd,
+		status: "idle",
+		createdAt: d.createdAt,
+		mode: d.mode,
+		messages: [],
+	};
 }
 
 function lastIncomingMessageTs(session: ClaudeSessionFull): number {

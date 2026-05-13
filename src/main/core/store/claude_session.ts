@@ -122,6 +122,14 @@ export type SessionPatch = Partial<
 		| "diff"
 		| "sdkSessionId"
 		| "mode"
+		| "archivedAt"
+		// Worktree linking: when the user links a session to a worktree we
+		// rewrite both `cwd` (to the worktree's path) and `worktreeId`
+		// atomically via updateSession. `cwd` was previously not patchable
+		// — needed it to be so the link flow doesn't have to recreate the
+		// whole row.
+		| "cwd"
+		| "worktreeId"
 	>
 >;
 

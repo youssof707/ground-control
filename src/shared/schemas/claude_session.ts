@@ -140,6 +140,21 @@ export const ClaudeSessionSchema = z.object({
 	 * Zod default also backfills pre-existing rows on disk that predate
 	 * this field. */
 	mode: SessionModeSchema.default("plan"),
+	/** When set, the session is hidden from the sidebar list. Reversible
+	 * (no destruction of data) — sessions remain reachable by URL and
+	 * every other system path treats them normally. There is no UI today
+	 * to list / restore archived sessions; that comes later. */
+	archivedAt: z.number().optional(),
+	/** Optional link to a Worktree record (see schemas/worktree.ts).
+	 *
+	 * Once set, the link is immutable for the life of the session — every
+	 * subsequent SDK invocation, git op, and file write happens inside the
+	 * worktree (because `session.cwd` is rewritten to the worktree's path
+	 * at link time). Forks inherit the link from their parent. Deleting
+	 * the session does NOT delete the worktree: worktrees are persistent,
+	 * app-owned entities (the user can spin up a new session against the
+	 * same worktree later). */
+	worktreeId: z.string().optional(),
 });
 export type ClaudeSession = z.infer<typeof ClaudeSessionSchema>;
 
@@ -157,10 +172,35 @@ export type ClaudeSessionsFile = z.infer<typeof ClaudeSessionsFileSchema>;
 
 // ─── Inputs ──────────────────────────────────────────────────────────────────
 
+/**
+ * Optional worktree directive on session start. The "ephemeral draft"
+ * UX in the renderer holds a session in memory until either:
+ *   - the user sends a first message (no worktree → plain start), or
+ *   - the user picks a worktree in the link modal (this field set).
+ *
+ * Two variants:
+ *   - `kind: "new"`     — create a fresh worktree off origin's default
+ *                         branch at the source `cwd`, name the new branch
+ *                         `branch`.
+ *   - `kind: "existing"` — use an already-known worktree by id (must
+ *                         belong to the same repo as `cwd`).
+ *
+ * Always resolved server-side in `SessionManager.run` before persisting
+ * the session, so a failed worktree op leaves zero state on disk.
+ */
+export const StartSessionWorktreeOptionSchema = z.discriminatedUnion("kind", [
+	z.object({ kind: z.literal("new"), branch: z.string() }),
+	z.object({ kind: z.literal("existing"), worktreeId: z.string() }),
+]);
+export type StartSessionWorktreeOption = z.infer<
+	typeof StartSessionWorktreeOptionSchema
+>;
+
 export const StartSessionInputSchema = z.object({
 	title: z.string(),
 	prompt: z.string().optional(),
 	cwd: z.string(),
 	mode: SessionModeSchema.optional(),
+	worktree: StartSessionWorktreeOptionSchema.optional(),
 });
 export type StartSessionInput = z.infer<typeof StartSessionInputSchema>;

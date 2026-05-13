@@ -1,5 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { T } from "./tokens";
+import { ConfirmModal } from "../components/ConfirmModal";
 import type { SessionMode } from "@shared/claude-sessions/types";
 
 // ─── StatusPill ──────────────────────────────────────────────────────────────
@@ -117,11 +118,16 @@ export function BranchChip({
 	name,
 	stale = false,
 	staleFrom,
+	isWorktree = false,
 }: {
 	name: string;
 	stale?: boolean;
 	/** Branch name the session last sent on; surfaced in the tooltip when stale. */
 	staleFrom?: string;
+	/** When true, the branch lives inside a linked worktree — render a tree
+	 * glyph instead of the default git-graph icon so the chip reads at a
+	 * glance as "this is a worktree branch, not the source repo's HEAD". */
+	isWorktree?: boolean;
 }) {
 	const [copied, setCopied] = useState(false);
 
@@ -196,6 +202,20 @@ export function BranchChip({
 						strokeLinejoin="round"
 					/>
 				</svg>
+			) : isWorktree ? (
+				// Tree glyph: trunk + branches. Matches the icon on the
+				// WorktreeChip's "Link worktree" button so the visual language
+				// is consistent — every branch chip rendered with the tree
+				// icon corresponds to a linked worktree.
+				<svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+					<path
+						d="M6 10V2M6 5L3 3M6 5l3-2M6 8L3.5 6.5M6 8l2.5-1.5"
+						stroke="currentColor"
+						strokeWidth="1.1"
+						strokeLinecap="round"
+						strokeLinejoin="round"
+					/>
+				</svg>
 			) : (
 				<svg width="11" height="11" viewBox="0 0 12 12" fill="none">
 					<circle cx="3" cy="2.5" r="1.3" stroke="currentColor" strokeWidth="1" />
@@ -234,15 +254,42 @@ function BranchSwitchButton({
 }) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	// Modal state kept separate from the inline `error` above so that
+	// closing the modal can't leave a stale "failed" chip on the button,
+	// and a confirmed-then-failed switch keeps its error inside the modal
+	// rather than bleeding into both surfaces.
+	const [confirmOpen, setConfirmOpen] = useState(false);
+	const [confirmBusy, setConfirmBusy] = useState(false);
+	const [confirmError, setConfirmError] = useState<string | null>(null);
+
+	const doSwitch = () => window.claude.switchBranch(sessionId, branch);
 
 	const onClick = async (e: React.MouseEvent) => {
 		e.preventDefault();
 		e.stopPropagation();
-		if (busy) return;
+		if (busy || confirmOpen) return;
 		setError(null);
 		setBusy(true);
 		try {
-			await window.claude.switchBranch(sessionId, branch);
+			// Pre-flight: only on click. Never run from render / useEffect —
+			// that would re-introduce per-render IPC churn on every status
+			// broadcast and add lag to a button that's mostly idle.
+			let dirty = false;
+			try {
+				dirty = await window.claude.hasUncommittedChanges(sessionId);
+			} catch {
+				// Best-effort. If the status check itself fails, fall through
+				// to the direct switch — if the tree really is dirty, git
+				// switch will refuse and the existing inline error path
+				// surfaces that.
+				dirty = false;
+			}
+			if (dirty) {
+				setConfirmError(null);
+				setConfirmOpen(true);
+				return; // modal owns the next step
+			}
+			await doSwitch();
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			setError(msg);
@@ -252,41 +299,81 @@ function BranchSwitchButton({
 		}
 	};
 
+	const onConfirm = async () => {
+		if (confirmBusy) return;
+		setConfirmError(null);
+		setConfirmBusy(true);
+		try {
+			await doSwitch();
+			setConfirmOpen(false);
+		} catch (err) {
+			setConfirmError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setConfirmBusy(false);
+		}
+	};
+
+	const onCancel = () => {
+		if (confirmBusy) return;
+		setConfirmOpen(false);
+		setConfirmError(null);
+	};
+
 	return (
-		<button
-			type="button"
-			onClick={onClick}
-			disabled={busy}
-			title={error ? error : `Switch the working tree back to "${branch}"`}
-			style={{
-				display: "inline-flex",
-				alignItems: "center",
-				gap: 4,
-				height: 18,
-				padding: "0 7px",
-				borderRadius: 9,
-				background: error ? T.dangerSoft : "transparent",
-				border: `0.5px solid ${error ? T.dangerBorder : T.border}`,
-				fontSize: 10.5,
-				color: error ? T.danger : T.textDim,
-				fontFamily: T.sans,
-				whiteSpace: "nowrap",
-				cursor: busy ? "default" : "pointer",
-				transition: "background 0.12s, color 0.12s, border-color 0.12s",
-			}}
-			onMouseEnter={(e) => {
-				if (busy || error) return;
-				e.currentTarget.style.background = T.surfaceHi;
-				e.currentTarget.style.color = T.text;
-			}}
-			onMouseLeave={(e) => {
-				if (busy || error) return;
-				e.currentTarget.style.background = "transparent";
-				e.currentTarget.style.color = T.textDim;
-			}}
-		>
-			{busy ? "switching…" : error ? "failed" : "Switch"}
-		</button>
+		<>
+			<button
+				type="button"
+				onClick={onClick}
+				disabled={busy || confirmOpen}
+				title={error ? error : `Switch the working tree back to "${branch}"`}
+				style={{
+					display: "inline-flex",
+					alignItems: "center",
+					gap: 4,
+					height: 18,
+					padding: "0 7px",
+					borderRadius: 9,
+					background: error ? T.dangerSoft : "transparent",
+					border: `0.5px solid ${error ? T.dangerBorder : T.border}`,
+					fontSize: 10.5,
+					color: error ? T.danger : T.textDim,
+					fontFamily: T.sans,
+					whiteSpace: "nowrap",
+					cursor: busy ? "default" : "pointer",
+					transition: "background 0.12s, color 0.12s, border-color 0.12s",
+				}}
+				onMouseEnter={(e) => {
+					if (busy || error) return;
+					e.currentTarget.style.background = T.surfaceHi;
+					e.currentTarget.style.color = T.text;
+				}}
+				onMouseLeave={(e) => {
+					if (busy || error) return;
+					e.currentTarget.style.background = "transparent";
+					e.currentTarget.style.color = T.textDim;
+				}}
+			>
+				{busy ? "switching…" : error ? "failed" : "Switch"}
+			</button>
+			<ConfirmModal
+				open={confirmOpen}
+				title="Uncommitted changes"
+				message={
+					<>
+						The working tree has modified files that aren't committed.
+						Switching to <strong>{branch}</strong> may fail or move them
+						onto the target branch.
+					</>
+				}
+				confirmLabel="Switch anyway"
+				cancelLabel="Cancel"
+				destructive
+				busy={confirmBusy}
+				error={confirmError}
+				onConfirm={onConfirm}
+				onCancel={onCancel}
+			/>
+		</>
 	);
 }
 
@@ -310,6 +397,7 @@ export function BranchChipWithDelta({
 	sessionId,
 	showCurrentHint = true,
 	suppressStale = false,
+	isWorktree = false,
 }: {
 	branch?: string;
 	lastUserMessageBranch?: string;
@@ -326,6 +414,9 @@ export function BranchChipWithDelta({
 	 * the warning would be noisy; the SessionChat header keeps it on so the
 	 * user sees the warning in the actual session view. */
 	suppressStale?: boolean;
+	/** Pass through to BranchChip — render the tree icon instead of the
+	 * default git-graph one when the branch belongs to a linked worktree. */
+	isWorktree?: boolean;
 }) {
 	if (!branch) return null;
 	const stale =
@@ -337,6 +428,7 @@ export function BranchChipWithDelta({
 				name={branch}
 				stale={stale}
 				staleFrom={stale ? lastUserMessageBranch : undefined}
+				isWorktree={isWorktree}
 			/>
 			{showHint ? (
 				<span

@@ -19,6 +19,12 @@ export function useDockUnreadBadge() {
 	const unreadCount = sessionsOrder.reduce((acc, id) => {
 		const sess = sessionsMap[id];
 		if (!sess) return acc;
+		// Archived sessions are quieted everywhere: AppNav stats, the
+		// inbox, and the dock badge. The backend marks-read on archive
+		// so this is usually a no-op, but the filter defends against
+		// late assistant messages that arrive from a still-winding-down
+		// SDK loop after the archive lands.
+		if (sess.archivedAt != null) return acc;
 		if (sess.status === "running") return acc;
 		const lastIncoming = lastIncomingMessageTs(sess);
 		if (lastIncoming > 0 && lastIncoming > (lastReadAt[id] ?? 0)) {

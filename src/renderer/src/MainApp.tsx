@@ -14,7 +14,7 @@ import { DiffViewer } from "./features/claude-sessions/components/DiffViewer";
 import { InboxSidebar } from "./features/claude-sessions/components/InboxSidebar";
 import { NotesSidebarShell } from "./features/claude-sessions/components/notes/NotesSidebarShell";
 import { AppNav } from "./features/claude-sessions/components/AppNav";
-import { RateLimitMeter } from "./features/claude-sessions/components/RateLimitMeter";
+import { SidebarFooter } from "./features/claude-sessions/components/SidebarFooter";
 import { useSettingsStore } from "./features/claude-sessions/stores/useSettingsStore";
 import { T } from "./design/tokens";
 
@@ -33,19 +33,6 @@ export default function MainApp() {
 	useNotificationRouter();
 	useDockUnreadBadge();
 	const [rightPanel, setRightPanel] = useState<RightPanel>(null);
-	const [appInfo, setAppInfo] = useState<{
-		env: "dev" | "prod";
-		storeFolder: string;
-	} | null>(null);
-	useEffect(() => {
-		let alive = true;
-		window.claude.getAppInfo().then((info) => {
-			if (alive) setAppInfo(info);
-		});
-		return () => {
-			alive = false;
-		};
-	}, []);
 	return (
 		<div
 			style={{
@@ -57,33 +44,9 @@ export default function MainApp() {
 				fontFamily: T.sans,
 			}}
 		>
-			<span
-				title="Double-click to toggle DevTools"
-				onDoubleClick={() => {
-					void window.claude.toggleDevTools();
-				}}
-				style={{
-					position: "fixed",
-					// Aligned on the left edge with the RateLimitMeter chip above
-					// it (left: 14) so the corner reads as a vertically-stacked
-					// pair rather than two staggered badges.
-					left: 14,
-					bottom: 10,
-					fontSize: 10,
-					fontFamily: T.mono,
-					color: T.textFaint,
-					userSelect: "none",
-					zIndex: 1,
-					letterSpacing: 0.2,
-				}}
-			>
-				v{__APP_VERSION__}
-				{appInfo ? ` · ${appInfo.env} · ${appInfo.storeFolder}` : ""}
-			</span>
-			{/* Mounted as a sibling of the version badge — also fixed-position,
-			    sits one row above. Self-hides until the SDK pushes a usable
-			    five_hour event, so it never costs layout in the empty state. */}
-			<RateLimitMeter />
+			{/* The version chip + rate-limit meter now live inside
+			    `SidebarFooter`, pinned to the bottom of the sessions sidebar
+			    rather than floating fixed over the window corner. */}
 			<AppNav rightPanel={rightPanel} setRightPanel={setRightPanel} />
 			<MainBody rightPanel={rightPanel} setRightPanel={setRightPanel} />
 		</div>
@@ -205,9 +168,13 @@ function SessionsListSidebarShell() {
 					display: "flex",
 					flexDirection: "column",
 					background: T.win,
+					// Positioning context for `SidebarFooter`, which anchors itself
+					// `position: absolute` to the bottom of this pane.
+					position: "relative",
 				}}
 			>
 				<SessionsList activeSessionId={activeSessionId} />
+				<SidebarFooter />
 			</div>
 			<div
 				role="separator"

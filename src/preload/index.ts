@@ -26,6 +26,8 @@ const claude = {
 		ipcRenderer.invoke("session:refreshBranch", sessionId),
 	switchBranch: (sessionId: string, branch: string) =>
 		ipcRenderer.invoke("session:switchBranch", { sessionId, branch }),
+	hasUncommittedChanges: (sessionId: string) =>
+		ipcRenderer.invoke("session:hasUncommittedChanges", sessionId),
 	forkSession: (sessionId: string, messageId: string) =>
 		ipcRenderer.invoke("session:fork", { sessionId, messageId }),
 	setSessionMode: (sessionId: string, mode: SessionMode) =>
@@ -33,8 +35,21 @@ const claude = {
 	respondPermission: (decision: PermissionDecision) =>
 		ipcRenderer.send("permission:respond", decision),
 	listSessions: () => ipcRenderer.invoke("sessions:list"),
-	deleteSession: (sessionId: string) =>
-		ipcRenderer.invoke("session:delete", sessionId),
+	deleteSession: (
+		sessionId: string,
+		opts?: { alsoDeleteWorktree?: boolean },
+	) =>
+		// Pass an object payload when caller provided options; otherwise
+		// keep sending the bare id string so older code paths remain
+		// byte-identical on the wire.
+		ipcRenderer.invoke(
+			"session:delete",
+			opts ? { sessionId, ...opts } : sessionId,
+		),
+	archiveSession: (sessionId: string) =>
+		ipcRenderer.invoke("session:archive", sessionId),
+	unarchiveSession: (sessionId: string) =>
+		ipcRenderer.invoke("session:unarchive", sessionId),
 	renameSession: (sessionId: string, title: string) =>
 		ipcRenderer.invoke("session:rename", { sessionId, title }),
 	pickFolder: (opts?: { defaultPath?: string }) =>
@@ -64,6 +79,11 @@ const claude = {
 	getRateLimit: () => ipcRenderer.invoke("rateLimit:get"),
 	getAppInfo: () => ipcRenderer.invoke("appInfo:get"),
 	toggleDevTools: () => ipcRenderer.invoke("devtools:toggle"),
+	listWorktrees: () => ipcRenderer.invoke("worktrees:list"),
+	listWorktreesForCwd: (cwd: string) =>
+		ipcRenderer.invoke("worktrees:listForCwd", cwd),
+	peekWorktreeBaseRefForCwd: (cwd: string) =>
+		ipcRenderer.invoke("worktrees:peekBaseRefForCwd", cwd),
 	on: (channel: string, fn: (payload: unknown) => void) => {
 		const listener = (_e: IpcRendererEvent, payload: unknown) => fn(payload);
 		ipcRenderer.on(channel, listener);

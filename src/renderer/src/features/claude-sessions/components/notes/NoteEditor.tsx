@@ -131,6 +131,14 @@ export function NoteEditor({
 				fontSize: 13.5,
 				color: T.text,
 				lineHeight: 1.55,
+				// Cap the editor's width to its parent (the Notes sidebar).
+				// `min-width: 0` lets the flex column above shrink this child
+				// past its intrinsic content width; `overflow-x: hidden` clips
+				// anything inside that still tries to push past (handled by
+				// `.ProseMirror` / `.note-editor-content pre` rules in CSS).
+				minWidth: 0,
+				maxWidth: "100%",
+				overflowX: "hidden",
 			}}
 		>
 			<EditorContent editor={editor} />

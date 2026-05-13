@@ -11,6 +11,9 @@ import type {
 } from "../../shared/schemas/claude_session";
 import * as sessionStore from "../core/store/claude_session";
 import * as notesStore from "../core/store/session_notes";
+import * as readStore from "../core/store/read_state";
+import * as worktreeStore from "../core/store/worktrees";
+import { destroyWorktree } from "../sessions/worktree";
 import { broadcast } from "../windows";
 import { registerReadHandlers } from "./readHandlers";
 import { registerSettingsHandlers } from "./settingsHandlers";
@@ -118,6 +121,9 @@ export function registerSessionsHandlers(): SessionManager {
 		(_e, payload: { sessionId: string; branch: string }) =>
 			manager.switchBranchInSession(payload.sessionId, payload.branch),
 	);
+	ipcMain.handle("session:hasUncommittedChanges", (_e, sessionId: string) =>
+		manager.hasUncommittedChangesInSession(sessionId),
+	);
 	ipcMain.handle(
 		"session:fork",
 		async (e, payload: { sessionId: string; messageId: string }) => {
@@ -176,44 +182,141 @@ export function registerSessionsHandlers(): SessionManager {
 			broadcast("state:changed", undefined, e.sender.id);
 		},
 	);
-	ipcMain.handle("session:delete", async (e, sessionId: string) => {
-		// Tombstone first — synchronous. Any subsequent SDK event for this
-		// session id is dropped by SessionManager.send, so leaked status /
-		// cancelled / message / patch broadcasts from the still-winding-down
-		// loop can't reach any window and lazy-resurrect the row via
-		// upsertSession.
-		manager.markDeleted(sessionId);
-		// Trip the abort signal so the SDK loop breaks out on its next tick.
-		// We don't await its `done` here: captureDiff inside the cancelled
-		// branch can be slow on a large repo, and the tombstone above means
-		// we don't need its broadcasts anyway.
+	ipcMain.handle("session:archive", async (e, sessionId: string) => {
+		// Archive is "set aside, but reversible". The session record stays
+		// fully intact (no tombstone, no notes deletion), but every UI
+		// affordance that demands attention is quieted:
+		//   1. Stop the SDK loop so it stops emitting messages / status
+		//      updates that would push the row back to "unread" or
+		//      "running" after archive.
+		//   2. Reject any in-flight permission / tool-use / ask-user prompts
+		//      so the user isn't blocked on something they've stashed away.
+		//      `cancelAllForSession` broadcasts `permission:resolved` for
+		//      each cancellation, which drains the renderer's permissions
+		//      queue (and therefore the Inbox badge + waiting count).
+		//   3. Mark read at `now()` so the session stops contributing to
+		//      the unread count / dock badge. Monotonic in the store, so
+		//      this is a no-op if the session is already up-to-date.
 		manager.cancel(sessionId);
-		// Resolve any pending permission promises for this session and broadcast
-		// permission:resolved so the renderer's inbox queue clears. Redundant
-		// for sessions that were running (the loop's cancelled branch already
-		// called this), but the safety net for non-running sessions.
-		broker.cancelAllForSession(sessionId, "Session deleted");
-		// Persist the deletes. The store-level tombstone in deleteSession()
-		// is set synchronously, so any appendMessage / updateSession tasks
-		// from the SDK loop that were already queued ahead of these on the
-		// shared write_queue short-circuit (Set check, no file write) and
-		// drain quickly instead of forcing a full-file flush per message.
-		await sessionStore.deleteSession(sessionId);
-		// Cascade-delete any notes attached to this session. Awaited before
-		// broadcasting so other windows don't briefly see notes attached to a
-		// missing session during a refetch.
-		await notesStore.deleteAllForSession(sessionId);
-		// Structural ping → other windows refetch and drop this session from
-		// their stores. Originator already removed it locally.
-		broadcast("state:changed", undefined, e.sender.id);
-		// Graceful SDK loop drain in the background. This is what used to
-		// block the IPC critical path; now the renderer doesn't wait on it.
-		// The tombstone in SessionManager.send filters any of its emitted
-		// events; the store-level tombstone no-ops any of its writes.
-		void manager.cancelAndWait(sessionId).catch((err) => {
-			console.error("[ccw] background cancelAndWait failed:", err);
+		broker.cancelAllForSession(sessionId, "Session archived");
+		await readStore.mark(sessionId);
+		const archivedAt = Date.now();
+		const updated = await sessionStore.updateSession(sessionId, {
+			archivedAt,
 		});
+		if (!updated) throw new Error("Session not found");
+		// Incremental patch so other windows hide the row without a full
+		// refetch. The existing renderer-side `session:patch` listener routes
+		// this through `upsertSession`, which merges `archivedAt` into the
+		// store; the sidebar's `visibleOrder` filter then drops the row.
+		broadcast("session:patch", { sessionId, archivedAt });
+		// Safety-net structural ping for any window that might have missed
+		// the patch — also picks up the new read-state row on other windows.
+		broadcast("state:changed", undefined, e.sender.id);
 	});
+	ipcMain.handle("session:unarchive", async (e, sessionId: string) => {
+		// Reverse of archive: clear the timestamp. Intentionally does NOT
+		// undo the cancel / mark-read side effects — restarting the SDK
+		// loop or rolling back read state is the user's call.
+		const updated = await sessionStore.updateSession(sessionId, {
+			archivedAt: undefined,
+		});
+		if (!updated) throw new Error("Session not found");
+		broadcast("session:patch", { sessionId, archivedAt: undefined });
+		broadcast("state:changed", undefined, e.sender.id);
+	});
+	ipcMain.handle(
+		"session:delete",
+		async (
+			e,
+			payload:
+				| string
+				| { sessionId: string; alsoDeleteWorktree?: boolean },
+		) => {
+			// Accept both shapes for forward compatibility — historical
+			// callers passed a bare id string; the new "also delete worktree"
+			// affordance threads through a second flag on an object payload.
+			const sessionId =
+				typeof payload === "string" ? payload : payload.sessionId;
+			const alsoDeleteWorktree =
+				typeof payload === "object" && payload.alsoDeleteWorktree === true;
+
+			// Snapshot the session record BEFORE tombstoning so we can read
+			// its worktreeId and check the "is this the only session using
+			// this worktree?" invariant. After deleteSession runs, the row
+			// is gone from the store.
+			const sessionRecord = sessionStore.getSession(sessionId);
+
+			// Tombstone first — synchronous. Any subsequent SDK event for this
+			// session id is dropped by SessionManager.send, so leaked status /
+			// cancelled / message / patch broadcasts from the still-winding-down
+			// loop can't reach any window and lazy-resurrect the row via
+			// upsertSession.
+			manager.markDeleted(sessionId);
+			// Trip the abort signal so the SDK loop breaks out on its next tick.
+			// We don't await its `done` here: captureDiff inside the cancelled
+			// branch can be slow on a large repo, and the tombstone above means
+			// we don't need its broadcasts anyway.
+			manager.cancel(sessionId);
+			// Resolve any pending permission promises for this session and broadcast
+			// permission:resolved so the renderer's inbox queue clears. Redundant
+			// for sessions that were running (the loop's cancelled branch already
+			// called this), but the safety net for non-running sessions.
+			broker.cancelAllForSession(sessionId, "Session deleted");
+			// Persist the deletes. The store-level tombstone in deleteSession()
+			// is set synchronously, so any appendMessage / updateSession tasks
+			// from the SDK loop that were already queued ahead of these on the
+			// shared write_queue short-circuit (Set check, no file write) and
+			// drain quickly instead of forcing a full-file flush per message.
+			await sessionStore.deleteSession(sessionId);
+			// Cascade-delete any notes attached to this session. Awaited before
+			// broadcasting so other windows don't briefly see notes attached to a
+			// missing session during a refetch.
+			await notesStore.deleteAllForSession(sessionId);
+
+			// Worktree teardown. Renderer only exposes the "also delete
+			// worktree" checkbox when this session is the sole user of the
+			// worktree, but we re-check server-side: another window could
+			// have linked a new session between the modal opening and the
+			// IPC firing. If a sibling now exists, silently skip the
+			// teardown — the worktree stays alive for that sibling.
+			if (alsoDeleteWorktree && sessionRecord?.worktreeId) {
+				const wtId = sessionRecord.worktreeId;
+				const siblings = sessionStore
+					.listSessions()
+					.filter((s) => s.worktreeId === wtId);
+				if (siblings.length === 0) {
+					const record = worktreeStore.getWorktree(wtId);
+					if (record) {
+						try {
+							await destroyWorktree({
+								originalCwd: record.originalCwd,
+								targetPath: record.path,
+								branch: record.branch,
+							});
+						} catch (err) {
+							console.error(
+								"[ccw] destroyWorktree failed:",
+								err,
+							);
+						}
+						await worktreeStore.deleteWorktree(wtId);
+					}
+				}
+			}
+
+			// Structural ping → other windows refetch and drop this session from
+			// their stores. Originator already removed it locally.
+			broadcast("state:changed", undefined, e.sender.id);
+			// Graceful SDK loop drain in the background. This is what used to
+			// block the IPC critical path; now the renderer doesn't wait on it.
+			// The tombstone in SessionManager.send filters any of its emitted
+			// events; the store-level tombstone no-ops any of its writes.
+			void manager.cancelAndWait(sessionId).catch((err) => {
+				console.error("[ccw] background cancelAndWait failed:", err);
+			});
+		},
+	);
 
 	return manager;
 }

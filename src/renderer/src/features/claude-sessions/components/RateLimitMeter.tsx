@@ -3,8 +3,9 @@ import { T } from "../../../design/tokens";
 import { useRateLimitStore } from "../stores/useRateLimitStore";
 
 /**
- * Tiny fixed-position badge in the bottom-left of the window — sits above
- * the version chip rendered by `MainApp`. Reflects the user's Claude.ai
+ * Inline rate-limit chip rendered inside `SidebarFooter` — stacks above the
+ * version chip with matching typography (10px mono, `textFaint`) so the
+ * footer reads as one coherent meta-bar. Reflects the user's Claude.ai
  * 5-hour-window state from `SDKRateLimitEvent` messages.
  *
  * Visibility:
@@ -15,12 +16,10 @@ import { useRateLimitStore } from "../stores/useRateLimitStore";
  *     which it does once the account crosses an internal warn threshold
  *     (~80%). Below that threshold the prefix is omitted because the
  *     number doesn't exist — never faked as 0%.
- *   - Hidden entirely when no event has arrived (boot, or
+ *   - Returns `null` when no event has arrived (boot, or
  *     ANTHROPIC_API_KEY callers where the event never fires) or when
- *     `resetsAt` is missing/elapsed.
- *
- * Format matches the version-badge typography (10px mono, `textFaint`) so
- * the corner reads as one coherent meta-bar.
+ *     `resetsAt` is missing/elapsed — this is what lets the footer
+ *     collapse to a single version line in the empty state.
  */
 export function RateLimitMeter() {
 	const info = useRateLimitStore((s) => s.byType.five_hour);
@@ -52,18 +51,11 @@ export function RateLimitMeter() {
 	return (
 		<div
 			style={{
-				position: "fixed",
-				// Bumped off the corner edge — the version chip stays flush at
-				// {left: 6, bottom: 4}, this one floats with breathing room above.
-				left: 14,
-				bottom: 26,
 				fontSize: 10,
 				fontFamily: T.mono,
 				color: T.textFaint,
 				userSelect: "none",
-				zIndex: 1,
 				letterSpacing: 0.2,
-				pointerEvents: "none",
 				fontVariantNumeric: "tabular-nums",
 				display: "inline-flex",
 				alignItems: "center",

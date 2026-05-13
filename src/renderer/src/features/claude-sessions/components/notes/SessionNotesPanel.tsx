@@ -68,6 +68,13 @@ export function SessionNotesPanel({
 			style={{
 				flex: 1,
 				minHeight: 0,
+				// Without `min-width: 0`, this flex item can grow past the
+				// 380px the parent <aside> allocates whenever its descendants
+				// (the editor's content) have a larger intrinsic width. That
+				// was the actual root cause of the editor escaping the
+				// sidebar — none of the downstream fixes mattered while this
+				// upstream constraint was missing.
+				minWidth: 0,
 				display: "flex",
 				flexDirection: "column",
 				background: T.win,
@@ -149,6 +156,9 @@ export function SessionNotesPanel({
 					flex: 1,
 					overflow: "auto",
 					minHeight: 0,
+					// Same reason as the outer wrapper: keep this flex item
+					// from growing past its allocated horizontal track.
+					minWidth: 0,
 					padding: "16px 16px 24px",
 				}}
 			>
