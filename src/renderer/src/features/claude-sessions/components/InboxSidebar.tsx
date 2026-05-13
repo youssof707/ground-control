@@ -17,7 +17,16 @@ import {
 export function InboxSidebar({ onClose }: { onClose: () => void }) {
 	const queue = usePermissionsStore((s) => s.queue);
 	const sessions = useSessionsStore((s) => s.sessions);
-	const ordered = [...queue].reverse();
+	// Drop requests whose session is archived. Archive cancels in-flight
+	// prompts on the backend (`PermissionBroker.cancelAllForSession`),
+	// which broadcasts `permission:resolved` and drains them from the
+	// queue — so this filter is normally redundant. It defends against
+	// the race where a permission request fires between "archive IPC
+	// sent" and "broker cancel completes," and against any future
+	// archive code path that forgets to drain.
+	const ordered = [...queue]
+		.reverse()
+		.filter((req) => sessions[req.sessionId]?.archivedAt == null);
 
 	return (
 		<aside
@@ -55,9 +64,9 @@ export function InboxSidebar({ onClose }: { onClose: () => void }) {
 						Inbox
 					</h1>
 					<div style={{ fontSize: 12.5, color: T.textDim, marginTop: 4 }}>
-						{queue.length === 0
+						{ordered.length === 0
 							? "No pending questions."
-							: `${queue.length} pending · sessions pause until you respond.`}
+							: `${ordered.length} pending · sessions pause until you respond.`}
 					</div>
 				</div>
 				<button

@@ -13,7 +13,7 @@ interface SdkLike {
 	[k: string]: unknown;
 }
 
-interface ContentBlock {
+export interface ContentBlock {
 	type?: string;
 	text?: string;
 	name?: string;
@@ -242,7 +242,10 @@ function UserMessage({ sdk }: { sdk: SdkLike }) {
 				{blocks.map((b, i) => {
 					if (b.type === "text") {
 						return (
-							<div key={i} style={{ whiteSpace: "pre-wrap" }}>
+							<div
+								key={i}
+								style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+							>
 								{b.text}
 							</div>
 						);
@@ -294,7 +297,7 @@ function Avatar() {
 	);
 }
 
-function ToolUsePill({ block }: { block: ContentBlock }) {
+export function ToolUsePill({ block }: { block: ContentBlock }) {
 	const summary = summarizeToolInput(block);
 	return (
 		<details
@@ -352,7 +355,9 @@ function ToolUsePill({ block }: { block: ContentBlock }) {
 					fontSize: 12,
 					whiteSpace: "pre-wrap",
 					wordBreak: "break-word",
+					overflowWrap: "anywhere",
 					fontFamily: T.mono,
+					maxWidth: "100%",
 					maxHeight: 320,
 					overflow: "auto",
 					color: T.textDim,
@@ -364,7 +369,7 @@ function ToolUsePill({ block }: { block: ContentBlock }) {
 	);
 }
 
-function ToolResultPill({ block }: { block: ContentBlock }) {
+export function ToolResultPill({ block }: { block: ContentBlock }) {
 	const isError = block.is_error === true;
 	const text = stringifyToolResult(block.content);
 	const truncated = text.length > 240 ? text.slice(0, 240) + "…" : text;
@@ -422,7 +427,9 @@ function ToolResultPill({ block }: { block: ContentBlock }) {
 					fontSize: 12,
 					whiteSpace: "pre-wrap",
 					wordBreak: "break-word",
+					overflowWrap: "anywhere",
 					fontFamily: T.mono,
+					maxWidth: "100%",
 					maxHeight: 320,
 					overflow: "auto",
 					color: T.textDim,
@@ -434,7 +441,7 @@ function ToolResultPill({ block }: { block: ContentBlock }) {
 	);
 }
 
-function RawBlock({ block }: { block: ContentBlock }) {
+export function RawBlock({ block }: { block: ContentBlock }) {
 	return (
 		<details>
 			<summary style={{ fontSize: 12, color: T.textMute, cursor: "pointer" }}>

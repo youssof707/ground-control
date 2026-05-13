@@ -312,13 +312,40 @@ input::placeholder {
 	}
 }
 
+@keyframes firework-particle {
+	0% {
+		transform: translate(-50%, -50%) scale(1);
+		opacity: 1;
+	}
+	70% {
+		opacity: 1;
+	}
+	100% {
+		transform: translate(calc(-50% + var(--fx-tx)), calc(-50% + var(--fx-ty)))
+			scale(0.35);
+		opacity: 0;
+	}
+}
+
+@keyframes chip-pop {
+	0% {
+		transform: scale(1);
+	}
+	40% {
+		transform: scale(1.12);
+	}
+	100% {
+		transform: scale(1);
+	}
+}
+
 /* ─── Markdown body ──────────────────────────────────────────────────────── */
 
 .md {
 	font-size: 14px;
 	line-height: 1.6;
 	color: oklch(0.94 0.005 80);
-	word-wrap: break-word;
+	overflow-wrap: anywhere;
 }
 
 .md > :first-child { margin-top: 0; }
@@ -368,6 +395,7 @@ input::placeholder {
 	color: oklch(0.94 0.005 80);
 	border: 0.5px solid oklch(0.30 0.008 60);
 	border-radius: 8px;
+	max-width: 100%;
 	overflow-x: auto;
 	font-size: 12.5px;
 	line-height: 1.5;
@@ -526,7 +554,14 @@ input::placeholder {
 .note-editor-content {
 	outline: none;
 	min-height: 1.5em;
-	word-wrap: break-word;
+	overflow-wrap: anywhere;
+	/* TipTap's <EditorContent> inserts a wrapper div between our outer
+	   <div> and the ProseMirror element; without an explicit width
+	   constraint on the ProseMirror element itself, it sizes to its
+	   intrinsic content width and bursts out of the Notes sidebar.
+	   Pinning max-width and min-width forces it to respect the parent. */
+	max-width: 100%;
+	min-width: 0;
 }
 
 .note-editor-content > :first-child { margin-top: 0; }
@@ -581,6 +616,7 @@ input::placeholder {
 	color: oklch(0.94 0.005 80);
 	border: 0.5px solid oklch(0.30 0.008 60);
 	border-radius: 6px;
+	max-width: 100%;
 	overflow-x: auto;
 	font-size: 12.5px;
 	line-height: 1.5;

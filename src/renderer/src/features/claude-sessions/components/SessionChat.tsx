@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
@@ -6,6 +6,8 @@ import { useReadStore } from "../stores/useReadStore";
 import { PermissionCard } from "./PermissionCard";
 import { ImagePasteTextarea } from "./ImagePasteTextarea";
 import { MessageView } from "./MessageView";
+import { ToolRunGroup } from "./ToolRunGroup";
+import { groupMessagesIntoUnits } from "../lib/groupMessages";
 import { ConfirmModal } from "../../../components/ConfirmModal";
 import { T } from "../../../design/tokens";
 import { BranchChipWithDelta, StatusPill } from "../../../design/Atoms";
@@ -233,6 +235,16 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 		setForkError(null);
 	};
 
+	// Pre-pass over messages to collapse contiguous tool_use + tool_result
+	// blocks (across message boundaries) into a single <ToolRunGroup/>.
+	// Memoized so React.memo on MessageView/ToolRunGroup can short-circuit
+	// re-renders — messages are append-only so the same units come back with
+	// the same identity until the array grows.
+	const renderUnits = useMemo(
+		() => groupMessagesIntoUnits(session?.messages ?? []),
+		[session?.messages],
+	);
+
 	if (!session) {
 		return (
 			<div className="page">
@@ -459,52 +471,86 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 						lastUserMessageBranch={session.lastUserMessageBranch}
 						sessionId={sessionId}
 					/>
-					{isOpen ? (
-						<ActivityChip session={session} hasPending={pending.length > 0} />
-					) : null}
 				</div>
 			</div>
 
-			{/* Transcript */}
-			<div
-				ref={scrollRef}
-				onScroll={onScroll}
-				style={{
-					flex: 1,
-					overflow: "auto",
-					padding: "28px 0 18px",
-					minHeight: 0,
-				}}
-			>
-				<div style={{ maxWidth: 760, margin: "0 auto", padding: "0 32px" }}>
-					{session.messages.length === 0 && pending.length === 0 ? (
-						<div className="message">Waiting for first message…</div>
-					) : (
-						session.messages.map((m) => (
-							<MessageView
-								key={m.id}
-								m={m}
-								onFork={fork}
-								forkPending={forkingId === m.id}
-							/>
-						))
-					)}
-					{pending.length > 0 ? (
+			{/* Transcript (with floating chip overlay) */}
+			<div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+				<div
+					ref={scrollRef}
+					onScroll={onScroll}
+					style={{
+						height: "100%",
+						overflow: "auto",
+						padding: "28px 32px 14px",
+					}}
+				>
+					<div style={{ maxWidth: 760, margin: "0 auto" }}>
+						{session.messages.length === 0 && pending.length === 0 ? (
+							<div className="message">Waiting for first message…</div>
+						) : (
+							renderUnits.map((u) => {
+								if (u.kind === "toolRun") {
+									return <ToolRunGroup key={u.key} entries={u.entries} />;
+								}
+								return (
+									<MessageView
+										key={u.message.id}
+										m={u.message}
+										onFork={fork}
+										forkPending={forkingId === u.message.id}
+									/>
+								);
+							})
+						)}
+						{pending.length > 0 ? (
+							<div
+								style={{
+									maxWidth: 760,
+									margin: "20px auto",
+									display: "flex",
+									flexDirection: "column",
+									gap: 12,
+								}}
+							>
+								{pending.map((p) => (
+									<PermissionCard key={p.requestId} req={p} />
+								))}
+							</div>
+						) : null}
+					</div>
+				</div>
+
+				{canChat ? (
+					<div
+						style={{
+							position: "absolute",
+							left: 0,
+							right: 0,
+							bottom: 0,
+							padding: "0 32px 4px",
+							pointerEvents: "none",
+						}}
+					>
 						<div
 							style={{
 								maxWidth: 760,
-								margin: "20px auto",
+								margin: "0 auto",
 								display: "flex",
-								flexDirection: "column",
-								gap: 12,
+								justifyContent: "flex-end",
 							}}
 						>
-							{pending.map((p) => (
-								<PermissionCard key={p.requestId} req={p} />
-							))}
+							<div style={{ pointerEvents: "auto" }}>
+								{isOpen ? (
+									<ActivityChip
+										session={session}
+										hasPending={pending.length > 0}
+									/>
+								) : null}
+							</div>
 						</div>
-					) : null}
-				</div>
+					</div>
+				) : null}
 			</div>
 
 			{canChat ? (
@@ -619,6 +665,57 @@ function ActivityChip({
 		return () => clearInterval(id);
 	}, []);
 
+	// Easter egg: click the chip to launch a tiny firework burst.
+	const [bursts, setBursts] = useState<
+		{
+			id: number;
+			particles: {
+				tx: number;
+				ty: number;
+				color: string;
+				size: number;
+				delay: number;
+				duration: number;
+			}[];
+		}[]
+	>([]);
+	const burstIdRef = useRef(0);
+	const lastBurstAtRef = useRef(0);
+	const handleFireworks = () => {
+		const now = Date.now();
+		if (now - lastBurstAtRef.current < 200) return; // throttle: ignore rapid re-clicks
+		lastBurstAtRef.current = now;
+		const id = ++burstIdRef.current;
+		const palette = [
+			"#ff6b9d",
+			"#ffd166",
+			"#06d6a0",
+			"#4cc9f0",
+			"#c77dff",
+			"#ff9f43",
+			"#ef476f",
+		];
+		const count = 14;
+		const particles = Array.from({ length: count }, (_, i) => {
+			// Even angular distribution with jitter
+			const angle =
+				(i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+			const distance = 32 + Math.random() * 32;
+			return {
+				tx: Math.cos(angle) * distance,
+				ty: Math.sin(angle) * distance,
+				color: palette[Math.floor(Math.random() * palette.length)],
+				size: 3 + Math.random() * 2,
+				delay: Math.random() * 60,
+				duration: 750 + Math.random() * 350,
+			};
+		});
+		setBursts((b) => [...b, { id, particles }]);
+		window.setTimeout(() => {
+			setBursts((b) => b.filter((x) => x.id !== id));
+		}, 1300);
+	};
+
 	if (hasPending) return null;
 	if (session.status === "idle") return null;
 
@@ -628,37 +725,71 @@ function ActivityChip({
 			: session.createdAt;
 	const deltaSec = Math.max(0, Math.floor((Date.now() - last) / 1000));
 
-	let color: string = T.ok;
-	let bg: string = T.okSoft;
-	let prefix = "active";
-	if (deltaSec >= 120) {
-		color = T.danger;
-		bg = T.dangerSoft;
-		prefix = "stalled";
-	} else if (deltaSec >= 30) {
-		color = T.neutral;
-		bg = T.neutralSoft;
-		prefix = "quiet";
-	}
+	// Single muted neutral look — the active/quiet/stalled distinction is
+	// just a wall-clock heuristic with no real liveness signal, so we drop it.
+	const color = "oklch(0.55 0.008 70)";
+	const border = "oklch(0.55 0.008 70 / 0.55)";
+	const prefix = "working";
 
 	return (
 		<div
+			onClick={handleFireworks}
 			style={{
+				position: "relative",
 				display: "inline-flex",
 				alignItems: "center",
 				gap: 6,
 				height: 22,
 				padding: "0 9px",
 				borderRadius: 11,
-				background: bg,
-				border: `0.5px solid ${color}`,
+				background: T.surface,
+				border: `0.5px solid ${border}`,
 				color,
 				fontSize: 11.5,
 				fontFamily: T.mono,
 				fontVariantNumeric: "tabular-nums",
+				cursor: "pointer",
+				userSelect: "none",
 			}}
 		>
+			<span
+				aria-hidden
+				style={{
+					display: "inline-block",
+					width: 9,
+					height: 9,
+					border: "1.5px solid currentColor",
+					borderRightColor: "transparent",
+					borderRadius: "50%",
+					animation: "asyncy-spin 0.9s linear infinite",
+				}}
+			/>
 			{prefix} {formatDelta(deltaSec)}
+
+			{bursts.map((b) =>
+				b.particles.map((p, i) => (
+					<span
+						key={`${b.id}-${i}`}
+						aria-hidden
+						style={
+							{
+								position: "absolute",
+								left: "50%",
+								top: "50%",
+								width: p.size,
+								height: p.size,
+								background: p.color,
+								borderRadius: "50%",
+								pointerEvents: "none",
+								boxShadow: `0 0 6px ${p.color}`,
+								animation: `firework-particle ${p.duration}ms cubic-bezier(0.18, 0.7, 0.3, 1) ${p.delay}ms forwards`,
+								"--fx-tx": `${p.tx}px`,
+								"--fx-ty": `${p.ty}px`,
+							} as React.CSSProperties
+						}
+					/>
+				)),
+			)}
 		</div>
 	);
 }

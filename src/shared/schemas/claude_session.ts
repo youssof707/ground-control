@@ -140,6 +140,11 @@ export const ClaudeSessionSchema = z.object({
 	 * Zod default also backfills pre-existing rows on disk that predate
 	 * this field. */
 	mode: SessionModeSchema.default("plan"),
+	/** When set, the session is hidden from the sidebar list. Reversible
+	 * (no destruction of data) — sessions remain reachable by URL and
+	 * every other system path treats them normally. There is no UI today
+	 * to list / restore archived sessions; that comes later. */
+	archivedAt: z.number().optional(),
 });
 export type ClaudeSession = z.infer<typeof ClaudeSessionSchema>;
 

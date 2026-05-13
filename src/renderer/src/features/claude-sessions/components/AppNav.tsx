@@ -27,15 +27,31 @@ export function AppNav({
 	const lastReadAt = useReadStore((s) => s.lastReadAt);
 	const inSession = !!useMatch("/sessions/:id/*");
 
+	// Archive must vanish from every attention-grabbing count: the
+	// AppNav "unread" / "waiting" stats, the Inbox toggle badge, and
+	// (downstream) the dock badge. Archived sessions get filtered out
+	// at every derivation that produces a number for the user to
+	// glance at, so an unreplied archived session doesn't keep
+	// glowing in the corner of their screen.
+	const isArchived = (id: string) => sessionsMap[id]?.archivedAt != null;
+
 	const runningCount = sessionsOrder.filter(
-		(id) => sessionsMap[id]?.status === "running",
+		(id) => sessionsMap[id]?.status === "running" && !isArchived(id),
 	).length;
 
-	const waitingCount = new Set(queue.map((q) => q.sessionId)).size;
+	const waitingCount = new Set(
+		queue.filter((q) => !isArchived(q.sessionId)).map((q) => q.sessionId),
+	).size;
+
+	const inboxBadge = queue.reduce(
+		(n, q) => (isArchived(q.sessionId) ? n : n + 1),
+		0,
+	);
 
 	const unreadCount = sessionsOrder.reduce((acc, id) => {
 		const sess = sessionsMap[id];
 		if (!sess) return acc;
+		if (sess.archivedAt != null) return acc;
 		if (sess.status === "running") return acc;
 		const lastIncoming = lastIncomingMessageTs(sess);
 		if (lastIncoming > 0 && lastIncoming > (lastReadAt[id] ?? 0)) {
@@ -125,7 +141,7 @@ export function AppNav({
 			) : null}
 			<InboxToggle
 				active={rightPanel === "inbox"}
-				badge={queue.length}
+				badge={inboxBadge}
 				onClick={() =>
 					setRightPanel(rightPanel === "inbox" ? null : "inbox")
 				}

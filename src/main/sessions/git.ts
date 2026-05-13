@@ -113,6 +113,33 @@ export async function switchBranch(
 	}
 }
 
+/**
+ * Best-effort check for modified tracked files in the working tree. Used by
+ * the renderer to decide whether to pop a confirm modal before running
+ * `git switch`.
+ *
+ *   - exit 0 → clean → returns false
+ *   - exit 1 → dirty → returns true   (`git diff --quiet` signals via exit code)
+ *   - any other error (not a git repo, git missing, etc.) → returns false.
+ *     We intentionally don't block the user on a status-check failure: worst
+ *     case the subsequent `git switch` itself refuses and the renderer
+ *     surfaces that error inline as today.
+ *
+ * Matches what `git switch` itself refuses on — modified tracked files.
+ * Untracked / ignored files are NOT considered dirty here because
+ * `git switch` doesn't refuse on them.
+ */
+export async function hasUncommittedChanges(cwd: string): Promise<boolean> {
+	try {
+		await execFileAsync("git", ["diff", "--quiet", "HEAD"], { cwd });
+		return false;
+	} catch (err) {
+		const code = (err as { code?: number }).code;
+		if (code === 1) return true;
+		return false;
+	}
+}
+
 export async function getDiffSinceCommit(
 	cwd: string,
 	sha: string,

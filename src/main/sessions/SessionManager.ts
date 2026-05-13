@@ -30,6 +30,7 @@ import {
 	getDefaultBaseBranch,
 	getDiffSinceCommit,
 	getHeadCommit,
+	hasUncommittedChanges,
 	switchBranch,
 } from "./git";
 import * as sessionStore from "../core/store/claude_session";
@@ -717,6 +718,19 @@ export class SessionManager {
 		if (!cwd) throw new Error(`No session ${sessionId}`);
 		await switchBranch(cwd, branch);
 		await this.refreshBranch(sessionId);
+	}
+
+	/**
+	 * Best-effort "are there modified tracked files in this session's cwd"
+	 * check. Used by the renderer pre-flight before running `git switch` so
+	 * we can pop a confirm modal instead of silently letting git refuse.
+	 * Returns false on any error — see `hasUncommittedChanges` in git.ts.
+	 */
+	async hasUncommittedChangesInSession(sessionId: string): Promise<boolean> {
+		const entry = this.sessions.get(sessionId);
+		const cwd = entry?.session.cwd ?? sessionStore.getSession(sessionId)?.cwd;
+		if (!cwd) return false;
+		return hasUncommittedChanges(cwd);
 	}
 
 	/**

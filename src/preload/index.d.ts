@@ -26,6 +26,7 @@ declare global {
 			resumeSession: (sessionId: string) => Promise<void>;
 			refreshBranch: (sessionId: string) => Promise<void>;
 			switchBranch: (sessionId: string, branch: string) => Promise<void>;
+			hasUncommittedChanges: (sessionId: string) => Promise<boolean>;
 			forkSession: (
 				sessionId: string,
 				messageId: string,
@@ -37,6 +38,8 @@ declare global {
 			respondPermission: (decision: PermissionDecision) => void;
 			listSessions: () => Promise<ClaudeSessionFull[]>;
 			deleteSession: (sessionId: string) => Promise<void>;
+			archiveSession: (sessionId: string) => Promise<void>;
+			unarchiveSession: (sessionId: string) => Promise<void>;
 			renameSession: (sessionId: string, title: string) => Promise<void>;
 			pickFolder: (opts?: { defaultPath?: string }) => Promise<string | null>;
 			revealPath: (path: string) => Promise<void>;

@@ -144,6 +144,14 @@ export function NoteCard({ note }: { note: Note }) {
 				background: T.surface,
 				border: `0.5px solid ${T.border}`,
 				padding: "6px 10px 10px",
+				// Flex children default to min-width: auto, which means a single
+				// long unbreakable token inside the editor (a URL, a JSON line)
+				// can size this card past its parent's width and trigger a
+				// horizontal scrollbar on the notes scroll container. Forcing
+				// min-width: 0 makes the card respect the parent column width,
+				// which in turn lets `overflow-wrap: anywhere` actually fire on
+				// the editor content inside.
+				minWidth: 0,
 			}}
 		>
 			<div

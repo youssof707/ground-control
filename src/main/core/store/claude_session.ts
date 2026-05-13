@@ -122,6 +122,7 @@ export type SessionPatch = Partial<
 		| "diff"
 		| "sdkSessionId"
 		| "mode"
+		| "archivedAt"
 	>
 >;
 

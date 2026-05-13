@@ -26,6 +26,8 @@ const claude = {
 		ipcRenderer.invoke("session:refreshBranch", sessionId),
 	switchBranch: (sessionId: string, branch: string) =>
 		ipcRenderer.invoke("session:switchBranch", { sessionId, branch }),
+	hasUncommittedChanges: (sessionId: string) =>
+		ipcRenderer.invoke("session:hasUncommittedChanges", sessionId),
 	forkSession: (sessionId: string, messageId: string) =>
 		ipcRenderer.invoke("session:fork", { sessionId, messageId }),
 	setSessionMode: (sessionId: string, mode: SessionMode) =>
@@ -35,6 +37,10 @@ const claude = {
 	listSessions: () => ipcRenderer.invoke("sessions:list"),
 	deleteSession: (sessionId: string) =>
 		ipcRenderer.invoke("session:delete", sessionId),
+	archiveSession: (sessionId: string) =>
+		ipcRenderer.invoke("session:archive", sessionId),
+	unarchiveSession: (sessionId: string) =>
+		ipcRenderer.invoke("session:unarchive", sessionId),
 	renameSession: (sessionId: string, title: string) =>
 		ipcRenderer.invoke("session:rename", { sessionId, title }),
 	pickFolder: (opts?: { defaultPath?: string }) =>

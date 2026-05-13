@@ -11,6 +11,7 @@ import type {
 } from "../../shared/schemas/claude_session";
 import * as sessionStore from "../core/store/claude_session";
 import * as notesStore from "../core/store/session_notes";
+import * as readStore from "../core/store/read_state";
 import { broadcast } from "../windows";
 import { registerReadHandlers } from "./readHandlers";
 import { registerSettingsHandlers } from "./settingsHandlers";
@@ -118,6 +119,9 @@ export function registerSessionsHandlers(): SessionManager {
 		(_e, payload: { sessionId: string; branch: string }) =>
 			manager.switchBranchInSession(payload.sessionId, payload.branch),
 	);
+	ipcMain.handle("session:hasUncommittedChanges", (_e, sessionId: string) =>
+		manager.hasUncommittedChangesInSession(sessionId),
+	);
 	ipcMain.handle(
 		"session:fork",
 		async (e, payload: { sessionId: string; messageId: string }) => {
@@ -176,6 +180,49 @@ export function registerSessionsHandlers(): SessionManager {
 			broadcast("state:changed", undefined, e.sender.id);
 		},
 	);
+	ipcMain.handle("session:archive", async (e, sessionId: string) => {
+		// Archive is "set aside, but reversible". The session record stays
+		// fully intact (no tombstone, no notes deletion), but every UI
+		// affordance that demands attention is quieted:
+		//   1. Stop the SDK loop so it stops emitting messages / status
+		//      updates that would push the row back to "unread" or
+		//      "running" after archive.
+		//   2. Reject any in-flight permission / tool-use / ask-user prompts
+		//      so the user isn't blocked on something they've stashed away.
+		//      `cancelAllForSession` broadcasts `permission:resolved` for
+		//      each cancellation, which drains the renderer's permissions
+		//      queue (and therefore the Inbox badge + waiting count).
+		//   3. Mark read at `now()` so the session stops contributing to
+		//      the unread count / dock badge. Monotonic in the store, so
+		//      this is a no-op if the session is already up-to-date.
+		manager.cancel(sessionId);
+		broker.cancelAllForSession(sessionId, "Session archived");
+		await readStore.mark(sessionId);
+		const archivedAt = Date.now();
+		const updated = await sessionStore.updateSession(sessionId, {
+			archivedAt,
+		});
+		if (!updated) throw new Error("Session not found");
+		// Incremental patch so other windows hide the row without a full
+		// refetch. The existing renderer-side `session:patch` listener routes
+		// this through `upsertSession`, which merges `archivedAt` into the
+		// store; the sidebar's `visibleOrder` filter then drops the row.
+		broadcast("session:patch", { sessionId, archivedAt });
+		// Safety-net structural ping for any window that might have missed
+		// the patch — also picks up the new read-state row on other windows.
+		broadcast("state:changed", undefined, e.sender.id);
+	});
+	ipcMain.handle("session:unarchive", async (e, sessionId: string) => {
+		// Reverse of archive: clear the timestamp. Intentionally does NOT
+		// undo the cancel / mark-read side effects — restarting the SDK
+		// loop or rolling back read state is the user's call.
+		const updated = await sessionStore.updateSession(sessionId, {
+			archivedAt: undefined,
+		});
+		if (!updated) throw new Error("Session not found");
+		broadcast("session:patch", { sessionId, archivedAt: undefined });
+		broadcast("state:changed", undefined, e.sender.id);
+	});
 	ipcMain.handle("session:delete", async (e, sessionId: string) => {
 		// Tombstone first — synchronous. Any subsequent SDK event for this
 		// session id is dropped by SessionManager.send, so leaked status /
