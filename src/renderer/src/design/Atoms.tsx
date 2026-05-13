@@ -118,11 +118,16 @@ export function BranchChip({
 	name,
 	stale = false,
 	staleFrom,
+	isWorktree = false,
 }: {
 	name: string;
 	stale?: boolean;
 	/** Branch name the session last sent on; surfaced in the tooltip when stale. */
 	staleFrom?: string;
+	/** When true, the branch lives inside a linked worktree — render a tree
+	 * glyph instead of the default git-graph icon so the chip reads at a
+	 * glance as "this is a worktree branch, not the source repo's HEAD". */
+	isWorktree?: boolean;
 }) {
 	const [copied, setCopied] = useState(false);
 
@@ -193,6 +198,20 @@ export function BranchChip({
 						d="M2.5 6.5l2.5 2.5 4.5-5"
 						stroke="currentColor"
 						strokeWidth="1.6"
+						strokeLinecap="round"
+						strokeLinejoin="round"
+					/>
+				</svg>
+			) : isWorktree ? (
+				// Tree glyph: trunk + branches. Matches the icon on the
+				// WorktreeChip's "Link worktree" button so the visual language
+				// is consistent — every branch chip rendered with the tree
+				// icon corresponds to a linked worktree.
+				<svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+					<path
+						d="M6 10V2M6 5L3 3M6 5l3-2M6 8L3.5 6.5M6 8l2.5-1.5"
+						stroke="currentColor"
+						strokeWidth="1.1"
 						strokeLinecap="round"
 						strokeLinejoin="round"
 					/>
@@ -378,6 +397,7 @@ export function BranchChipWithDelta({
 	sessionId,
 	showCurrentHint = true,
 	suppressStale = false,
+	isWorktree = false,
 }: {
 	branch?: string;
 	lastUserMessageBranch?: string;
@@ -394,6 +414,9 @@ export function BranchChipWithDelta({
 	 * the warning would be noisy; the SessionChat header keeps it on so the
 	 * user sees the warning in the actual session view. */
 	suppressStale?: boolean;
+	/** Pass through to BranchChip — render the tree icon instead of the
+	 * default git-graph one when the branch belongs to a linked worktree. */
+	isWorktree?: boolean;
 }) {
 	if (!branch) return null;
 	const stale =
@@ -405,6 +428,7 @@ export function BranchChipWithDelta({
 				name={branch}
 				stale={stale}
 				staleFrom={stale ? lastUserMessageBranch : undefined}
+				isWorktree={isWorktree}
 			/>
 			{showHint ? (
 				<span

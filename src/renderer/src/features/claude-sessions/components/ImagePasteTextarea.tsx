@@ -20,6 +20,18 @@ interface Props {
 	disabled?: boolean;
 	textareaHeight?: number;
 	onContentHeightChange?: (height: number) => void;
+	/**
+	 * When set, the parent intercepts the send. Used by the ephemeral-
+	 * session promotion path in SessionChat: instead of pushing the
+	 * blocks as a user message on an existing session, the parent calls
+	 * `session:start` with the text as the initial prompt + any images
+	 * as a follow-up turn, then swaps the URL to the new real session.
+	 *
+	 * When omitted, the component sends through the standard IPC path.
+	 * The component still owns input state (text + images + sending +
+	 * error) and resets on success; the parent only handles the IPC.
+	 */
+	onSendOverride?: (blocks: UserContentBlock[]) => Promise<void>;
 }
 
 interface PendingImage {
@@ -46,6 +58,7 @@ export function ImagePasteTextarea({
 	disabled,
 	textareaHeight = 44,
 	onContentHeightChange,
+	onSendOverride,
 }: Props) {
 	const [text, setText] = useState("");
 	const [images, setImages] = useState<PendingImage[]>([]);
@@ -164,24 +177,32 @@ export function ImagePasteTextarea({
 		setSending(true);
 		setError(null);
 		try {
-			const sess = useSessionsStore.getState().sessions[sessionId];
-			const isOpen =
-				sess?.status === "running" ||
-				sess?.status === "idle" ||
-				sess?.status === "awaiting_permission";
-			if (!isOpen && sess?.sdkSessionId) {
-				await window.claude.resumeSession(sessionId);
+			if (onSendOverride) {
+				// Ephemeral / promotion path. Parent owns the IPC chain
+				// (session:start with the prompt, optional follow-up
+				// turn for images, URL swap, ephemeral cleanup). We just
+				// hand it the blocks and clear our state on success.
+				await onSendOverride(blocks);
+			} else {
+				const sess = useSessionsStore.getState().sessions[sessionId];
+				const isOpen =
+					sess?.status === "running" ||
+					sess?.status === "idle" ||
+					sess?.status === "awaiting_permission";
+				if (!isOpen && sess?.sdkSessionId) {
+					await window.claude.resumeSession(sessionId);
+				}
+				await window.claude.sendUserMessage({ sessionId, blocks });
+				useSessionsStore.getState().appendMessage(sessionId, {
+					id: crypto.randomUUID(),
+					role: "user",
+					content: {
+						type: "user",
+						message: { role: "user", content: blocks },
+					},
+					ts: Date.now(),
+				});
 			}
-			await window.claude.sendUserMessage({ sessionId, blocks });
-			useSessionsStore.getState().appendMessage(sessionId, {
-				id: crypto.randomUUID(),
-				role: "user",
-				content: {
-					type: "user",
-					message: { role: "user", content: blocks },
-				},
-				ts: Date.now(),
-			});
 			setText("");
 			setImages([]);
 		} catch (err) {

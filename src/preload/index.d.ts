@@ -10,6 +10,10 @@ import type {
 import type { ReadStateFile } from "../shared/schemas/read_state";
 import type { AppSettingsFile } from "../shared/schemas/app_settings";
 import type { Note } from "../shared/schemas/session_notes";
+import type {
+	Worktree,
+	ListWorktreesForSessionResult,
+} from "../shared/schemas/worktree";
 import type { SDKRateLimitInfo } from "@anthropic-ai/claude-agent-sdk";
 
 export type RateLimitType = NonNullable<SDKRateLimitInfo["rateLimitType"]>;
@@ -37,7 +41,10 @@ declare global {
 			) => Promise<void>;
 			respondPermission: (decision: PermissionDecision) => void;
 			listSessions: () => Promise<ClaudeSessionFull[]>;
-			deleteSession: (sessionId: string) => Promise<void>;
+			deleteSession: (
+				sessionId: string,
+				opts?: { alsoDeleteWorktree?: boolean },
+			) => Promise<void>;
 			archiveSession: (sessionId: string) => Promise<void>;
 			unarchiveSession: (sessionId: string) => Promise<void>;
 			renameSession: (sessionId: string, title: string) => Promise<void>;
@@ -62,6 +69,11 @@ declare global {
 				storeFolder: string;
 			}>;
 			toggleDevTools: () => Promise<void>;
+			listWorktrees: () => Promise<Worktree[]>;
+			listWorktreesForCwd: (
+				cwd: string,
+			) => Promise<ListWorktreesForSessionResult>;
+			peekWorktreeBaseRefForCwd: (cwd: string) => Promise<string | null>;
 			on: (channel: string, fn: (payload: unknown) => void) => () => void;
 		};
 	}

@@ -33,6 +33,17 @@ import {
 	hasUncommittedChanges,
 	switchBranch,
 } from "./git";
+import {
+	assertBranchCanBeCreated,
+	assertGitRepo,
+	getDefaultBaseRef,
+	getRepoToplevel,
+	gitWorktreeAdd,
+	worktreeDirExists,
+	worktreePathFor,
+} from "./worktree";
+import * as worktreeStore from "../core/store/worktrees";
+import { resolveDataDir as getDataDir } from "../core/store/data_dir";
 import * as sessionStore from "../core/store/claude_session";
 import * as rateLimitTracker from "./RateLimitTracker";
 import * as windows from "../windows";
@@ -139,10 +150,68 @@ export class SessionManager {
 
 	async run(input: StartSessionInput): Promise<ClaudeSession> {
 		const id = randomUUID();
+
+		// Resolve effective cwd + worktreeId. Three cases:
+		//   - no `worktree` field             → cwd is the picked folder
+		//   - `worktree.kind === "new"`       → create a fresh worktree off
+		//                                       origin's default at input.cwd,
+		//                                       effectiveCwd = worktree path
+		//   - `worktree.kind === "existing"`  → use the named worktree,
+		//                                       effectiveCwd = worktree path
+		//
+		// Any failure here throws BEFORE the session row is persisted, so
+		// failed worktree ops leave zero state on disk (and the renderer
+		// just keeps its ephemeral draft).
+		let effectiveCwd = input.cwd;
+		let worktreeId: string | undefined;
+		if (input.worktree) {
+			if (input.worktree.kind === "new") {
+				await assertGitRepo(input.cwd);
+				const originalCwd = await getRepoToplevel(input.cwd);
+				await assertBranchCanBeCreated(originalCwd, input.worktree.branch);
+				const baseRef = await getDefaultBaseRef(originalCwd);
+				const wtId = randomUUID();
+				const wtPath = worktreePathFor(getDataDir(), wtId);
+				// gitWorktreeAdd handles best-effort cleanup of its target
+				// directory if the shell-out fails, so we don't need to
+				// wrap it ourselves.
+				await gitWorktreeAdd({
+					originalCwd,
+					targetPath: wtPath,
+					branch: input.worktree.branch,
+					baseRef,
+				});
+				await worktreeStore.createWorktree({
+					id: wtId,
+					path: wtPath,
+					branch: input.worktree.branch,
+					baseRef,
+					originalCwd,
+					createdAt: Date.now(),
+				});
+				effectiveCwd = wtPath;
+				worktreeId = wtId;
+			} else {
+				const wt = worktreeStore.getWorktree(input.worktree.worktreeId);
+				if (!wt) throw new Error("Worktree not found");
+				// Cross-repo guard — the modal already filters but server
+				// stays the source of truth.
+				await assertGitRepo(input.cwd);
+				const topl = await getRepoToplevel(input.cwd);
+				if (topl !== wt.originalCwd) {
+					throw new Error(
+						"This worktree belongs to a different repository than the picked folder.",
+					);
+				}
+				effectiveCwd = wt.path;
+				worktreeId = wt.id;
+			}
+		}
+
 		const [branch, startCommit, defaultBaseBranch] = await Promise.all([
-			getCurrentBranch(input.cwd),
-			getHeadCommit(input.cwd),
-			getDefaultBaseBranch(input.cwd),
+			getCurrentBranch(effectiveCwd),
+			getHeadCommit(effectiveCwd),
+			getDefaultBaseBranch(effectiveCwd),
 		]);
 		const hasInitialPrompt = !!input.prompt && input.prompt.trim().length > 0;
 		const derivedTitle = hasInitialPrompt
@@ -152,7 +221,7 @@ export class SessionManager {
 			id,
 			title: derivedTitle || input.title,
 			prompt: input.prompt ?? "",
-			cwd: input.cwd,
+			cwd: effectiveCwd,
 			status: hasInitialPrompt ? "running" : "idle",
 			createdAt: Date.now(),
 			branch,
@@ -169,6 +238,7 @@ export class SessionManager {
 			// New sessions default to "plan"; the renderer can pre-pick a mode
 			// in StartSessionInput if it ever wants to.
 			mode: input.mode ?? "plan",
+			worktreeId,
 		};
 
 		const fullForPersist: ClaudeSessionFull = { ...session, messages: [] };
@@ -182,9 +252,14 @@ export class SessionManager {
 			? [[{ type: "text", text: input.prompt as string }]]
 			: [];
 
-		await this.runLoop({
+		// Non-blocking — match resume() and fork(). The IPC returns the
+		// session as soon as it's persisted; the renderer uses the returned
+		// id immediately (to navigate from the ephemeral draft URL to the
+		// real one). The SDK loop runs in the background and broadcasts
+		// `session:started` to populate every window's store.
+		void this.runLoop({
 			session,
-			cwd: input.cwd,
+			cwd: effectiveCwd,
 			startCommit,
 			initialTurns,
 			resumeSdkSessionId: undefined,
@@ -261,6 +336,11 @@ export class SessionManager {
 			startCommit,
 			sdkSessionId: newSdkId,
 			mode: parent.mode,
+			// Inherit the worktree link from the parent, if any. Forks share the
+			// physical worktree (parent.cwd is already the worktree path); this
+			// just propagates the metadata pointer so the chip / UI reflects
+			// "linked" on the child without forcing the user to re-link.
+			worktreeId: parent.worktreeId,
 			// Re-id each entry so they don't collide with the parent's message
 			// ids in the renderer's flat store. Original SDK content and
 			// timestamps are preserved.
@@ -290,6 +370,7 @@ export class SessionManager {
 			startCommit: newSessionFull.startCommit,
 			sdkSessionId: newSessionFull.sdkSessionId,
 			mode: newSessionFull.mode,
+			worktreeId: newSessionFull.worktreeId,
 		};
 
 		// Tell the renderer the new session exists, then hydrate its history
@@ -334,6 +415,31 @@ export class SessionManager {
 			);
 		}
 
+		// If this session is linked to a worktree, verify the worktree
+		// directory still exists. A user could have manually `rm -rf`d it
+		// between app launches, in which case the SDK loop would fail in a
+		// confusing way on its first tool call. Surface a clear error
+		// instead, leaving the row in `errored` so the UI can offer recovery
+		// later (out of scope for this task).
+		if (persisted.worktreeId) {
+			const exists = await worktreeDirExists(persisted.cwd);
+			if (!exists) {
+				const msg =
+					"Worktree directory missing — likely cleaned externally. " +
+					"Re-creating worktrees from records is not yet supported.";
+				await sessionStore.updateSession(persisted.id, {
+					status: "errored",
+					error: msg,
+					finishedAt: Date.now(),
+				});
+				this.send("session:errored", {
+					sessionId: persisted.id,
+					error: msg,
+				});
+				throw new Error(msg);
+			}
+		}
+
 		// Refresh branch/startCommit — the working tree has likely moved on.
 		const [branch, startCommit] = await Promise.all([
 			getCurrentBranch(persisted.cwd),
@@ -354,6 +460,7 @@ export class SessionManager {
 			// mode field were backfilled to "plan" by the Zod schema default
 			// when the store loaded them.
 			mode: persisted.mode,
+			worktreeId: persisted.worktreeId,
 		};
 
 		await sessionStore.updateSession(persisted.id, {

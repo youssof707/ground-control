@@ -11,10 +11,40 @@ import { groupMessagesIntoUnits } from "../lib/groupMessages";
 import { ConfirmModal } from "../../../components/ConfirmModal";
 import { T } from "../../../design/tokens";
 import { BranchChipWithDelta, StatusPill } from "../../../design/Atoms";
+import { WorktreeLinkModal } from "./WorktreeLinkModal";
+import { useWorktreesStore } from "../stores/useWorktreesStore";
+import { useEphemeralSessionsStore } from "../stores/useEphemeralSessionsStore";
+import type {
+	ClaudeSessionFull,
+	UserContentBlock,
+} from "@shared/claude-sessions/types";
 
 export function SessionChat({ sessionId }: { sessionId: string }) {
 	const navigate = useNavigate();
-	const session = useSessionsStore((s) => s.sessions[sessionId]);
+	const realSession = useSessionsStore((s) => s.sessions[sessionId]);
+	const ephemeralDraft = useEphemeralSessionsStore(
+		(s) => s.drafts[sessionId],
+	);
+	const removeDraft = useEphemeralSessionsStore((s) => s.remove);
+	// Adapt the ephemeral draft (if any) into a ClaudeSessionFull-shaped
+	// object so the rest of this component renders without per-field
+	// branches. Drafts have no messages, no SDK loop, status "idle",
+	// no worktree link (worktree linking IS what promotes them).
+	const session: ClaudeSessionFull | undefined =
+		realSession ??
+		(ephemeralDraft
+			? {
+				id: ephemeralDraft.id,
+				title: ephemeralDraft.title,
+				prompt: "",
+				cwd: ephemeralDraft.cwd,
+				status: "idle",
+				createdAt: ephemeralDraft.createdAt,
+				mode: ephemeralDraft.mode,
+				messages: [],
+			}
+			: undefined);
+	const isEphemeral = !realSession && !!ephemeralDraft;
 	const upsertSession = useSessionsStore((s) => s.upsertSession);
 	const queue = usePermissionsStore((s) => s.queue);
 	const pending = queue.filter((q) => q.sessionId === sessionId);
@@ -29,6 +59,21 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	const [editingTitle, setEditingTitle] = useState(false);
 	const [titleDraft, setTitleDraft] = useState("");
 	const [openFolderModal, setOpenFolderModal] = useState(false);
+	const [worktreeModalOpen, setWorktreeModalOpen] = useState(false);
+	// Worktree record this session is linked to, if any. The map is hydrated
+	// at app boot (and re-hydrated on every state:changed ping), so the
+	// lookup is just an indexed read.
+	const linkedWorktree = useWorktreesStore((s) =>
+		session?.worktreeId ? s.worktrees[session.worktreeId] : undefined,
+	);
+	// User-facing cwd. When linked, the worktree's physical folder
+	// (`session.cwd` = `<dataDir>/worktrees/<uuid>`) is an implementation
+	// detail — the user thinks of the session as working "in
+	// bank-analytics", not "in 021d56dc-…". Surface the original repo
+	// path everywhere a path is shown / opened / copied. The session's
+	// actual cwd stays as the worktree path internally so SDK + git ops
+	// still run there.
+	const displayCwd = linkedWorktree?.originalCwd ?? session?.cwd ?? "";
 	const titleInputRef = useRef<HTMLInputElement>(null);
 	// `inputHeight` is the single source of truth for the chat textarea's
 	// rendered height. It's updated by either:
@@ -118,7 +163,65 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 		session?.status === "running" ||
 		session?.status === "idle" ||
 		session?.status === "awaiting_permission";
-	const canChat = isOpen || !!session?.sdkSessionId;
+	// Ephemeral drafts can chat too — sending a message is one of the two
+	// ways to promote a draft into a real session (the other being a
+	// worktree link). canChat → render the textarea.
+	const canChat = isOpen || !!session?.sdkSessionId || isEphemeral;
+
+	/**
+	 * Promote an ephemeral draft into a real, persisted session. Two
+	 * trigger points share this implementation:
+	 *   - The user sends a first message (text + optional images).
+	 *   - The user picks a worktree in the link modal.
+	 *
+	 * `args.firstMessageText` becomes the SDK's first user turn via
+	 * `StartSessionInput.prompt`. `args.firstMessageImages`, if any,
+	 * are pushed as a follow-up turn after `session:started` lands the
+	 * real row in the store — `StartSessionInput.prompt` is text-only,
+	 * so images-on-first-turn is implemented as a separate user message
+	 * once the SDK loop is alive.
+	 *
+	 * After `session:start` returns (immediately — the SDK loop runs in
+	 * the background), we replace-navigate from the draft id to the real
+	 * one and drop the draft from the renderer store.
+	 */
+	async function promoteEphemeral(args: {
+		firstMessageText?: string;
+		firstMessageImages?: UserContentBlock[];
+		worktree?:
+			| { kind: "new"; branch: string }
+			| { kind: "existing"; worktreeId: string };
+	}): Promise<void> {
+		if (!ephemeralDraft) throw new Error("No ephemeral draft to promote");
+		const real = await window.claude.startSession({
+			title: ephemeralDraft.title,
+			cwd: ephemeralDraft.cwd,
+			mode: ephemeralDraft.mode,
+			prompt: args.firstMessageText,
+			worktree: args.worktree,
+		});
+		// Drop the draft now that we have the real id — the URL swap
+		// below will unmount the ephemeral render path anyway, but
+		// removing it eagerly also drops the row from the sidebar.
+		removeDraft(ephemeralDraft.id);
+		navigate(`/sessions/${real.id}`, { replace: true });
+		// Images-on-first-turn follow-up. The SDK loop is alive in the
+		// background by now (session:start returned synchronously after
+		// the persist), so the follow-up turn queues onto its userStream.
+		if (args.firstMessageImages && args.firstMessageImages.length > 0) {
+			try {
+				await window.claude.sendUserMessage({
+					sessionId: real.id,
+					blocks: args.firstMessageImages,
+				});
+			} catch (err) {
+				console.error(
+					"[ccw] first-turn image follow-up failed:",
+					err,
+				);
+			}
+		}
+	}
 
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const stickToBottom = useRef(true);
@@ -388,7 +491,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					{session.cwd ? (
 						<button
 							type="button"
-							title={`${session.cwd}\n(click to open in Finder)`}
+							title={`${displayCwd}\n(click to open in Finder)`}
 							onClick={() => setOpenFolderModal(true)}
 							style={{
 								fontFamily: T.mono,
@@ -415,11 +518,18 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 								e.currentTarget.style.textDecoration = "none";
 							}}
 						>
-							{session.cwd.replace(/[\/\\]+$/, "").split(/[\/\\]/).pop() || session.cwd}
+							{displayCwd.replace(/[\/\\]+$/, "").split(/[\/\\]/).pop() ||
+								displayCwd}
 						</button>
 					) : (
 						<div style={{ flex: 1 }} />
 					)}
+
+					<WorktreeChip
+						linked={linkedWorktree}
+						clickable={isEphemeral}
+						onClick={() => setWorktreeModalOpen(true)}
+					/>
 
 					{session.status === "running" ? (
 						<button
@@ -470,6 +580,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 						branch={session.branch}
 						lastUserMessageBranch={session.lastUserMessageBranch}
 						sessionId={sessionId}
+						isWorktree={!!linkedWorktree}
 					/>
 				</div>
 			</div>
@@ -599,6 +710,28 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					textareaHeight={inputHeight}
 					onContentHeightChange={onContentHeightChange}
 					disabled={pending.length > 0}
+					onSendOverride={
+						isEphemeral
+							? async (blocks) => {
+								const textBlock = blocks.find(
+									(b) => b.type === "text",
+								);
+								const imageBlocks = blocks.filter(
+									(b) => b.type !== "text",
+								);
+								await promoteEphemeral({
+									firstMessageText:
+											textBlock?.type === "text"
+												? textBlock.text
+												: undefined,
+									firstMessageImages:
+											imageBlocks.length > 0
+												? imageBlocks
+												: undefined,
+								});
+							}
+							: undefined
+					}
 				/>
 			) : null}
 
@@ -621,7 +754,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					<>
 						Reveal{" "}
 						<code style={{ fontFamily: T.mono, fontSize: 12 }}>
-							{session.cwd}
+							{displayCwd}
 						</code>{" "}
 						in Finder?
 					</>
@@ -632,7 +765,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					label: "Copy path",
 					onClick: async () => {
 						try {
-							await navigator.clipboard.writeText(session.cwd ?? "");
+							await navigator.clipboard.writeText(displayCwd);
 						} catch {
 							// noop — clipboard write can fail in some contexts
 						}
@@ -640,12 +773,113 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					},
 				}}
 				onConfirm={() => {
-					void window.claude.revealPath(session.cwd ?? "");
+					void window.claude.revealPath(displayCwd);
 					setOpenFolderModal(false);
 				}}
 				onCancel={() => setOpenFolderModal(false)}
 			/>
+
+			<WorktreeLinkModal
+				open={worktreeModalOpen && isEphemeral}
+				cwd={ephemeralDraft?.cwd ?? ""}
+				onPick={async (choice) => {
+					await promoteEphemeral({ worktree: choice });
+				}}
+				onClose={() => setWorktreeModalOpen(false)}
+			/>
 		</div>
+	);
+}
+
+/**
+ * Inline chip sitting next to BranchChipWithDelta. Three visual states:
+ *   - **Hidden** (real session, not linked) — returns null. There's no
+ *     way to link a worktree to a real session after the SDK loop has
+ *     spawned (see the v3 plan: cwd is baked into the SDK at spawn).
+ *   - **Clickable** (`clickable=true`, ephemeral draft) — "Link worktree"
+ *     action pill that opens the WorktreeLinkModal. Picking a worktree
+ *     in the modal promotes the draft into a real session.
+ *   - **Linked** (`linked` set) — locked info chip showing the worktree's
+ *     branch name. Not clickable — links are immutable for a session's
+ *     life.
+ *
+ * Mirrors the construction of `BranchChip` in Atoms.tsx (height 22, gap 6,
+ * border radius 11, mono font) so the row visually homogenizes.
+ */
+function WorktreeChip({
+	linked,
+	clickable,
+	onClick,
+}: {
+	linked: { branch: string; path: string; originalCwd: string } | undefined;
+	/** True when the chip should render as the actionable "Link worktree"
+	 * button — only on ephemeral drafts in the new design. */
+	clickable: boolean;
+	onClick: () => void;
+}) {
+	const isLinked = !!linked;
+
+	// Hide entirely on real, unlinked sessions — there's no action they
+	// could take and an empty chip is just visual noise.
+	if (!isLinked && !clickable) return null;
+
+	// No tooltip on this chip in any state — the label is self-explanatory.
+
+	// Grey palette throughout — worktrees are app-info chrome, not a
+	// status signal. Matches the rest of the app's neutral info chips.
+	const bg = isLinked ? T.neutralSoft : T.surface;
+	const border = isLinked ? T.neutralBorder : T.border;
+	const color = isLinked ? T.neutral : T.textDim;
+
+	return (
+		<button
+			type="button"
+			onClick={isLinked ? undefined : onClick}
+			style={{
+				display: "inline-flex",
+				alignItems: "center",
+				gap: 6,
+				height: 22,
+				padding: "0 9px 0 7px",
+				borderRadius: 11,
+				background: bg,
+				border: `0.5px solid ${border}`,
+				fontSize: 11.5,
+				color,
+				fontFamily: T.mono,
+				whiteSpace: "nowrap",
+				maxWidth: 200,
+				overflow: "hidden",
+				textOverflow: "ellipsis",
+				cursor: isLinked ? "default" : "pointer",
+				transition: "background 0.12s, color 0.12s, border-color 0.12s",
+			}}
+			onMouseEnter={(e) => {
+				if (isLinked) return;
+				e.currentTarget.style.background = T.surfaceHi;
+				e.currentTarget.style.color = T.text;
+			}}
+			onMouseLeave={(e) => {
+				if (isLinked) return;
+				e.currentTarget.style.background = T.surface;
+				e.currentTarget.style.color = T.textDim;
+			}}
+		>
+			{/* Tree glyph: trunk + branches. Distinct enough from BranchChip's
+			    commit-graph icon that the row reads at a glance. */}
+			<svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+				<path
+					d="M6 10V2M6 5L3 3M6 5l3-2M6 8L3.5 6.5M6 8l2.5-1.5"
+					stroke="currentColor"
+					strokeWidth="1.1"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+				/>
+			</svg>
+			<span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+				{isLinked ? linked!.branch : "Link worktree"}
+			</span>
+		</button>
 	);
 }
 
