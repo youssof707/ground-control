@@ -655,23 +655,6 @@ function SessionRowSidebar({
 						<StatusPill
 							status={hasPending ? "awaiting_permission" : session.status}
 						/>
-						{hasPending ? (
-							<span
-								title={`${pending.length} pending permission${pending.length === 1 ? "" : "s"}`}
-								style={{
-									fontSize: 10.5,
-									fontWeight: 600,
-									color: T.accent,
-									background: T.accentSoft,
-									border: `0.5px solid ${T.accentBorder}`,
-									borderRadius: 4,
-									padding: "1px 5px",
-									letterSpacing: 0.3,
-								}}
-							>
-								{pending.length} pending
-							</span>
-						) : null}
 						{session.branch ? (
 							<BranchChipWithDelta
 								branch={session.branch}

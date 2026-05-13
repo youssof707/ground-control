@@ -165,7 +165,7 @@ function InboxCard({
 					to={`/sessions/${req.sessionId}`}
 					style={{
 						fontSize: 12.5,
-						color: T.info,
+						color: T.warn,
 						fontWeight: 500,
 						textDecoration: "none",
 						display: "inline-flex",
