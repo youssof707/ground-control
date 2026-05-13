@@ -66,8 +66,8 @@ export function PlanApprovalCard({
 				// normal permission card. It's the most important UI in the
 				// transcript at this moment. Suppressed in `naked` mode (e.g.
 				// inside the InboxSidebar, which already provides chrome).
-				border: naked ? "none" : `1.5px solid ${T.accent}`,
-				boxShadow: naked ? undefined : `0 0 0 3px ${T.accentSoft}`,
+				border: naked ? "none" : `1.5px solid ${T.warn}`,
+				boxShadow: naked ? undefined : `0 0 0 3px ${T.warnSoft}`,
 				overflow: "hidden",
 			}}
 		>
@@ -86,7 +86,7 @@ export function PlanApprovalCard({
 						fontWeight: 600,
 						letterSpacing: 1,
 						textTransform: "uppercase",
-						color: T.accent,
+						color: T.warn,
 					}}
 				>
 					Plan ready for review
@@ -234,7 +234,7 @@ export function PlanApprovalCard({
 						Keep planning
 					</button>
 					<button
-						className="btn btn-primary"
+						className="btn btn-warn"
 						onClick={approve}
 						title="Approve this plan and switch the session to Auto-edit mode"
 					>

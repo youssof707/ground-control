@@ -150,6 +150,26 @@ input::placeholder {
 	border-color: transparent;
 }
 
+/* Warn-toned primary: used inside "waiting on user" cards (permission card,
+   ask-user-question card, plan-approval card) so the call-to-action matches
+   the yellow framing of those cards instead of the app's default blue
+   primary. Same dark ink foreground as .btn-primary — it reads well on both
+   the blue and yellow saturated backgrounds. */
+.btn-warn {
+	background: oklch(0.75 0.15 60);
+	color: #1a1410;
+	border-color: transparent;
+}
+.btn-warn:hover:not(:disabled) {
+	background: oklch(0.79 0.15 60);
+	border-color: transparent;
+}
+.btn-warn .kbd {
+	background: rgba(26, 20, 16, 0.10);
+	color: rgba(26, 20, 16, 0.55);
+	border-color: transparent;
+}
+
 .btn-destructive {
 	background: oklch(0.70 0.18 25);
 	color: #fff;

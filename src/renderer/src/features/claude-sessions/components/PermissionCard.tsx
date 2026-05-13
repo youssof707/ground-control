@@ -67,7 +67,7 @@ function DefaultPermissionCard({
 			style={{
 				borderRadius: 10,
 				background: T.surface,
-				border: naked ? "none" : `0.5px solid ${T.accentBorder}`,
+				border: naked ? "none" : `0.5px solid ${T.warnBorder}`,
 				overflow: "hidden",
 			}}
 		>
@@ -85,12 +85,12 @@ function DefaultPermissionCard({
 						width: 22,
 						height: 22,
 						borderRadius: 6,
-						background: T.accentSoft,
-						border: `0.5px solid ${T.accentBorder}`,
+						background: T.warnSoft,
+						border: `0.5px solid ${T.warnBorder}`,
 						display: "inline-flex",
 						alignItems: "center",
 						justifyContent: "center",
-						color: T.accent,
+						color: T.warn,
 						fontSize: 12,
 					}}
 				>
@@ -184,11 +184,11 @@ function DefaultPermissionCard({
 					>
 						Deny
 					</button>
-					<button className="btn btn-primary" onClick={allow}>
+					<button className="btn btn-warn" onClick={allow}>
 						Allow
 					</button>
 					<button
-						className="btn btn-primary"
+						className="btn btn-warn"
 						onClick={allowAlways}
 						title={`Auto-allow all future ${req.toolName} requests for the rest of this app session`}
 					>

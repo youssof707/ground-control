@@ -31,11 +31,11 @@ const STATUS_MAP: Record<string, StatusStyle> = {
 		pulse: true,
 	},
 	awaiting_permission: {
-		dot: T.accent,
+		dot: T.warn,
 		label: "waiting for input",
-		color: T.accent,
-		bg: T.accentSoft,
-		border: T.accentBorder,
+		color: T.warn,
+		bg: T.warnSoft,
+		border: T.warnBorder,
 	},
 	done: {
 		dot: T.info,
@@ -642,8 +642,8 @@ export function MinimizeToggle({
 				flexShrink: 0,
 			}}
 			onMouseEnter={(e) => {
-				e.currentTarget.style.background = T.accentSoft;
-				e.currentTarget.style.color = T.accent;
+				e.currentTarget.style.background = T.warnSoft;
+				e.currentTarget.style.color = T.warn;
 			}}
 			onMouseLeave={(e) => {
 				e.currentTarget.style.background = "transparent";

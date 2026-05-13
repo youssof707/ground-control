@@ -102,7 +102,7 @@ export function AskUserQuestionCard({
 			style={{
 				borderRadius: 10,
 				background: T.surface,
-				border: naked ? "none" : `0.5px solid ${T.accentBorder}`,
+				border: naked ? "none" : `0.5px solid ${T.warnBorder}`,
 				overflow: "hidden",
 			}}
 		>
@@ -168,7 +168,7 @@ export function AskUserQuestionCard({
 									style={{
 										fontSize: 11,
 										fontWeight: 600,
-										color: T.accent,
+										color: T.warn,
 										letterSpacing: 1,
 										textTransform: "uppercase",
 										marginBottom: 6,
@@ -231,7 +231,7 @@ export function AskUserQuestionCard({
 					Skip
 				</button>
 				<button
-					className="btn btn-primary"
+					className="btn btn-warn"
 					onClick={submit}
 					disabled={!allAnswered || submitting}
 				>
@@ -289,8 +289,8 @@ function QuestionField({
 						marginTop: 10,
 						padding: "10px 12px",
 						borderRadius: 8,
-						background: T.accentSoft,
-						border: `0.5px solid ${T.accentBorder}`,
+						background: T.warnSoft,
+						border: `0.5px solid ${T.warnBorder}`,
 						display: "flex",
 						alignItems: "flex-start",
 						gap: 10,
@@ -300,7 +300,7 @@ function QuestionField({
 						style={{
 							fontSize: 10.5,
 							fontWeight: 600,
-							color: T.accent,
+							color: T.warn,
 							letterSpacing: 1,
 							textTransform: "uppercase",
 							marginTop: 6,
@@ -389,8 +389,8 @@ function InlineOption({
 			style={{
 				padding: "10px 12px",
 				borderRadius: 8,
-				background: selected ? T.accentSoft : T.surfaceLow,
-				border: `0.5px solid ${selected ? T.accentBorder : T.border}`,
+				background: selected ? T.warnSoft : T.surfaceLow,
+				border: `0.5px solid ${selected ? T.warnBorder : T.border}`,
 				cursor: "pointer",
 				display: "flex",
 				alignItems: "flex-start",
@@ -404,7 +404,7 @@ function InlineOption({
 					borderRadius: "50%",
 					marginTop: 2,
 					flexShrink: 0,
-					border: `1.5px solid ${selected ? T.accent : T.border}`,
+					border: `1.5px solid ${selected ? T.warn : T.border}`,
 					display: "inline-flex",
 					alignItems: "center",
 					justifyContent: "center",
@@ -416,7 +416,7 @@ function InlineOption({
 							width: 6,
 							height: 6,
 							borderRadius: "50%",
-							background: T.accent,
+							background: T.warn,
 						}}
 					/>
 				) : null}
@@ -465,12 +465,12 @@ function QuestionIcon() {
 				width: 22,
 				height: 22,
 				borderRadius: 6,
-				background: T.accentSoft,
-				border: `0.5px solid ${T.accentBorder}`,
+				background: T.warnSoft,
+				border: `0.5px solid ${T.warnBorder}`,
 				display: "inline-flex",
 				alignItems: "center",
 				justifyContent: "center",
-				color: T.accent,
+				color: T.warn,
 				fontFamily: T.mono,
 				fontSize: 12,
 				fontWeight: 700,
@@ -493,13 +493,13 @@ function TagPill({
 			style={{
 				fontSize: 10.5,
 				fontWeight: 600,
-				color: muted ? T.textDim : T.accent,
+				color: muted ? T.textDim : T.warn,
 				letterSpacing: muted ? 0.6 : 1.2,
 				textTransform: "uppercase",
 				padding: "3px 7px",
 				borderRadius: 4,
-				background: muted ? T.surfaceLow : T.accentSoft,
-				border: `0.5px solid ${muted ? T.border : T.accentBorder}`,
+				background: muted ? T.surfaceLow : T.warnSoft,
+				border: `0.5px solid ${muted ? T.border : T.warnBorder}`,
 			}}
 		>
 			{children}
