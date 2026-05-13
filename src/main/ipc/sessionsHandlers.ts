@@ -231,9 +231,8 @@ export function registerSessionsHandlers(): SessionManager {
 		// upsertSession.
 		manager.markDeleted(sessionId);
 		// Trip the abort signal so the SDK loop breaks out on its next tick.
-		// We don't await its `done` here: captureDiff inside the cancelled
-		// branch can be slow on a large repo, and the tombstone above means
-		// we don't need its broadcasts anyway.
+		// We don't await its `done` here: the tombstone above means we don't
+		// need its broadcasts anyway.
 		manager.cancel(sessionId);
 		// Resolve any pending permission promises for this session and broadcast
 		// permission:resolved so the renderer's inbox queue clears. Redundant

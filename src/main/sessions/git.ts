@@ -140,18 +140,3 @@ export async function hasUncommittedChanges(cwd: string): Promise<boolean> {
 	}
 }
 
-export async function getDiffSinceCommit(
-	cwd: string,
-	sha: string,
-): Promise<string | undefined> {
-	try {
-		const { stdout } = await execFileAsync(
-			"git",
-			["diff", sha],
-			{ cwd, maxBuffer: 64 * 1024 * 1024 },
-		);
-		return stdout || "";
-	} catch {
-		return undefined;
-	}
-}

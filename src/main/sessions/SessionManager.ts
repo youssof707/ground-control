@@ -28,7 +28,6 @@ import { PermissionBroker } from "./PermissionBroker";
 import {
 	getCurrentBranch,
 	getDefaultBaseBranch,
-	getDiffSinceCommit,
 	getHeadCommit,
 	hasUncommittedChanges,
 	switchBranch,
@@ -185,7 +184,6 @@ export class SessionManager {
 		await this.runLoop({
 			session,
 			cwd: input.cwd,
-			startCommit,
 			initialTurns,
 			resumeSdkSessionId: undefined,
 		});
@@ -368,7 +366,6 @@ export class SessionManager {
 		void this.runLoop({
 			session,
 			cwd: persisted.cwd,
-			startCommit,
 			initialTurns: [],
 			resumeSdkSessionId: persisted.sdkSessionId,
 		});
@@ -377,11 +374,10 @@ export class SessionManager {
 	private async runLoop(cfg: {
 		session: ClaudeSession;
 		cwd: string;
-		startCommit: string | undefined;
 		initialTurns: UserContentBlock[][];
 		resumeSdkSessionId: string | undefined;
 	}): Promise<void> {
-		const { session, cwd, startCommit } = cfg;
+		const { session, cwd } = cfg;
 		const id = session.id;
 
 		const turns: UserContentBlock[][] = [...cfg.initialTurns];
@@ -408,14 +404,11 @@ export class SessionManager {
 		const setIdle = async () => {
 			if (session.status !== "running") return;
 			session.status = "idle";
-			const diff = await this.captureDiff(cwd, startCommit);
-			session.diff = diff;
 			this.send("session:status", {
 				sessionId: id,
 				status: "idle",
-				diff,
 			});
-			void sessionStore.updateSession(id, { status: "idle", diff });
+			void sessionStore.updateSession(id, { status: "idle" });
 		};
 
 		const pushTurnWithStatus = (blocks: UserContentBlock[]) => {
@@ -544,47 +537,38 @@ export class SessionManager {
 			if (abort.signal.aborted) {
 				session.status = "cancelled";
 				session.finishedAt = Date.now();
-				session.diff = await this.captureDiff(cwd, startCommit);
 				this.broker.cancelAllForSession(id);
 				this.send("session:cancelled", {
 					sessionId: id,
-					diff: session.diff,
 				});
 				void sessionStore.updateSession(id, {
 					status: "cancelled",
 					finishedAt: session.finishedAt,
-					diff: session.diff,
 				});
 			} else {
 				session.status = "done";
 				session.finishedAt = Date.now();
-				session.diff = await this.captureDiff(cwd, startCommit);
 				this.send("session:done", {
 					sessionId: id,
-					diff: session.diff,
 				});
 				void sessionStore.updateSession(id, {
 					status: "done",
 					finishedAt: session.finishedAt,
-					diff: session.diff,
 				});
 			}
 		} catch (err: unknown) {
 			session.status = "errored";
 			session.error = err instanceof Error ? err.message : String(err);
 			session.finishedAt = Date.now();
-			session.diff = await this.captureDiff(cwd, startCommit);
 			this.broker.cancelAllForSession(id, "Session errored");
 			this.send("session:errored", {
 				sessionId: id,
 				error: session.error,
-				diff: session.diff,
 			});
 			void sessionStore.updateSession(id, {
 				status: "errored",
 				finishedAt: session.finishedAt,
 				error: session.error,
-				diff: session.diff,
 			});
 		} finally {
 			state.finished = true;
@@ -810,14 +794,6 @@ export class SessionManager {
 			entry.done,
 			new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
 		]);
-	}
-
-	private async captureDiff(
-		cwd: string,
-		startCommit: string | undefined,
-	): Promise<string | undefined> {
-		if (!startCommit) return undefined;
-		return getDiffSinceCommit(cwd, startCommit);
 	}
 
 	private send(channel: string, payload: unknown) {

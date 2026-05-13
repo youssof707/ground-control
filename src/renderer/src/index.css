@@ -475,46 +475,6 @@ input::placeholder {
 	overflow: hidden;
 }
 
-.diff-file-header {
-	padding: 10px 14px;
-	border-bottom: 0.5px solid oklch(0.30 0.008 60);
-	background: oklch(0.20 0.006 60);
-	font: 12.5px "JetBrains Mono", ui-monospace, monospace;
-	color: oklch(0.94 0.005 80);
-	display: flex;
-	align-items: center;
-	gap: 8px;
-}
-
-.diff-file-badge {
-	font: 600 10px/1 "Inter", system-ui, sans-serif;
-	letter-spacing: 0.06em;
-	padding: 3px 7px;
-	border-radius: 4px;
-	text-transform: uppercase;
-}
-.diff-file-badge.add {
-	color: oklch(0.78 0.13 155);
-	background: oklch(0.78 0.13 155 / 0.14);
-	border: 0.5px solid oklch(0.78 0.13 155 / 0.40);
-}
-.diff-file-badge.delete {
-	color: oklch(0.78 0.18 25);
-	background: oklch(0.78 0.18 25 / 0.14);
-	border: 0.5px solid oklch(0.78 0.18 25 / 0.40);
-}
-.diff-file-badge.modify {
-	color: oklch(0.80 0.12 80);
-	background: oklch(0.80 0.12 80 / 0.14);
-	border: 0.5px solid oklch(0.80 0.12 80 / 0.40);
-}
-.diff-file-badge.rename,
-.diff-file-badge.copy {
-	color: oklch(0.80 0.09 210);
-	background: oklch(0.80 0.09 210 / 0.14);
-	border: 0.5px solid oklch(0.80 0.09 210 / 0.40);
-}
-
 .diff-body {
 	font: 12px/1.55 "JetBrains Mono", ui-monospace, monospace;
 	overflow-x: auto;

@@ -94,13 +94,11 @@ export function useSessionsBootstrap() {
 				upsertSession(p as ClaudeSession);
 			}),
 			window.claude.on("session:status", (p) => {
-				const { sessionId, status, diff } = p as {
+				const { sessionId, status } = p as {
 					sessionId: string;
 					status: SessionStatus;
-					diff?: string;
 				};
 				setStatus(sessionId, status);
-				if (diff !== undefined) upsertSession({ id: sessionId, diff });
 			}),
 			window.claude.on("session:patch", (p) => {
 				const { sessionId, ...patch } = p as {
@@ -117,29 +115,19 @@ export function useSessionsBootstrap() {
 				appendMessage(sessionId, message);
 			}),
 			window.claude.on("session:done", (p) => {
-				const { sessionId, diff } = p as {
-					sessionId: string;
-					diff?: string;
-				};
+				const { sessionId } = p as { sessionId: string };
 				setStatus(sessionId, "done");
-				if (diff !== undefined) upsertSession({ id: sessionId, diff });
 			}),
 			window.claude.on("session:errored", (p) => {
-				const { sessionId, diff } = p as {
+				const { sessionId } = p as {
 					sessionId: string;
 					error?: string;
-					diff?: string;
 				};
 				setStatus(sessionId, "errored");
-				if (diff !== undefined) upsertSession({ id: sessionId, diff });
 			}),
 			window.claude.on("session:cancelled", (p) => {
-				const { sessionId, diff } = p as {
-					sessionId: string;
-					diff?: string;
-				};
+				const { sessionId } = p as { sessionId: string };
 				setStatus(sessionId, "cancelled");
-				if (diff !== undefined) upsertSession({ id: sessionId, diff });
 				const queue = usePermissionsStore.getState().queue;
 				for (const r of queue) {
 					if (r.sessionId === sessionId) removePermission(r.requestId);

@@ -1124,7 +1124,7 @@ function RowMenuButton({
 				e.preventDefault();
 				e.stopPropagation();
 			}}
-			style={{ position: "relative", display: "inline-flex" }}
+			style={{ position: "relative", display: "inline-flex", marginRight: -12 }}
 		>
 			<button
 				type="button"

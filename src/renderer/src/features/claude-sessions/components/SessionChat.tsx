@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useReadStore } from "../stores/useReadStore";
@@ -19,8 +19,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	const queue = usePermissionsStore((s) => s.queue);
 	const pending = queue.filter((q) => q.sessionId === sessionId);
 	const [interrupting, setInterrupting] = useState(false);
-	const [resuming, setResuming] = useState(false);
-	const [resumeError, setResumeError] = useState<string | null>(null);
 	const [forkingId, setForkingId] = useState<string | null>(null);
 	const [forkError, setForkError] = useState<string | null>(null);
 	const [pendingForkMessageId, setPendingForkMessageId] = useState<
@@ -183,19 +181,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 		} catch (err) {
 			upsertSession({ id: sessionId, title: previous });
 			console.error("Failed to rename session", err);
-		}
-	};
-
-	const resume = async () => {
-		if (resuming) return;
-		setResuming(true);
-		setResumeError(null);
-		try {
-			await window.claude.resumeSession(sessionId);
-		} catch (err) {
-			setResumeError(err instanceof Error ? err.message : String(err));
-		} finally {
-			setResuming(false);
 		}
 	};
 
@@ -421,39 +406,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 						<div style={{ flex: 1 }} />
 					)}
 
-					{session.status === "running" ? (
-						<button
-							className="btn"
-							onClick={stop}
-							disabled={interrupting}
-							title="Stop Claude's current response. The session stays open — you can keep sending messages."
-						>
-							{interrupting ? "Stopping…" : "Stop"}
-						</button>
-					) : null}
-					{!isOpen && session.sdkSessionId ? (
-						<button
-							className="btn"
-							onClick={resume}
-							disabled={resuming}
-							title="Resume this session and keep talking with the same context."
-						>
-							{resuming ? "Resuming…" : "Resume"}
-						</button>
-					) : null}
-					{session.diff ? (
-						<Link to={`/sessions/${sessionId}/diff`} className="btn">
-							<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-								<path
-									d="M3 2h5v5M3 7l5-5"
-									stroke="currentColor"
-									strokeWidth="1.4"
-									strokeLinecap="round"
-								/>
-							</svg>
-							View diff
-						</Link>
-					) : null}
 				</div>
 
 				{/* Row 2: status chips */}
@@ -575,15 +527,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 				</div>
 			) : null}
 
-			{resumeError ? (
-				<div
-					className="message message-error"
-					style={{ margin: 12, padding: 8, fontSize: 12 }}
-				>
-					{resumeError}
-				</div>
-			) : null}
-
 			{forkError && !pendingForkMessageId ? (
 				<div
 					className="message message-error"
@@ -599,6 +542,8 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					textareaHeight={inputHeight}
 					onContentHeightChange={onContentHeightChange}
 					disabled={pending.length > 0}
+					onStop={stop}
+					interrupting={interrupting}
 				/>
 			) : null}
 

@@ -1,4 +1,5 @@
-import { memo, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { SessionMessage } from "@shared/claude-sessions/types";
 import { MarkdownText } from "./MarkdownText";
 import { T } from "../../../design/tokens";
@@ -112,77 +113,246 @@ function AssistantMessage({
 					return <RawBlock key={i} block={b} />;
 				})}
 			</div>
-			{canFork && hovered ? (
-				<ForkButton
+			{canFork ? (
+				<MessageActionsMenu
+					rowHovered={hovered}
 					pending={!!forkPending}
-					onClick={() => onFork?.(messageId)}
+					onFork={() => onFork?.(messageId)}
+					blocks={blocks}
 				/>
 			) : null}
 		</div>
 	);
 }
 
-function ForkButton({
+// Rough on-screen height of the open menu panel (2 items × ~26 px + 8 px
+// padding + 1 px border). Used only to decide whether to flip the panel
+// upward when there isn't enough room below the trigger.
+const MENU_ESTIMATED_HEIGHT = 72;
+const MENU_VIEWPORT_MARGIN = 8;
+const MENU_TRIGGER_GAP = 4;
+
+function MessageActionsMenu({
+	rowHovered,
 	pending,
+	onFork,
+	blocks,
+}: {
+	rowHovered: boolean;
+	pending: boolean;
+	onFork: () => void;
+	blocks: ContentBlock[];
+}) {
+	const [open, setOpen] = useState(false);
+	const [copied, setCopied] = useState(false);
+	const [menuPos, setMenuPos] = useState<{
+		top: number;
+		left: number;
+	} | null>(null);
+	const triggerRef = useRef<HTMLButtonElement | null>(null);
+	const panelRef = useRef<HTMLDivElement | null>(null);
+
+	// While open: close on outside click, Escape, scroll (any scroll container,
+	// caught with the capture phase), and window resize. Scroll/resize close
+	// rather than reposition because the trigger could move arbitrarily and
+	// keeping the panel attached visually isn't worth the complexity.
+	useEffect(() => {
+		if (!open) return;
+		const onMouseDown = (e: MouseEvent) => {
+			const target = e.target instanceof Node ? e.target : null;
+			if (!target) return;
+			if (triggerRef.current && triggerRef.current.contains(target)) return;
+			if (panelRef.current && panelRef.current.contains(target)) return;
+			setOpen(false);
+		};
+		const onKeyDown = (e: KeyboardEvent) => {
+			if (e.key === "Escape") setOpen(false);
+		};
+		const close = () => setOpen(false);
+		document.addEventListener("mousedown", onMouseDown);
+		document.addEventListener("keydown", onKeyDown);
+		window.addEventListener("scroll", close, true);
+		window.addEventListener("resize", close);
+		return () => {
+			document.removeEventListener("mousedown", onMouseDown);
+			document.removeEventListener("keydown", onKeyDown);
+			window.removeEventListener("scroll", close, true);
+			window.removeEventListener("resize", close);
+		};
+	}, [open]);
+
+	const toggleOpen = (e: React.MouseEvent) => {
+		e.stopPropagation();
+		if (open) {
+			setOpen(false);
+			return;
+		}
+		const rect = triggerRef.current?.getBoundingClientRect();
+		if (rect) {
+			const wouldOverflowBottom =
+				rect.bottom +
+					MENU_TRIGGER_GAP +
+					MENU_ESTIMATED_HEIGHT +
+					MENU_VIEWPORT_MARGIN >
+				window.innerHeight;
+			setMenuPos({
+				top: wouldOverflowBottom
+					? rect.top - MENU_TRIGGER_GAP - MENU_ESTIMATED_HEIGHT
+					: rect.bottom + MENU_TRIGGER_GAP,
+				left: rect.left,
+			});
+		}
+		setOpen(true);
+	};
+
+	const handleFork = (e: React.MouseEvent) => {
+		e.stopPropagation();
+		if (pending) return;
+		setOpen(false);
+		onFork();
+	};
+
+	const handleCopy = async (e: React.MouseEvent) => {
+		e.stopPropagation();
+		const text = messageBlocksToText(blocks);
+		try {
+			await navigator.clipboard.writeText(text);
+		} catch {
+			// noop — clipboard write can fail in some contexts
+		}
+		setCopied(true);
+		setTimeout(() => {
+			setCopied(false);
+			setOpen(false);
+		}, 1200);
+	};
+
+	// Trigger is visible whenever the row is hovered OR the menu is open.
+	// Keeping it visible while open prevents the affordance from disappearing
+	// mid-interaction when the cursor leaves the row (e.g., to click an item
+	// in the portal'd panel, which sits outside the row's bounding box).
+	const showTrigger = rowHovered || open;
+
+	return (
+		<>
+			<div
+				// Anchored just below the 28×28 avatar at the row's top-left.
+				// `left: 3` centers the 22 px wide button under the 28 px avatar;
+				// `top: 30` leaves a 2 px gap below the avatar.
+				style={{ position: "absolute", top: 30, left: 3 }}
+			>
+				<button
+					ref={triggerRef}
+					type="button"
+					onClick={toggleOpen}
+					aria-label="Message actions"
+					aria-haspopup="menu"
+					aria-expanded={open}
+					style={{
+						display: "inline-flex",
+						alignItems: "center",
+						justifyContent: "center",
+						width: 22,
+						height: 22,
+						padding: 0,
+						borderRadius: 5,
+						border: "none",
+						background: "transparent",
+						color: T.textFaint,
+						cursor: "pointer",
+						opacity: showTrigger ? 1 : 0,
+						pointerEvents: showTrigger ? "auto" : "none",
+						transition: "opacity 0.12s",
+					}}
+				>
+					{/* Horizontal ellipsis: standard "more actions" affordance. */}
+					<svg width="13" height="13" viewBox="0 0 12 12" fill="none">
+						<circle cx="2" cy="6" r="1.1" fill="currentColor" />
+						<circle cx="6" cy="6" r="1.1" fill="currentColor" />
+						<circle cx="10" cy="6" r="1.1" fill="currentColor" />
+					</svg>
+				</button>
+			</div>
+			{open && menuPos
+				? createPortal(
+					<div
+						ref={panelRef}
+						role="menu"
+						style={{
+							position: "fixed",
+							top: menuPos.top,
+							left: menuPos.left,
+							minWidth: 160,
+							padding: 4,
+							background: T.surface,
+							border: `0.5px solid ${T.border}`,
+							borderRadius: 8,
+							boxShadow: "0 4px 12px rgba(0,0,0,0.18)",
+							zIndex: 10000,
+							display: "flex",
+							flexDirection: "column",
+						}}
+					>
+						<MenuItem
+							label={pending ? "Forking…" : "Fork"}
+							disabled={pending}
+							onClick={handleFork}
+						/>
+						<MenuItem
+							label={copied ? "Copied!" : "Copy message"}
+							onClick={handleCopy}
+						/>
+					</div>,
+					document.body,
+				)
+				: null}
+		</>
+	);
+}
+
+function MenuItem({
+	label,
+	disabled,
 	onClick,
 }: {
-	pending: boolean;
-	onClick: () => void;
+	label: string;
+	disabled?: boolean;
+	onClick: (e: React.MouseEvent) => void;
 }) {
 	return (
 		<button
 			type="button"
+			role="menuitem"
 			onClick={(e) => {
-				e.stopPropagation();
-				if (pending) return;
-				onClick();
+				if (disabled) {
+					e.stopPropagation();
+					return;
+				}
+				onClick(e);
 			}}
-			disabled={pending}
-			title={
-				pending
-					? "Forking…"
-					: "Fork conversation from this message into a new session"
-			}
-			aria-label="Fork conversation from this message"
+			disabled={disabled}
 			style={{
-				position: "absolute",
-				top: 2,
-				right: 2,
-				display: "inline-flex",
-				alignItems: "center",
-				justifyContent: "center",
-				width: 22,
-				height: 22,
-				padding: 0,
+				display: "block",
+				width: "100%",
+				textAlign: "left",
+				padding: "6px 10px",
 				borderRadius: 5,
 				border: "none",
 				background: "transparent",
-				color: pending ? T.textMute : T.textFaint,
-				cursor: pending ? "default" : "pointer",
+				color: disabled ? T.textMute : T.text,
+				fontSize: 13,
+				fontFamily: "inherit",
+				cursor: disabled ? "default" : "pointer",
 			}}
 			onMouseEnter={(e) => {
-				if (pending) return;
+				if (disabled) return;
 				e.currentTarget.style.background = T.surfaceHi;
-				e.currentTarget.style.color = T.text;
 			}}
 			onMouseLeave={(e) => {
 				e.currentTarget.style.background = "transparent";
-				e.currentTarget.style.color = pending ? T.textMute : T.textFaint;
 			}}
 		>
-			{/* Branching/fork icon: a trunk that splits into two diverging paths. */}
-			<svg width="13" height="13" viewBox="0 0 12 12" fill="none">
-				<path
-					d="M3 1.5v3.5c0 1 .8 1.8 1.8 1.8h2.4c1 0 1.8.8 1.8 1.8V10.5M3 10.5V7M9 4.5V1.5"
-					stroke="currentColor"
-					strokeWidth="1.2"
-					strokeLinecap="round"
-					strokeLinejoin="round"
-				/>
-				<circle cx="3" cy="10.5" r="1" fill="currentColor" />
-				<circle cx="3" cy="1.5" r="1" fill="currentColor" />
-				<circle cx="9" cy="1.5" r="1" fill="currentColor" />
-			</svg>
+			{label}
 		</button>
 	);
 }
@@ -460,6 +630,14 @@ export function RawBlock({ block }: { block: ContentBlock }) {
 			</pre>
 		</details>
 	);
+}
+
+function messageBlocksToText(blocks: ContentBlock[]): string {
+	return blocks
+		.filter((b) => b.type === "text" && typeof b.text === "string")
+		.map((b) => b.text as string)
+		.join("\n\n")
+		.trim();
 }
 
 function summarizeToolInput(block: ContentBlock): string {

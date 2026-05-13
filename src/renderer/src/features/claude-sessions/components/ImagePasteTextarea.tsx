@@ -20,6 +20,8 @@ interface Props {
 	disabled?: boolean;
 	textareaHeight?: number;
 	onContentHeightChange?: (height: number) => void;
+	onStop?: () => void;
+	interrupting?: boolean;
 }
 
 interface PendingImage {
@@ -46,6 +48,8 @@ export function ImagePasteTextarea({
 	disabled,
 	textareaHeight = 44,
 	onContentHeightChange,
+	onStop,
+	interrupting = false,
 }: Props) {
 	const [text, setText] = useState("");
 	const [images, setImages] = useState<PendingImage[]>([]);
@@ -230,6 +234,7 @@ export function ImagePasteTextarea({
 		>
 			<div
 				style={{
+					position: "relative",
 					maxWidth: 760,
 					margin: "0 auto",
 					borderRadius: 12,
@@ -239,6 +244,42 @@ export function ImagePasteTextarea({
 					boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
 				}}
 			>
+				{isRunning && onStop ? (
+					<button
+						type="button"
+						onClick={onStop}
+						disabled={interrupting}
+						title="Stop Claude's current response"
+						aria-label="Stop"
+						style={{
+							position: "absolute",
+							top: 8,
+							right: 8,
+							zIndex: 1,
+							height: 22,
+							display: "inline-flex",
+							alignItems: "center",
+							gap: 5,
+							padding: "0 8px",
+							borderRadius: 5,
+							border: `0.5px solid ${T.border}`,
+							background: T.surfaceHi,
+							color: T.text,
+							fontFamily: "inherit",
+							fontSize: 11.5,
+							fontWeight: 500,
+							lineHeight: 1,
+							cursor: interrupting ? "default" : "pointer",
+							opacity: interrupting ? 0.55 : 1,
+						}}
+					>
+						<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+							<rect x="1" y="1" width="8" height="8" rx="1" fill="currentColor" />
+						</svg>
+						<span>{interrupting ? "Stopping…" : "Stop"}</span>
+					</button>
+				) : null}
+
 				{images.length > 0 ? (
 					<div
 						style={{

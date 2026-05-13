@@ -1,30 +1,4 @@
-import {
-	parsePatch,
-	structuredPatch,
-	type StructuredPatchHunk,
-} from "diff";
-
-export type FileType = "add" | "delete" | "modify" | "rename" | "copy";
-
-interface RenderedFile {
-	type: FileType;
-	path: string;
-	hunks: StructuredPatchHunk[];
-}
-
-export function DiffPage({ diffText }: { diffText: string }) {
-	const files = parseUnified(diffText);
-	if (files.length === 0) {
-		return <div className="diff-empty">No textual difference.</div>;
-	}
-	return (
-		<div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-			{files.map((f, i) => (
-				<DiffFile key={`${f.path}-${i}`} file={f} />
-			))}
-		</div>
-	);
-}
+import { structuredPatch, type StructuredPatchHunk } from "diff";
 
 export function InlineDiff({
 	oldText,
@@ -56,33 +30,6 @@ export function InlineDiff({
 				))}
 			</div>
 		</div>
-	);
-}
-
-function DiffFile({ file }: { file: RenderedFile }) {
-	const labels: Record<FileType, string> = {
-		add: "ADDED",
-		delete: "DELETED",
-		modify: "MODIFIED",
-		rename: "RENAMED",
-		copy: "COPIED",
-	};
-	return (
-		<section className="diff-file">
-			<header className="diff-file-header">
-				<span className={`diff-file-badge ${file.type}`}>
-					{labels[file.type]}
-				</span>
-				<span>{file.path}</span>
-			</header>
-			<div className="diff-body">
-				{file.hunks.length === 0 ? (
-					<div className="diff-empty">Binary or no textual changes.</div>
-				) : (
-					file.hunks.map((h, i) => <HunkBlock key={i} hunk={h} />)
-				)}
-			</div>
-		</section>
 	);
 }
 
@@ -133,35 +80,11 @@ function HunkBlock({ hunk }: { hunk: StructuredPatchHunk }) {
 					<span className="diff-sign">
 						{r.kind === "add" ? "+" : r.kind === "del" ? "-" : ""}
 					</span>
-					<span className="diff-content">{r.content || " "}</span>
+					<span className="diff-content">{r.content || " "}</span>
 				</div>
 			))}
 		</div>
 	);
-}
-
-function parseUnified(diffText: string): RenderedFile[] {
-	const parsed = parsePatch(diffText);
-	const out: RenderedFile[] = [];
-	for (const p of parsed) {
-		const oldName = p.oldFileName ?? "";
-		const newName = p.newFileName ?? "";
-		const oldStripped = stripPrefix(oldName);
-		const newStripped = stripPrefix(newName);
-		const path = newStripped !== "/dev/null" ? newStripped : oldStripped;
-		let type: FileType = "modify";
-		if (oldStripped === "/dev/null") type = "add";
-		else if (newStripped === "/dev/null") type = "delete";
-		else if (oldStripped !== newStripped) type = "rename";
-		out.push({ type, path, hunks: p.hunks ?? [] });
-	}
-	return out;
-}
-
-function stripPrefix(name: string): string {
-	if (name.startsWith("a/")) return name.slice(2);
-	if (name.startsWith("b/")) return name.slice(2);
-	return name;
 }
 
 function ensureNewline(s: string): string {

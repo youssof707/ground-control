@@ -10,7 +10,6 @@ import { useNotificationRouter } from "./features/claude-sessions/hooks/useNotif
 import { useDockUnreadBadge } from "./features/claude-sessions/hooks/useDockUnreadBadge";
 import { SessionsList } from "./features/claude-sessions/components/SessionsList";
 import { SessionChat } from "./features/claude-sessions/components/SessionChat";
-import { DiffViewer } from "./features/claude-sessions/components/DiffViewer";
 import { InboxSidebar } from "./features/claude-sessions/components/InboxSidebar";
 import { NotesSidebarShell } from "./features/claude-sessions/components/notes/NotesSidebarShell";
 import { AppNav } from "./features/claude-sessions/components/AppNav";
@@ -61,8 +60,8 @@ function MainBody({
 	setRightPanel: (v: RightPanel) => void;
 }) {
 	// The SessionsList sidebar is always rendered on the left. The right pane
-	// holds the active session (`/sessions/:id`, `/sessions/:id/diff`) and is
-	// empty at the index route `/` — that's the "no session selected" state.
+	// holds the active session (`/sessions/:id`) and is empty at the index
+	// route `/` — that's the "no session selected" state.
 	const sessionMatch = useMatch("/sessions/:id/*");
 	const activeSessionId = sessionMatch?.params.id;
 
@@ -79,7 +78,6 @@ function MainBody({
 				<Routes>
 					<Route path="/" element={null} />
 					<Route path="/sessions/:id" element={<SessionRoute />} />
-					<Route path="/sessions/:id/diff" element={<DiffRoute />} />
 				</Routes>
 			</div>
 			{rightPanel === "inbox" ? (
@@ -208,9 +206,4 @@ function SessionsListSidebarShell() {
 function SessionRoute() {
 	const { id } = useParams<{ id: string }>();
 	return id ? <SessionChat sessionId={id} /> : null;
-}
-
-function DiffRoute() {
-	const { id } = useParams<{ id: string }>();
-	return id ? <DiffViewer sessionId={id} /> : null;
 }
