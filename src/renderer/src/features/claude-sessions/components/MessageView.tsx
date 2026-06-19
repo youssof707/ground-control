@@ -3,29 +3,15 @@ import { createPortal } from "react-dom";
 import type { SessionMessage } from "@shared/claude-sessions/types";
 import { MarkdownText } from "./MarkdownText";
 import { T } from "../../../design/tokens";
+import {
+	blocksOfSdk,
+	type ContentBlock,
+	type SdkLike,
+} from "../lib/messageContent";
 
-interface SdkLike {
-	type?: string;
-	subtype?: string;
-	message?: {
-		role?: string;
-		content?: unknown;
-	};
-	[k: string]: unknown;
-}
-
-export interface ContentBlock {
-	type?: string;
-	text?: string;
-	name?: string;
-	input?: unknown;
-	id?: string;
-	tool_use_id?: string;
-	is_error?: boolean;
-	content?: unknown;
-	source?: { media_type?: string; data?: string; type?: string };
-	[k: string]: unknown;
-}
+// Re-exported for existing consumers (ToolRunGroup, groupMessages) that
+// import the type from this module.
+export type { ContentBlock };
 
 // Messages are immutable in the Zustand store (only appended, never mutated),
 // so React.memo with default shallow comparison safely short-circuits
@@ -71,7 +57,7 @@ function AssistantMessage({
 	forkPending?: boolean;
 }) {
 	const [hovered, setHovered] = useState(false);
-	const blocks = (sdk.message?.content as ContentBlock[] | undefined) ?? [];
+	const blocks = blocksOfSdk(sdk);
 	if (blocks.length === 0) return null;
 	// Fork is only available for assistant messages with an SDK uuid (which
 	// the SDK requires for `upToMessageId`). Skip the button otherwise so
@@ -358,7 +344,7 @@ function MenuItem({
 }
 
 function UserMessage({ sdk }: { sdk: SdkLike }) {
-	const blocks = (sdk.message?.content as ContentBlock[] | undefined) ?? [];
+	const blocks = blocksOfSdk(sdk);
 	const isToolResult = blocks.length > 0 && blocks[0].type === "tool_result";
 
 	if (isToolResult) {

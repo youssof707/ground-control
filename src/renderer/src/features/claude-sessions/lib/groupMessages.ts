@@ -1,5 +1,5 @@
 import type { SessionMessage } from "@shared/claude-sessions/types";
-import type { ContentBlock } from "../components/MessageView";
+import { blocksOf, type ContentBlock } from "./messageContent";
 
 // A flat render unit emitted by `groupMessagesIntoUnits`. Either:
 //   - a normal message that goes through <MessageView/>, or
@@ -15,16 +15,6 @@ export type RenderUnit =
 		key: string;
 		entries: { messageId: string; blockIndex: number; block: ContentBlock }[];
 	};
-
-interface SdkLike {
-	message?: { content?: unknown };
-}
-
-function blocksOf(m: SessionMessage): ContentBlock[] {
-	const sdk = m.content as SdkLike;
-	const raw = sdk?.message?.content;
-	return Array.isArray(raw) ? (raw as ContentBlock[]) : [];
-}
 
 // A message qualifies as a "tool turn" if every block is either tool_use
 // or thinking/redacted_thinking (assistant), or tool_result (user). Mixed

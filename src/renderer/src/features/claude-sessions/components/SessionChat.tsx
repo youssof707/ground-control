@@ -6,6 +6,7 @@ import { useReadStore } from "../stores/useReadStore";
 import { PermissionCard } from "./PermissionCard";
 import { ImagePasteTextarea } from "./ImagePasteTextarea";
 import { MessageView } from "./MessageView";
+import { SessionTokenBar } from "./SessionTokenBar";
 import { ToolRunGroup } from "./ToolRunGroup";
 import { groupMessagesIntoUnits } from "../lib/groupMessages";
 import { ConfirmModal } from "../../../components/ConfirmModal";
@@ -535,6 +536,8 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					Fork failed: {forkError}
 				</div>
 			) : null}
+
+			{canChat ? <SessionTokenBar session={session} /> : null}
 
 			{canChat ? (
 				<ImagePasteTextarea
