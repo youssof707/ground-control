@@ -228,7 +228,7 @@ export function ImagePasteTextarea({
 		<div
 			style={{
 				flexShrink: 0,
-				padding: "14px 32px 18px",
+				padding: "4px 32px 18px",
 				background: T.win,
 			}}
 		>
