@@ -78,8 +78,7 @@ export function SessionTokenBar({
 				fontSize: 11,
 				fontFamily: T.mono,
 				color: T.textMute,
-				borderTop: `0.5px solid ${T.borderSoft}`,
-				background: T.surfaceLow,
+				background: T.win,
 				userSelect: "none",
 			}}
 			title={`Session total: ${totalTokens.toLocaleString()} tokens`}
