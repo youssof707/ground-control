@@ -6,12 +6,20 @@ import {
 	type ClipboardEvent,
 	type KeyboardEvent,
 } from "react";
+import { useNavigate } from "react-router-dom";
 import type {
 	SessionMode,
 	UserContentBlock,
 	UserImageMediaType,
 } from "@shared/claude-sessions/types";
 import { useSessionsStore } from "../stores/useSessionsStore";
+import { useDraftStore } from "../stores/useDraftStore";
+import {
+	isDraftId,
+	useDraftSessionsStore,
+	type DraftSession,
+} from "../stores/useDraftSessionsStore";
+import type { PendingImage } from "../lib/pendingImage";
 import { T } from "../../../design/tokens";
 import { Kbd, ModeToggle, isBranchStale } from "../../../design/Atoms";
 
@@ -22,12 +30,6 @@ interface Props {
 	onContentHeightChange?: (height: number) => void;
 	onStop?: () => void;
 	interrupting?: boolean;
-}
-
-interface PendingImage {
-	media_type: UserImageMediaType;
-	data: string;
-	previewUrl: string;
 }
 
 const SUPPORTED_IMAGE_TYPES: readonly UserImageMediaType[] = [
@@ -43,6 +45,44 @@ function toSupportedMediaType(t: string): UserImageMediaType | null {
 		: null;
 }
 
+// Stable reference so the "no draft images" selector default doesn't
+// trigger re-renders on every store update.
+const EMPTY_IMAGES: PendingImage[] = Object.freeze(
+	[] as PendingImage[],
+) as PendingImage[];
+
+/**
+ * Convert a draft session into a real one. Subscribes to `session:started`
+ * BEFORE invoking startSession so we don't race the broadcast — the
+ * renderer-side startSession promise won't resolve until the SDK loop ends,
+ * so the real id only arrives via the event. Pattern lifted from the
+ * pre-draft `SessionsList.startWith()` flow.
+ */
+function createSessionFromDraft(draft: DraftSession): Promise<string> {
+	return new Promise((resolve, reject) => {
+		let off: (() => void) | null = window.claude.on(
+			"session:started",
+			(p) => {
+				const s = p as { id: string };
+				off?.();
+				off = null;
+				resolve(s.id);
+			},
+		);
+		window.claude
+			.startSession({
+				title: draft.title,
+				cwd: draft.cwd,
+				mode: draft.mode,
+			})
+			.catch((err) => {
+				off?.();
+				off = null;
+				reject(err);
+			});
+	});
+}
+
 export function ImagePasteTextarea({
 	sessionId,
 	disabled,
@@ -51,16 +91,48 @@ export function ImagePasteTextarea({
 	onStop,
 	interrupting = false,
 }: Props) {
-	const [text, setText] = useState("");
-	const [images, setImages] = useState<PendingImage[]>([]);
+	// Drafts (text + pasted images) live in a per-session in-memory Zustand
+	// store so switching sessions doesn't carry the draft from one to the
+	// next. See `useDraftStore` for details. The shim setters below preserve
+	// the existing `setText(string)` / `setImages(prev => …)` call sites.
+	const text = useDraftStore(
+		(s) => s.draftsBySession[sessionId]?.text ?? "",
+	);
+	const images = useDraftStore(
+		(s) => s.draftsBySession[sessionId]?.images ?? EMPTY_IMAGES,
+	);
+	const setText = (next: string) =>
+		useDraftStore.getState().setDraftText(sessionId, next);
+	const setImages = (
+		next: PendingImage[] | ((prev: PendingImage[]) => PendingImage[]),
+	) => {
+		const current =
+			useDraftStore.getState().draftsBySession[sessionId]?.images ?? [];
+		const value = typeof next === "function" ? next(current) : next;
+		useDraftStore.getState().setDraftImages(sessionId, value);
+	};
 	const [sending, setSending] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [modeSwitching, setModeSwitching] = useState(false);
+	// Draft awareness — when the sessionId is a draft, status / mode / branch
+	// don't exist in useSessionsStore yet. We read from useDraftSessionsStore
+	// instead so the mode toggle is live during draft composition, and the
+	// send handler can promote the draft to a real session.
+	const isDraft = isDraftId(sessionId);
+	const navigate = useNavigate();
+	const draftSession = useDraftSessionsStore((s) =>
+		s.draft && s.draft.id === sessionId ? s.draft : null,
+	);
 	// Subscribe to mode so the toggle reflects live SDK / IPC updates (e.g.
 	// `session:patch` broadcasts after a successful setMode in the main process).
-	const mode = useSessionsStore(
+	// For a draft, the source of truth is the draft store; the real-session
+	// selector is still called (hooks rule) but its value is ignored.
+	const realMode = useSessionsStore(
 		(s) => s.sessions[sessionId]?.mode ?? "plan",
 	);
+	const mode: SessionMode = isDraft
+		? (draftSession?.mode ?? "plan")
+		: realMode;
 	const status = useSessionsStore((s) => s.sessions[sessionId]?.status);
 	const isRunning = status === "running";
 	// Subscribe to the two branch fields so the send button mirrors the
@@ -104,6 +176,13 @@ export function ImagePasteTextarea({
 
 	const changeMode = async (next: SessionMode) => {
 		if (modeSwitching || mode === next) return;
+		if (isDraft) {
+			// Draft sessions don't exist in main yet — no IPC to call. Just
+			// update the in-memory draft so the chosen mode flows through to
+			// the eventual startSession call in send().
+			useDraftSessionsStore.getState().updateDraft({ mode: next });
+			return;
+		}
 		// Optimistic flip; revert on IPC failure. The main process broadcasts
 		// the canonical value back via session:patch on success.
 		useSessionsStore.getState().upsertSession({ id: sessionId, mode: next });
@@ -168,16 +247,31 @@ export function ImagePasteTextarea({
 		setSending(true);
 		setError(null);
 		try {
-			const sess = useSessionsStore.getState().sessions[sessionId];
-			const isOpen =
-				sess?.status === "running" ||
-				sess?.status === "idle" ||
-				sess?.status === "awaiting_permission";
-			if (!isOpen && sess?.sdkSessionId) {
-				await window.claude.resumeSession(sessionId);
+			let targetId = sessionId;
+			if (isDraft) {
+				// Promote the draft to a real session before delivering the
+				// message. createSessionFromDraft subscribes to session:started
+				// BEFORE invoking startSession so we don't miss the broadcast;
+				// useSessionsBootstrap also handles it and upserts the full
+				// ClaudeSession into useSessionsStore, so by the time this
+				// resolves the appendMessage call below has a valid row.
+				const draft = useDraftSessionsStore.getState().draft;
+				if (!draft || draft.id !== sessionId) {
+					throw new Error("Draft session no longer exists");
+				}
+				targetId = await createSessionFromDraft(draft);
+			} else {
+				const sess = useSessionsStore.getState().sessions[sessionId];
+				const isOpen =
+					sess?.status === "running" ||
+					sess?.status === "idle" ||
+					sess?.status === "awaiting_permission";
+				if (!isOpen && sess?.sdkSessionId) {
+					await window.claude.resumeSession(sessionId);
+				}
 			}
-			await window.claude.sendUserMessage({ sessionId, blocks });
-			useSessionsStore.getState().appendMessage(sessionId, {
+			await window.claude.sendUserMessage({ sessionId: targetId, blocks });
+			useSessionsStore.getState().appendMessage(targetId, {
 				id: crypto.randomUUID(),
 				role: "user",
 				content: {
@@ -186,8 +280,16 @@ export function ImagePasteTextarea({
 				},
 				ts: Date.now(),
 			});
-			setText("");
-			setImages([]);
+			useDraftStore.getState().clearDraft(sessionId);
+			if (isDraft) {
+				// Navigate BEFORE discardDraft so the DraftSessionChat doesn't
+				// briefly render its "Draft no longer exists" fallback. The
+				// route swap unmounts the draft view and mounts the real
+				// SessionChat for `targetId`. `replace` so the back button
+				// doesn't strand the user on the now-dead draft URL.
+				navigate(`/sessions/${targetId}`, { replace: true });
+				useDraftSessionsStore.getState().discardDraft();
+			}
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
 		} finally {

@@ -3,17 +3,24 @@ import { useNavigate } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useReadStore } from "../stores/useReadStore";
+import { isDraftId } from "../stores/useDraftSessionsStore";
 import { PermissionCard } from "./PermissionCard";
 import { ImagePasteTextarea } from "./ImagePasteTextarea";
 import { MessageView } from "./MessageView";
 import { SessionTokenBar } from "./SessionTokenBar";
 import { ToolRunGroup } from "./ToolRunGroup";
+import { DraftSessionChat } from "./DraftSessionChat";
 import { groupMessagesIntoUnits } from "../lib/groupMessages";
 import { ConfirmModal } from "../../../components/ConfirmModal";
 import { T } from "../../../design/tokens";
 import { BranchChipWithDelta, StatusPill } from "../../../design/Atoms";
 
 export function SessionChat({ sessionId }: { sessionId: string }) {
+	// Draft sessions (UI-only, not yet persisted) live at /sessions/draft-<id>
+	// and render through a stripped-down shell that skips the transcript /
+	// fork / permission / branch affordances — none of those apply pre-creation.
+	// The draft → real promotion runs inside ImagePasteTextarea.send().
+	if (isDraftId(sessionId)) return <DraftSessionChat draftId={sessionId} />;
 	const navigate = useNavigate();
 	const session = useSessionsStore((s) => s.sessions[sessionId]);
 	const upsertSession = useSessionsStore((s) => s.upsertSession);

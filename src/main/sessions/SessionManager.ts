@@ -232,7 +232,20 @@ export class SessionManager {
 			);
 		}
 
-		const truncated = parent.messages.slice(0, msgIndex + 1);
+		// Include the turn-end `result` message that immediately follows the
+		// forked-from assistant, when present. The SDK emits exactly one
+		// `result` per turn, carrying that turn's token usage; without it the
+		// forked session's SessionTokenBar would read 0 (single-turn parent)
+		// or miss the latest turn's cost. Result messages are rendered
+		// invisibly, so this doesn't change the visible chat history.
+		let endIndex = msgIndex + 1;
+		if (
+			endIndex < parent.messages.length &&
+			parent.messages[endIndex].role === "result"
+		) {
+			endIndex++;
+		}
+		const truncated = parent.messages.slice(0, endIndex);
 		const newTitle = `${parent.title} (fork)`;
 
 		const { sessionId: newSdkId } = await sdkForkSession(parent.sdkSessionId, {

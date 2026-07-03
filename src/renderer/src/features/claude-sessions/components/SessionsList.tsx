@@ -4,6 +4,11 @@ import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useReadStore } from "../stores/useReadStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
+import {
+	useDraftSessionsStore,
+	type DraftSession,
+} from "../stores/useDraftSessionsStore";
+import { useDraftStore } from "../stores/useDraftStore";
 import { ConfirmModal } from "../../../components/ConfirmModal";
 import { T } from "../../../design/tokens";
 import { BranchChipWithDelta, StatusPill } from "../../../design/Atoms";
@@ -119,70 +124,67 @@ export function SessionsList({
 			? workspaceFilter[0]
 			: lastUsedCwd ?? null;
 
-	const startWith = async (cwd: string) => {
-		// Subscribe before the IPC so we don't miss the `session:started`
-		// broadcast. Captured in `off` so the error path can also tear it
-		// down — previously this listener leaked any time startSession threw.
-		let off: (() => void) | null = null;
-		try {
-			setStartError(null);
-			// Remember this workspace for the next New Session click. Optimistic
-			// local update + fire-and-forget IPC — mirrors the markRead pattern.
-			// May be reconciled inside the `session:started` handler below if
-			// the main process substituted a different cwd (missing-folder
-			// recovery via the native picker).
-			useSettingsStore.getState().setLastUsedWorkspace(cwd);
-			off = window.claude.on("session:started", (p) => {
-				const s = p as { id: string; cwd?: string };
-				off?.();
-				off = null;
-				// Reconcile lastUsedWorkspace if the main process swapped the
-				// cwd. We can't read the return value of startSession for
-				// this — manager.run awaits the SDK loop, so its promise
-				// doesn't resolve until the session ends. The session:started
-				// event carries the same ClaudeSession payload and fires
-				// immediately, so use it as the source of truth.
-				if (s.cwd && s.cwd !== cwd) {
-					useSettingsStore.getState().setLastUsedWorkspace(s.cwd);
-				}
-				// Make sure the newly-created session is actually visible. If
-				// the user has narrowed the workspace filter and started a
-				// session in a cwd that isn't selected, the session would
-				// otherwise be hidden. Skip when the filter is empty ("All
-				// workspaces") — every session is already visible.
-				const resolvedCwd = s.cwd ?? cwd;
-				setWorkspaceFilter((prev) =>
-					prev.length === 0 || prev.includes(resolvedCwd)
-						? prev
-						: [...prev, resolvedCwd],
-				);
-				navigate(`/sessions/${s.id}`);
-			});
-			await window.claude.startSession({
-				title: `Session ${order.length + 1}`,
-				cwd,
-			});
-		} catch (err) {
-			off?.();
-			off = null;
-			setStartError(err instanceof Error ? err.message : String(err));
-		}
+	// Single-slot draft (the UI-only session that exists before the first
+	// message). Both New Session affordances short-circuit to navigate into
+	// the existing draft when one is open — per the "reuse, don't replace"
+	// decision. The real session is created later by `ImagePasteTextarea.send`
+	// on the first user message, which also handles cwd reconciliation via
+	// the `session:started` broadcast.
+	const draft = useDraftSessionsStore((s) => s.draft);
+
+	const createDraftAndNavigate = (cwd: string) => {
+		// Remember the workspace immediately so the next New Session click
+		// pre-fills the same folder (parity with the old IPC-direct flow).
+		// If the main process later substitutes a different cwd at first send
+		// (missing-folder recovery picker), the bootstrap listener for
+		// `session:started` already reconciles the store from the broadcast.
+		useSettingsStore.getState().setLastUsedWorkspace(cwd);
+		const d = useDraftSessionsStore.getState().createDraft({
+			cwd,
+			title: `Session ${order.length + 1}`,
+		});
+		// Make sure the new draft is actually visible. If the user has narrowed
+		// the workspace filter and the draft cwd isn't in it, the draft row
+		// would render but the future real session would be hidden after send.
+		// Adding cwd up-front matches the old startWith() behavior so the row
+		// transition is seamless.
+		setWorkspaceFilter((prev) =>
+			prev.length === 0 || prev.includes(cwd) ? prev : [...prev, cwd],
+		);
+		navigate(`/sessions/${d.id}`);
 	};
 
 	const start = async () => {
+		if (draft) {
+			navigate(`/sessions/${draft.id}`);
+			return;
+		}
+		setStartError(null);
 		if (targetCwd) {
-			await startWith(targetCwd);
+			createDraftAndNavigate(targetCwd);
 			return;
 		}
 		const picked = await window.claude.pickFolder();
-		if (picked) await startWith(picked);
+		if (picked) createDraftAndNavigate(picked);
 	};
 
 	const startInPickedFolder = async () => {
+		if (draft) {
+			navigate(`/sessions/${draft.id}`);
+			return;
+		}
+		setStartError(null);
 		const picked = await window.claude.pickFolder({
 			defaultPath: lastUsedCwd,
 		});
-		if (picked) await startWith(picked);
+		if (picked) createDraftAndNavigate(picked);
+	};
+
+	const discardDraft = (id: string) => {
+		const wasActive = id === activeSessionId;
+		useDraftStore.getState().clearDraft(id);
+		useDraftSessionsStore.getState().discardDraft();
+		if (wasActive) navigate("/");
 	};
 
 	const confirmDelete = async () => {
@@ -434,11 +436,11 @@ export function SessionsList({
 					paddingBottom: 56,
 				}}
 			>
-				{order.length === 0 ? (
+				{order.length === 0 && !draft ? (
 					<div className="message" style={{ margin: 12 }}>
 						No sessions yet. Click "New Session".
 					</div>
-				) : visibleOrder.length === 0 ? (
+				) : visibleOrder.length === 0 && !draft ? (
 					<div className="message" style={{ margin: 12 }}>
 						{workspaceFilter.length === 1 ? (
 							<>
@@ -466,6 +468,14 @@ export function SessionsList({
 					</div>
 				) : (
 					<div>
+						{draft ? (
+							<DraftRowSidebar
+								draft={draft}
+								active={draft.id === activeSessionId}
+								last={visibleOrder.length === 0}
+								onDiscard={() => discardDraft(draft.id)}
+							/>
+						) : null}
 						{visibleOrder.map((id, i) => {
 							const s = sessions[id];
 							const sessionPending = queue.filter(
@@ -681,6 +691,239 @@ function SessionRowSidebar({
 					) : null}
 				</div>
 			</Link>
+		</div>
+	);
+}
+
+/**
+ * Sidebar row for the in-memory draft session — the one created by clicking
+ * New Session before any message has been sent. Visually echoes
+ * `SessionRowSidebar` (active stripe, hover/menu, cwd footer) so the row
+ * doesn't look out of place, but strips everything that doesn't apply:
+ *   - title is italic + paired with a "Draft" pill instead of a status chip
+ *   - no unread dot, no branch chip, no summary clamp
+ *   - ⋯ menu has a single "Discard" item (drafts are in-memory, so there's
+ *     no archive/delete/mark-unread distinction to expose)
+ */
+function DraftRowSidebar({
+	draft,
+	active,
+	last,
+	onDiscard,
+}: {
+	draft: DraftSession;
+	active: boolean;
+	last: boolean;
+	onDiscard: () => void;
+}) {
+	return (
+		<div
+			style={{
+				borderBottom: last ? "none" : `0.5px solid ${T.borderSoft}`,
+				background: active ? T.surfaceHi : "transparent",
+				position: "relative",
+			}}
+		>
+			{active ? (
+				<div
+					style={{
+						position: "absolute",
+						left: 0,
+						top: 0,
+						bottom: 0,
+						width: 3,
+						background: T.accent,
+					}}
+				/>
+			) : null}
+			<Link
+				to={`/sessions/${draft.id}`}
+				style={{ textDecoration: "none", color: "inherit" }}
+			>
+				<div
+					style={{
+						display: "flex",
+						flexDirection: "column",
+						gap: 6,
+						padding: "12px 14px",
+						minWidth: 0,
+					}}
+				>
+					{/* Title row */}
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							gap: 8,
+							minWidth: 0,
+						}}
+					>
+						<span
+							style={{
+								flex: 1,
+								minWidth: 0,
+								fontSize: 13.5,
+								fontWeight: 500,
+								fontStyle: "italic",
+								color: T.textDim,
+								overflow: "hidden",
+								textOverflow: "ellipsis",
+								whiteSpace: "nowrap",
+							}}
+						>
+							{draft.title}
+						</span>
+						<DraftRowMenu onDiscard={onDiscard} />
+					</div>
+					{/* Pill row — mirrors the chips row on real session rows. */}
+					<div
+						style={{
+							display: "flex",
+							flexWrap: "wrap",
+							alignItems: "center",
+							gap: 6,
+							minWidth: 0,
+						}}
+					>
+						<span
+							style={{
+								display: "inline-flex",
+								alignItems: "center",
+								height: 18,
+								padding: "0 7px",
+								borderRadius: 9,
+								border: `0.5px solid ${T.border}`,
+								background: T.surface,
+								color: T.textMute,
+								fontSize: 10.5,
+								fontWeight: 600,
+								letterSpacing: 0.5,
+								textTransform: "uppercase",
+							}}
+						>
+							Draft
+						</span>
+					</div>
+					<div
+						title={draft.cwd}
+						style={{
+							fontSize: 11,
+							color: T.textFaint,
+							fontFamily: T.mono,
+							overflow: "hidden",
+							textOverflow: "ellipsis",
+							whiteSpace: "nowrap",
+						}}
+					>
+						{folderName(draft.cwd)}
+					</div>
+				</div>
+			</Link>
+		</div>
+	);
+}
+
+function DraftRowMenu({ onDiscard }: { onDiscard: () => void }) {
+	const [open, setOpen] = useState(false);
+	const ref = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		if (!open) return;
+		const onDocClick = (e: MouseEvent) => {
+			if (ref.current && !ref.current.contains(e.target as Node)) {
+				setOpen(false);
+			}
+		};
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") setOpen(false);
+		};
+		document.addEventListener("mousedown", onDocClick);
+		document.addEventListener("keydown", onKey);
+		return () => {
+			document.removeEventListener("mousedown", onDocClick);
+			document.removeEventListener("keydown", onKey);
+		};
+	}, [open]);
+
+	return (
+		<div
+			ref={ref}
+			onClick={(e) => {
+				// Stop the row's <Link> from navigating on any click inside.
+				e.preventDefault();
+				e.stopPropagation();
+			}}
+			style={{ position: "relative", display: "inline-flex", marginRight: -12 }}
+		>
+			<button
+				type="button"
+				onClick={() => setOpen((o) => !o)}
+				aria-haspopup="menu"
+				aria-expanded={open}
+				title="More actions"
+				style={{
+					display: "inline-flex",
+					alignItems: "center",
+					justifyContent: "center",
+					width: 24,
+					height: 24,
+					border: "none",
+					background: open ? T.surfaceHi : "transparent",
+					color: open ? T.text : T.textFaint,
+					cursor: "pointer",
+					borderRadius: 4,
+					padding: 0,
+				}}
+				onMouseEnter={(e) => {
+					e.currentTarget.style.background = T.surfaceHi;
+					e.currentTarget.style.color = T.text;
+				}}
+				onMouseLeave={(e) => {
+					if (!open) {
+						e.currentTarget.style.background = "transparent";
+						e.currentTarget.style.color = T.textFaint;
+					}
+				}}
+			>
+				<svg
+					width="14"
+					height="14"
+					viewBox="0 0 14 14"
+					fill="currentColor"
+					aria-hidden
+				>
+					<circle cx="7" cy="3" r="1.3" />
+					<circle cx="7" cy="7" r="1.3" />
+					<circle cx="7" cy="11" r="1.3" />
+				</svg>
+			</button>
+			{open ? (
+				<div
+					role="menu"
+					style={{
+						position: "absolute",
+						top: "calc(100% + 4px)",
+						right: 0,
+						minWidth: 160,
+						background: T.surfaceHi,
+						border: `0.5px solid ${T.border}`,
+						borderRadius: 8,
+						padding: 4,
+						zIndex: 50,
+						boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+					}}
+				>
+					<MenuItem
+						active={false}
+						label="Discard"
+						danger
+						onClick={() => {
+							setOpen(false);
+							onDiscard();
+						}}
+					/>
+				</div>
+			) : null}
 		</div>
 	);
 }
