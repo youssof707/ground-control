@@ -11,6 +11,7 @@ import {
 } from "./core/store/claude_session";
 import { initialize as initializeReadStore } from "./core/store/read_state";
 import { initialize as initializeSessionNotesStore } from "./core/store/session_notes";
+import { initialize as initializeWorktreesStore } from "./core/store/worktrees";
 import {
 	initialize as initializeAppSettingsStore,
 	get as getAppSettings,
@@ -137,6 +138,7 @@ app.whenReady().then(async () => {
 		await initializeReadStore(dataDir);
 		await initializeAppSettingsStore(dataDir);
 		await initializeSessionNotesStore(dataDir);
+		await initializeWorktreesStore(dataDir);
 	} catch (err) {
 		console.error(`[ccw] failed to initialize store at ${dataDir}:`, err);
 		app.exit(1);

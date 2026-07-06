@@ -4,6 +4,7 @@ import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useReadStore } from "../stores/useReadStore";
 import { isDraftId } from "../stores/useDraftSessionsStore";
+import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { PermissionCard } from "./PermissionCard";
 import { ImagePasteTextarea } from "./ImagePasteTextarea";
 import { MessageView } from "./MessageView";
@@ -14,6 +15,7 @@ import { groupMessagesIntoUnits } from "../lib/groupMessages";
 import { ConfirmModal } from "../../../components/ConfirmModal";
 import { T } from "../../../design/tokens";
 import { BranchChipWithDelta, StatusPill } from "../../../design/Atoms";
+import { WorktreeChip } from "../../../design/WorktreeChip";
 
 export function SessionChat({ sessionId }: { sessionId: string }) {
 	// Draft sessions (UI-only, not yet persisted) live at /sessions/draft-<id>
@@ -24,6 +26,12 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	const navigate = useNavigate();
 	const session = useSessionsStore((s) => s.sessions[sessionId]);
 	const upsertSession = useSessionsStore((s) => s.upsertSession);
+	// Attached worktree, if any. Session bindings are permanent, but the
+	// registry entry can still be mutated (displayName changed, etc.) —
+	// selector keeps the badge live.
+	const attachedWorktree = useWorktreesStore((s) =>
+		session?.worktreeId ? s.worktrees[session.worktreeId] : undefined,
+	);
 	const queue = usePermissionsStore((s) => s.queue);
 	const pending = queue.filter((q) => q.sessionId === sessionId);
 	const [interrupting, setInterrupting] = useState(false);
@@ -270,6 +278,24 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					background: T.win,
 				}}
 			>
+				{/* Row 0: worktree badge (only when this session is bound to
+				    one). Sits ABOVE the title row per product decision so it
+				    reads as a scope marker rather than a peer status chip. */}
+				{attachedWorktree ? (
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							gap: 8,
+							minWidth: 0,
+						}}
+					>
+						<WorktreeChip
+							displayName={attachedWorktree.displayName}
+							variant="readonly"
+						/>
+					</div>
+				) : null}
 				{/* Row 1: title, filepath, action buttons */}
 				<div
 					style={{

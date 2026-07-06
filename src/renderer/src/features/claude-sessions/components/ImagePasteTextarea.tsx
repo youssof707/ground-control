@@ -74,6 +74,11 @@ function createSessionFromDraft(draft: DraftSession): Promise<string> {
 				title: draft.title,
 				cwd: draft.cwd,
 				mode: draft.mode,
+				// Carry the draft's worktree attachment forward. Main-side
+				// SessionManager persists this onto the new session record
+				// and rewires the SDK cwd to the worktree's checkout path
+				// via resolveEffectiveCwd — see SessionManager.run.
+				worktreeId: draft.worktreeId,
 			})
 			.catch((err) => {
 				off?.();

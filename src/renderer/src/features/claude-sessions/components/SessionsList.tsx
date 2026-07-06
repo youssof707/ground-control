@@ -9,9 +9,11 @@ import {
 	type DraftSession,
 } from "../stores/useDraftSessionsStore";
 import { useDraftStore } from "../stores/useDraftStore";
+import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { ConfirmModal } from "../../../components/ConfirmModal";
 import { T } from "../../../design/tokens";
 import { BranchChipWithDelta, StatusPill } from "../../../design/Atoms";
+import { WorktreeChip } from "../../../design/WorktreeChip";
 import type {
 	ClaudeSessionFull,
 	PermissionRequest,
@@ -368,22 +370,6 @@ export function SessionsList({
 							/>
 						</svg>
 						<span style={{ flexShrink: 0 }}>New Session</span>
-						{targetCwd ? (
-							<>
-								<span style={{ flexShrink: 0 }}>-</span>
-								<span
-									style={{
-										overflow: "hidden",
-										textOverflow: "ellipsis",
-										whiteSpace: "nowrap",
-										minWidth: 0,
-										flexShrink: 1,
-									}}
-								>
-									{folderName(targetCwd)}
-								</span>
-							</>
-						) : null}
 					</button>
 					<FolderButton onClick={startInPickedFolder} />
 				</div>
@@ -551,6 +537,11 @@ function SessionRowSidebar({
 	const { hasPending, summary, unread } = useRowDerived(session, pending);
 	const markUnread = useReadStore((s) => s.markUnread);
 	const archived = session.archivedAt != null;
+	// Attached worktree (if any). Selector keyed by id so a rename in another
+	// window flows through without a full row re-render pipeline.
+	const worktree = useWorktreesStore((s) =>
+		session.worktreeId ? s.worktrees[session.worktreeId] : undefined,
+	);
 	return (
 		<div
 			style={{
@@ -594,6 +585,24 @@ function SessionRowSidebar({
 						minWidth: 0,
 					}}
 				>
+					{/* Worktree row — sits ABOVE the title so it reads as a
+					    scope marker for the whole session card, matching the
+					    session-header treatment. Only rendered when attached. */}
+					{worktree ? (
+						<div
+							style={{
+								display: "flex",
+								alignItems: "center",
+								minWidth: 0,
+							}}
+						>
+							<WorktreeChip
+								displayName={worktree.displayName}
+								variant="readonly"
+								small
+							/>
+						</div>
+					) : null}
 					{/* Title row */}
 					<div
 						style={{
@@ -652,7 +661,8 @@ function SessionRowSidebar({
 					>
 						{summary}
 					</div>
-					{/* Chips row */}
+					{/* Chips row — worktree moved to the row above the title,
+					    so this is just the status + branch pair now. */}
 					<div
 						style={{
 							display: "flex",
@@ -716,6 +726,9 @@ function DraftRowSidebar({
 	last: boolean;
 	onDiscard: () => void;
 }) {
+	const worktree = useWorktreesStore((s) =>
+		draft.worktreeId ? s.worktrees[draft.worktreeId] : undefined,
+	);
 	return (
 		<div
 			style={{
@@ -749,6 +762,24 @@ function DraftRowSidebar({
 						minWidth: 0,
 					}}
 				>
+					{/* Worktree row — sits ABOVE the title, matching the real
+					    session row and the session-header treatment. Only
+					    rendered when the draft has one attached. */}
+					{worktree ? (
+						<div
+							style={{
+								display: "flex",
+								alignItems: "center",
+								minWidth: 0,
+							}}
+						>
+							<WorktreeChip
+								displayName={worktree.displayName}
+								variant="readonly"
+								small
+							/>
+						</div>
+					) : null}
 					{/* Title row */}
 					<div
 						style={{
@@ -775,7 +806,8 @@ function DraftRowSidebar({
 						</span>
 						<DraftRowMenu onDiscard={onDiscard} />
 					</div>
-					{/* Pill row — mirrors the chips row on real session rows. */}
+					{/* Pill row — Draft badge only; the worktree chip lives
+					    above the title now. */}
 					<div
 						style={{
 							display: "flex",

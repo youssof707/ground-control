@@ -6,6 +6,7 @@ import type {
 	StartSessionInput,
 	UserTurn,
 } from "../shared/schemas/claude_session";
+import type { CreateWorktreeInput } from "../shared/schemas/worktrees";
 
 const api = {};
 
@@ -68,6 +69,18 @@ const claude = {
 	deleteNote: (id: string) => ipcRenderer.invoke("notes:delete", id),
 	listPermissions: () => ipcRenderer.invoke("permissions:list"),
 	getRateLimit: () => ipcRenderer.invoke("rateLimit:get"),
+	listWorktrees: () => ipcRenderer.invoke("worktrees:list"),
+	listWorktreesForBaseDir: (baseDir: string) =>
+		ipcRenderer.invoke("worktrees:listForBaseDir", { baseDir }),
+	isGitRepo: (baseDir: string) =>
+		ipcRenderer.invoke("worktrees:isGitRepo", { baseDir }),
+	getBaseBranch: (baseDir: string) =>
+		ipcRenderer.invoke("worktrees:baseBranch", { baseDir }),
+	listBranches: (baseDir: string) =>
+		ipcRenderer.invoke("worktrees:listBranches", { baseDir }),
+	createWorktree: (input: CreateWorktreeInput) =>
+		ipcRenderer.invoke("worktrees:create", input),
+	deleteWorktree: (id: string) => ipcRenderer.invoke("worktrees:delete", id),
 	getAppInfo: () => ipcRenderer.invoke("appInfo:get"),
 	toggleDevTools: () => ipcRenderer.invoke("devtools:toggle"),
 	on: (channel: string, fn: (payload: unknown) => void) => {

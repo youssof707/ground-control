@@ -10,6 +10,11 @@ import type {
 import type { ReadStateFile } from "../shared/schemas/read_state";
 import type { AppSettingsFile } from "../shared/schemas/app_settings";
 import type { Note } from "../shared/schemas/session_notes";
+import type {
+	CreateWorktreeInput,
+	LocalBranch,
+	Worktree,
+} from "../shared/schemas/worktrees";
 import type { SDKRateLimitInfo } from "@anthropic-ai/claude-agent-sdk";
 
 export type RateLimitType = NonNullable<SDKRateLimitInfo["rateLimitType"]>;
@@ -57,6 +62,13 @@ declare global {
 			deleteNote: (id: string) => Promise<void>;
 			listPermissions: () => Promise<PermissionRequest[]>;
 			getRateLimit: () => Promise<RateLimitSnapshot>;
+			listWorktrees: () => Promise<Worktree[]>;
+			listWorktreesForBaseDir: (baseDir: string) => Promise<Worktree[]>;
+			isGitRepo: (baseDir: string) => Promise<boolean>;
+			getBaseBranch: (baseDir: string) => Promise<string | undefined>;
+			listBranches: (baseDir: string) => Promise<LocalBranch[]>;
+			createWorktree: (input: CreateWorktreeInput) => Promise<Worktree>;
+			deleteWorktree: (id: string) => Promise<void>;
 			getAppInfo: () => Promise<{
 				env: "dev" | "prod";
 				storeFolder: string;

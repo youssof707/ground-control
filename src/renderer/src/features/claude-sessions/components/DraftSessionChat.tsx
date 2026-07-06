@@ -3,7 +3,10 @@ import { Link } from "react-router-dom";
 import { useDraftSessionsStore } from "../stores/useDraftSessionsStore";
 import { useDraftStore } from "../stores/useDraftStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
+import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { ImagePasteTextarea } from "./ImagePasteTextarea";
+import { AttachWorktreeModal } from "./AttachWorktreeModal";
+import { WorktreeChip } from "../../../design/WorktreeChip";
 import { T } from "../../../design/tokens";
 
 /**
@@ -29,6 +32,19 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 	// The native dialog is modal but the async round-trip leaves a window.
 	const [pickingFolder, setPickingFolder] = useState(false);
 	const [folderHover, setFolderHover] = useState(false);
+	// Worktree modal state — opens on "Add worktree" button click.
+	const [worktreeModalOpen, setWorktreeModalOpen] = useState(false);
+	// Whether the draft's cwd is a git repo. Determines whether the
+	// "Add worktree" button is visible at all — worktrees are a git
+	// concept, so we hide the affordance entirely for non-git folders
+	// rather than showing it disabled. Refetched whenever cwd changes.
+	const [isGitRepo, setIsGitRepo] = useState<boolean>(false);
+	// Selector on the worktrees store so the chip updates immediately
+	// when another window creates/deletes worktrees. undefined when the
+	// draft has no worktree attached.
+	const attachedWorktree = useWorktreesStore((s) =>
+		draft?.worktreeId ? s.worktrees[draft.worktreeId] : undefined,
+	);
 
 	// Change the draft's cwd via the native picker. Only reachable while the
 	// session is still a draft — once promoted to a real session by the first
@@ -48,7 +64,13 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 			// user could have discarded / promoted / navigated in the interim.
 			const stillOurs = useDraftSessionsStore.getState().draft;
 			if (!stillOurs || stillOurs.id !== draftId) return;
-			useDraftSessionsStore.getState().updateDraft({ cwd: picked });
+			// Clear any attached worktree along with the cwd change: a worktree
+			// is bound to a specific baseDir, so changing folder invalidates
+			// the pairing. The user can attach a new one (or an existing one
+			// matching the new baseDir) after the change.
+			useDraftSessionsStore
+				.getState()
+				.updateDraft({ cwd: picked, worktreeId: undefined });
 			// Match the New Session flow so the next click of the sidebar
 			// button pre-fills this folder too.
 			useSettingsStore.getState().setLastUsedWorkspace(picked);
@@ -56,6 +78,31 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 			setPickingFolder(false);
 		}
 	}, [draftId, pickingFolder]);
+
+	// Reprobe git-repo status when the draft's cwd changes. Gates the
+	// "Add worktree" button — we hide it entirely for non-git folders
+	// rather than showing it disabled. Cheap probe: single `git rev-parse`
+	// via IPC. Sequence-guarded so a fast folder-change doesn't leave us
+	// with a stale answer.
+	useEffect(() => {
+		const cwd = draft?.cwd;
+		if (!cwd) {
+			setIsGitRepo(false);
+			return;
+		}
+		let cancelled = false;
+		void (async () => {
+			try {
+				const ok = await window.claude.isGitRepo(cwd);
+				if (!cancelled) setIsGitRepo(ok);
+			} catch {
+				if (!cancelled) setIsGitRepo(false);
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [draft?.cwd]);
 
 	// Mirror SessionChat's auto-grow rule but skip the manual drag-shrink lock
 	// since we don't render the resize divider here. The textarea reports its
@@ -234,8 +281,39 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 							/>
 						</button>
 					</div>
+					{/* Worktree slot: chip when attached, "Add worktree" button
+					    when not — but only for git repos (the affordance
+					    doesn't apply otherwise). Sits at the right of the
+					    header row; sized to hug content so it doesn't push
+					    the folder-path column around. */}
+					{draft.worktreeId && attachedWorktree ? (
+						<WorktreeChip
+							displayName={attachedWorktree.displayName}
+							variant="interactive"
+							onDetach={() =>
+								useDraftSessionsStore
+									.getState()
+									.updateDraft({ worktreeId: undefined })
+							}
+						/>
+					) : isGitRepo ? (
+						<AddWorktreeButton
+							onClick={() => setWorktreeModalOpen(true)}
+						/>
+					) : null}
 				</div>
 			</div>
+
+			<AttachWorktreeModal
+				open={worktreeModalOpen}
+				baseDir={draft.cwd}
+				onAttach={(id) =>
+					useDraftSessionsStore
+						.getState()
+						.updateDraft({ worktreeId: id })
+				}
+				onClose={() => setWorktreeModalOpen(false)}
+			/>
 
 			{/* Empty body — placeholder until the first send creates the session. */}
 			<div style={{ flex: 1, minHeight: 0, position: "relative" }}>
@@ -329,4 +407,61 @@ function folderName(path: string): string {
 	const trimmed = path.replace(/\/+$/, "");
 	const idx = trimmed.lastIndexOf("/");
 	return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
+// Ghost pill styled to sit next to WorktreeChip's readonly variant so the
+// header row reads consistently whether or not one is attached. Only
+// rendered when the draft's cwd is a git repo.
+//
+// Hover follows the neutral "chip" pattern shared with the folder-picker
+// button next to it (surfaceHi bg + full-strength text). The dashed border
+// is kept as the "add / not yet attached" affordance — we don't want to
+// borrow the info-accent palette on hover because that reads as a
+// selection state, not an "invite to click."
+function AddWorktreeButton({ onClick }: { onClick: () => void }) {
+	const [hover, setHover] = useState(false);
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			onMouseEnter={() => setHover(true)}
+			onMouseLeave={() => setHover(false)}
+			title="Attach a worktree to this draft"
+			style={{
+				appearance: "none",
+				display: "inline-flex",
+				alignItems: "center",
+				gap: 5,
+				height: 22,
+				padding: "0 9px",
+				borderRadius: 11,
+				border: `0.5px dashed ${hover ? T.border : T.borderSoft}`,
+				background: hover ? T.surfaceHi : "transparent",
+				color: hover ? T.text : T.textDim,
+				fontSize: 11.5,
+				fontWeight: 500,
+				cursor: "pointer",
+				whiteSpace: "nowrap",
+				flexShrink: 0,
+				transition:
+					"background 80ms ease, color 80ms ease, border-color 80ms ease",
+			}}
+		>
+			<svg
+				width="10"
+				height="10"
+				viewBox="0 0 10 10"
+				fill="none"
+				aria-hidden="true"
+			>
+				<path
+					d="M5 1.5v7M1.5 5h7"
+					stroke="currentColor"
+					strokeWidth="1.4"
+					strokeLinecap="round"
+				/>
+			</svg>
+			<span>Add worktree</span>
+		</button>
+	);
 }

@@ -33,8 +33,29 @@ import {
 	switchBranch,
 } from "./git";
 import * as sessionStore from "../core/store/claude_session";
+import * as worktreesStore from "../core/store/worktrees";
 import * as rateLimitTracker from "./RateLimitTracker";
 import * as windows from "../windows";
+
+/**
+ * Resolve the *effective execution cwd* for a session — the directory the
+ * SDK query, git branch reads, and `git switch` should target. When a
+ * worktree is attached, this is the worktree's checkout path; otherwise
+ * it's the session's `cwd` (== baseDir). If the worktree is missing from
+ * the registry (externally deleted), fall back to the baseDir so we don't
+ * hand the SDK an empty string.
+ *
+ * Called from every git-op path in SessionManager and from `runLoop`
+ * where we pass `cwd:` to the SDK options.
+ */
+function resolveEffectiveCwd(session: {
+	cwd: string;
+	worktreeId?: string;
+}): string {
+	if (!session.worktreeId) return session.cwd;
+	const wt = worktreesStore.get(session.worktreeId);
+	return wt?.worktreePath ?? session.cwd;
+}
 
 interface RunningEntry {
 	session: ClaudeSession;
@@ -138,10 +159,19 @@ export class SessionManager {
 
 	async run(input: StartSessionInput): Promise<ClaudeSession> {
 		const id = randomUUID();
+		// Resolve execution cwd up front. All git reads below and the SDK
+		// query itself target the worktree checkout (when one is attached),
+		// not the user's baseDir — so `session.branch`, `startCommit`, and
+		// `lastUserMessageBranch` reflect the sandbox the SDK actually lives
+		// in, and the BranchChip shows the worktree's live branch.
+		const effectiveCwd = resolveEffectiveCwd({
+			cwd: input.cwd,
+			worktreeId: input.worktreeId,
+		});
 		const [branch, startCommit, defaultBaseBranch] = await Promise.all([
-			getCurrentBranch(input.cwd),
-			getHeadCommit(input.cwd),
-			getDefaultBaseBranch(input.cwd),
+			getCurrentBranch(effectiveCwd),
+			getHeadCommit(effectiveCwd),
+			getDefaultBaseBranch(effectiveCwd),
 		]);
 		const hasInitialPrompt = !!input.prompt && input.prompt.trim().length > 0;
 		const derivedTitle = hasInitialPrompt
@@ -151,6 +181,10 @@ export class SessionManager {
 			id,
 			title: derivedTitle || input.title,
 			prompt: input.prompt ?? "",
+			// Persist the *baseDir* as `cwd` — the user-facing folder (folder
+			// button label, copy-path, reveal-in-Finder). The worktree link
+			// lives in `worktreeId`; `resolveEffectiveCwd` derives the SDK
+			// execution path from it.
 			cwd: input.cwd,
 			status: hasInitialPrompt ? "running" : "idle",
 			createdAt: Date.now(),
@@ -168,6 +202,7 @@ export class SessionManager {
 			// New sessions default to "plan"; the renderer can pre-pick a mode
 			// in StartSessionInput if it ever wants to.
 			mode: input.mode ?? "plan",
+			worktreeId: input.worktreeId,
 		};
 
 		const fullForPersist: ClaudeSessionFull = { ...session, messages: [] };
@@ -177,13 +212,27 @@ export class SessionManager {
 			console.error("[ccw] failed to persist session:", err);
 		}
 
+		// Reverse-index the session on its worktree so we can enforce
+		// "no delete while attached" and cascade-detach at delete time.
+		// Best-effort: a missing worktree entry (edge case) leaves the
+		// session running with a dangling reference — handled the same
+		// as an externally-deleted worktree via resolveEffectiveCwd's
+		// fallback.
+		if (input.worktreeId) {
+			try {
+				await worktreesStore.attachSession(input.worktreeId, id);
+			} catch (err) {
+				console.error("[ccw] worktree attachSession failed:", err);
+			}
+		}
+
 		const initialTurns: UserContentBlock[][] = hasInitialPrompt
 			? [[{ type: "text", text: input.prompt as string }]]
 			: [];
 
 		await this.runLoop({
 			session,
-			cwd: input.cwd,
+			cwd: effectiveCwd,
 			initialTurns,
 			resumeSdkSessionId: undefined,
 		});
@@ -254,10 +303,12 @@ export class SessionManager {
 		});
 
 		// Refresh git context — the working tree may have moved on since the
-		// parent started.
+		// parent started. Reads the *worktree* checkout when the parent is
+		// bound to one; child inherits that binding below.
+		const effectiveCwd = resolveEffectiveCwd(parent);
 		const [branch, startCommit] = await Promise.all([
-			getCurrentBranch(parent.cwd),
-			getHeadCommit(parent.cwd),
+			getCurrentBranch(effectiveCwd),
+			getHeadCommit(effectiveCwd),
 		]);
 
 		const newWrapperId = randomUUID();
@@ -272,6 +323,11 @@ export class SessionManager {
 			startCommit,
 			sdkSessionId: newSdkId,
 			mode: parent.mode,
+			// Fork inherits parent's worktree binding — both sessions share
+			// the same on-disk checkout. The SDK-side sessions are
+			// independently forked (separate conversation threads), but tools
+			// run in the same sandbox directory.
+			worktreeId: parent.worktreeId,
 			// Re-id each entry so they don't collide with the parent's message
 			// ids in the renderer's flat store. Original SDK content and
 			// timestamps are preserved.
@@ -290,6 +346,16 @@ export class SessionManager {
 			throw err;
 		}
 
+		// Reverse-index the fork on the shared worktree. Idempotent —
+		// safe under any concurrent fork/attach paths.
+		if (parent.worktreeId) {
+			try {
+				await worktreesStore.attachSession(parent.worktreeId, newWrapperId);
+			} catch (err) {
+				console.error("[ccw] worktree attachSession (fork) failed:", err);
+			}
+		}
+
 		const newSession: ClaudeSession = {
 			id: newSessionFull.id,
 			title: newSessionFull.title,
@@ -301,6 +367,7 @@ export class SessionManager {
 			startCommit: newSessionFull.startCommit,
 			sdkSessionId: newSessionFull.sdkSessionId,
 			mode: newSessionFull.mode,
+			worktreeId: newSessionFull.worktreeId,
 		};
 
 		// Tell the renderer the new session exists, then hydrate its history
@@ -346,9 +413,11 @@ export class SessionManager {
 		}
 
 		// Refresh branch/startCommit — the working tree has likely moved on.
+		// Target the *worktree* checkout when this session is bound to one.
+		const effectiveCwd = resolveEffectiveCwd(persisted);
 		const [branch, startCommit] = await Promise.all([
-			getCurrentBranch(persisted.cwd),
-			getHeadCommit(persisted.cwd),
+			getCurrentBranch(effectiveCwd),
+			getHeadCommit(effectiveCwd),
 		]);
 
 		const session: ClaudeSession = {
@@ -365,6 +434,7 @@ export class SessionManager {
 			// mode field were backfilled to "plan" by the Zod schema default
 			// when the store loaded them.
 			mode: persisted.mode,
+			worktreeId: persisted.worktreeId,
 		};
 
 		await sessionStore.updateSession(persisted.id, {
@@ -378,7 +448,7 @@ export class SessionManager {
 		// Don't await — runLoop runs the SDK loop until it ends.
 		void this.runLoop({
 			session,
-			cwd: persisted.cwd,
+			cwd: effectiveCwd,
 			initialTurns: [],
 			resumeSdkSessionId: persisted.sdkSessionId,
 		});
@@ -643,7 +713,9 @@ export class SessionManager {
 	 */
 	snapshotBranchCheckpoint(sessionId: string): void {
 		const entry = this.sessions.get(sessionId);
-		const cwd = entry?.session.cwd ?? sessionStore.getSession(sessionId)?.cwd;
+		const source = entry?.session ?? sessionStore.getSession(sessionId);
+		if (!source) return;
+		const cwd = resolveEffectiveCwd(source);
 		if (!cwd) return;
 		void (async () => {
 			try {
@@ -683,7 +755,9 @@ export class SessionManager {
 	 */
 	async refreshBranch(sessionId: string): Promise<void> {
 		const entry = this.sessions.get(sessionId);
-		const cwd = entry?.session.cwd ?? sessionStore.getSession(sessionId)?.cwd;
+		const source = entry?.session ?? sessionStore.getSession(sessionId);
+		if (!source) return;
+		const cwd = resolveEffectiveCwd(source);
 		if (!cwd) return;
 		const previous =
 			entry?.session.branch ?? sessionStore.getSession(sessionId)?.branch;
@@ -711,7 +785,9 @@ export class SessionManager {
 		branch: string,
 	): Promise<void> {
 		const entry = this.sessions.get(sessionId);
-		const cwd = entry?.session.cwd ?? sessionStore.getSession(sessionId)?.cwd;
+		const source = entry?.session ?? sessionStore.getSession(sessionId);
+		if (!source) throw new Error(`No session ${sessionId}`);
+		const cwd = resolveEffectiveCwd(source);
 		if (!cwd) throw new Error(`No session ${sessionId}`);
 		await switchBranch(cwd, branch);
 		await this.refreshBranch(sessionId);
@@ -725,7 +801,9 @@ export class SessionManager {
 	 */
 	async hasUncommittedChangesInSession(sessionId: string): Promise<boolean> {
 		const entry = this.sessions.get(sessionId);
-		const cwd = entry?.session.cwd ?? sessionStore.getSession(sessionId)?.cwd;
+		const source = entry?.session ?? sessionStore.getSession(sessionId);
+		if (!source) return false;
+		const cwd = resolveEffectiveCwd(source);
 		if (!cwd) return false;
 		return hasUncommittedChanges(cwd);
 	}

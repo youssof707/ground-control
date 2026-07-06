@@ -145,6 +145,13 @@ export const ClaudeSessionSchema = z.object({
 	 * every other system path treats them normally. There is no UI today
 	 * to list / restore archived sessions; that comes later. */
 	archivedAt: z.number().optional(),
+	/** App-owned git worktree the session's SDK query runs inside. Set
+	 * once at session creation (from the draft's `worktreeId`) and never
+	 * changed after — sessions are permanently bound to their worktree.
+	 * When unset, the SDK runs directly in `cwd`. See `SessionManager.
+	 * resolveEffectiveCwd`. Displayed to the user as a badge above the
+	 * session title (label = worktree's `displayName`). */
+	worktreeId: z.string().optional(),
 });
 export type ClaudeSession = z.infer<typeof ClaudeSessionSchema>;
 
@@ -167,5 +174,6 @@ export const StartSessionInputSchema = z.object({
 	prompt: z.string().optional(),
 	cwd: z.string(),
 	mode: SessionModeSchema.optional(),
+	worktreeId: z.string().optional(),
 });
 export type StartSessionInput = z.infer<typeof StartSessionInputSchema>;

@@ -25,6 +25,13 @@ export interface DraftSession {
 	title: string;
 	mode: SessionMode;
 	createdAt: number;
+	/** App-owned worktree attached to this draft. Set to a Worktree.id
+	 * when the user picks / creates one via AttachWorktreeModal; cleared
+	 * to `undefined` when the user changes cwd (worktree is bound to a
+	 * baseDir) or clicks ✕ on the chip. On send, this id is forwarded to
+	 * `startSession`, at which point the SessionManager persists the
+	 * binding onto the created session record. */
+	worktreeId?: string;
 }
 
 interface State {
@@ -34,8 +41,10 @@ interface State {
 		title: string;
 		mode?: SessionMode;
 	}) => DraftSession;
+	// The patch type intentionally allows `worktreeId: undefined` so the
+	// folder-change handler can clear the binding in the same call.
 	updateDraft: (
-		patch: Partial<Pick<DraftSession, "cwd" | "title" | "mode">>,
+		patch: Partial<Pick<DraftSession, "cwd" | "title" | "mode" | "worktreeId">>,
 	) => void;
 	discardDraft: () => void;
 }

@@ -12,12 +12,14 @@ import type {
 import * as sessionStore from "../core/store/claude_session";
 import * as notesStore from "../core/store/session_notes";
 import * as readStore from "../core/store/read_state";
+import * as worktreesStore from "../core/store/worktrees";
 import { broadcast } from "../windows";
 import { registerReadHandlers } from "./readHandlers";
 import { registerSettingsHandlers } from "./settingsHandlers";
 import { registerAppInfoHandlers } from "./appInfoHandlers";
 import { registerNotesHandlers } from "./notesHandlers";
 import { registerRateLimitHandlers } from "./rateLimitHandlers";
+import { registerWorktreesHandlers } from "./worktreesHandlers";
 
 /**
  * Open the native macOS "choose a directory" dialog. Returns the absolute
@@ -74,6 +76,7 @@ export function registerSessionsHandlers(): SessionManager {
 	registerAppInfoHandlers();
 	registerNotesHandlers();
 	registerRateLimitHandlers();
+	registerWorktreesHandlers();
 
 	ipcMain.handle("session:start", async (e, input: StartSessionInput) => {
 		// Guard against stale `cwd` values (e.g. a `lastUsedWorkspace` whose
@@ -94,7 +97,25 @@ export function registerSessionsHandlers(): SessionManager {
 			}
 			cwd = picked;
 		}
-		return manager.run({ ...input, cwd });
+		// Guard against a stale worktree reference (e.g. deleted between
+		// draft attach and first send, or a mismatched baseDir). Reject
+		// early so we don't create a session with a dangling pointer.
+		let worktreeId = input.worktreeId;
+		if (worktreeId) {
+			const wt = worktreesStore.get(worktreeId);
+			if (!wt) {
+				throw new Error(
+					"The selected worktree no longer exists. Reopen the draft and pick another.",
+				);
+			}
+			if (wt.baseDir !== cwd) {
+				// The user changed folders after attach and somehow got
+				// through; clear the binding rather than silently running
+				// against a wrong-repo checkout.
+				worktreeId = undefined;
+			}
+		}
+		return manager.run({ ...input, cwd, worktreeId });
 	});
 	ipcMain.handle("session:cancel", (_e, sessionId: string) => {
 		manager.cancel(sessionId);
@@ -224,6 +245,11 @@ export function registerSessionsHandlers(): SessionManager {
 		broadcast("state:changed", undefined, e.sender.id);
 	});
 	ipcMain.handle("session:delete", async (e, sessionId: string) => {
+		// Capture the worktree binding BEFORE we tombstone / delete the
+		// session record — we need it to detach from the worktree registry
+		// afterwards so the "no delete while attached" invariant holds.
+		const preDeleteSession = sessionStore.getSession(sessionId);
+		const worktreeIdToDetach = preDeleteSession?.worktreeId;
 		// Tombstone first — synchronous. Any subsequent SDK event for this
 		// session id is dropped by SessionManager.send, so leaked status /
 		// cancelled / message / patch broadcasts from the still-winding-down
@@ -249,6 +275,16 @@ export function registerSessionsHandlers(): SessionManager {
 		// broadcasting so other windows don't briefly see notes attached to a
 		// missing session during a refetch.
 		await notesStore.deleteAllForSession(sessionId);
+		// Detach from the worktree registry so future deletes of the
+		// worktree itself can succeed. Best-effort — a missing worktree
+		// (externally deleted) is a no-op.
+		if (worktreeIdToDetach) {
+			try {
+				await worktreesStore.detachSession(worktreeIdToDetach, sessionId);
+			} catch (err) {
+				console.error("[ccw] worktree detachSession failed:", err);
+			}
+		}
 		// Structural ping → other windows refetch and drop this session from
 		// their stores. Originator already removed it locally.
 		broadcast("state:changed", undefined, e.sender.id);
