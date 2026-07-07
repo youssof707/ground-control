@@ -3,7 +3,6 @@ import * as fs from "node:fs/promises";
 import path from "node:path";
 import { ulid } from "ulid";
 import * as worktreesStore from "../core/store/worktrees";
-import { resolveDataDir } from "../core/store/data_dir";
 import {
 	isGitRepo,
 	listLocalBranches,
@@ -131,7 +130,7 @@ export function registerWorktreesHandlers(): void {
 
 			const id = ulid();
 			const worktreePath = await pickWorktreePath(
-				worktreesStore.worktreesDir(resolveDataDir()),
+				worktreesStore.worktreesRoot(),
 				displayName,
 			);
 
@@ -158,7 +157,8 @@ export function registerWorktreesHandlers(): void {
 				return wt;
 			} catch (err) {
 				// Registry write failed after git succeeded — try to clean up the
-				// dangling checkout so we don't leave orphaned dirs in userData.
+				// dangling checkout so we don't leave orphaned dirs under the
+				// worktrees root.
 				await worktreeRemove({ baseDir: input.baseDir, worktreePath }).catch(
 					() => undefined,
 				);

@@ -7,6 +7,7 @@ import {
 	type Worktree,
 	type WorktreesFile,
 } from "../../../shared/schemas/worktrees";
+import { resolveWorktreesRoot } from "./data_dir";
 import { enqueue } from "./write_queue";
 
 /**
@@ -15,9 +16,10 @@ import { enqueue } from "./write_queue";
  * cheap even as the session store grows. Mirrors the `session_notes`
  * store's read-modify-write-atop-shared-queue pattern.
  *
- * The on-disk checkouts themselves live under `<dataDir>/worktrees/<id>/`
- * — created by the git-side helper (`worktreeAdd`), not by this store.
- * This store only tracks metadata.
+ * The on-disk checkouts themselves live under `resolveWorktreesRoot()/<slug>/`
+ * — a space-free path outside the userData dir so git hooks that unquote
+ * `$PWD` / `$GIT_DIR` don't word-split. Created by the git-side helper
+ * (`worktreeAdd`), not by this store. This store only tracks metadata.
  */
 
 let initialized = false;
@@ -49,18 +51,23 @@ async function persist(): Promise<void> {
 
 /**
  * Directory the git-side helper should carve its checkouts into. Callers
- * (worktreesHandlers.create) compute `path.join(worktreesDir(), id)` to
- * pick a stable, deterministic path per worktree id.
+ * (worktreesHandlers.create) compute `path.join(worktreesRoot(), slug)` to
+ * pick a stable, human-readable path per worktree.
+ *
+ * Delegates to `resolveWorktreesRoot()` — kept as a re-export so callers
+ * don't need to reach into `data_dir` directly, and so tests can stub the
+ * store-level function without touching electron's `app` module.
  */
-export function worktreesDir(dataDir: string): string {
-	return path.join(dataDir, "worktrees");
+export function worktreesRoot(): string {
+	return resolveWorktreesRoot();
 }
 
 export async function initialize(dataDir: string): Promise<void> {
 	await fs.mkdir(dataDir, { recursive: true });
 	// Ensure the checkouts dir exists too — safe to create up-front so the
-	// git-side helper can assume its parent is present.
-	await fs.mkdir(worktreesDir(dataDir), { recursive: true });
+	// git-side helper can assume its parent is present. Note this now lives
+	// under `~/.ground-control[-dev]/worktrees/`, not under `dataDir`.
+	await fs.mkdir(worktreesRoot(), { recursive: true });
 	filePath = path.join(dataDir, "worktrees.json");
 
 	const raw = await readJsonOrNull(filePath);

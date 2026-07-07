@@ -704,6 +704,16 @@ function BranchPicker({
 	onSelect: (name: string) => void;
 	disabled?: boolean;
 }) {
+	const [search, setSearch] = useState("");
+	// Case-insensitive substring match on branch name. No fuzzy matching
+	// — branch lists are short enough that substring is fine and the
+	// intent ("show me anything with `refactor` in it") maps naturally.
+	const filtered = useMemo(() => {
+		const q = search.trim().toLowerCase();
+		if (!q) return branches;
+		return branches.filter((b) => b.name.toLowerCase().includes(q));
+	}, [branches, search]);
+
 	if (branches.length === 0) {
 		return (
 			<div
@@ -728,6 +738,31 @@ function BranchPicker({
 			>
 				Branch
 			</span>
+			<input
+				type="text"
+				value={search}
+				onChange={(e) => setSearch(e.target.value)}
+				disabled={disabled}
+				aria-label="Search branches"
+				style={{
+					appearance: "none",
+					background: T.surfaceLow,
+					color: T.text,
+					border: `0.5px solid ${T.border}`,
+					borderRadius: 6,
+					padding: "6px 9px",
+					fontSize: 12.5,
+					fontFamily: T.mono,
+					outline: "none",
+					transition: "border-color 80ms ease",
+				}}
+				onFocus={(e) => {
+					e.currentTarget.style.borderColor = T.accentBorder;
+				}}
+				onBlur={(e) => {
+					e.currentTarget.style.borderColor = T.border;
+				}}
+			/>
 			<div
 				style={{
 					display: "flex",
@@ -741,16 +776,29 @@ function BranchPicker({
 					background: T.surfaceLow,
 				}}
 			>
-				{branches.map((b) => (
-					<BranchRow
-						key={b.name}
-						branch={b}
-						baseDir={baseDir}
-						selected={selected === b.name}
-						onSelect={() => onSelect(b.name)}
-						disabled={disabled}
-					/>
-				))}
+				{filtered.length === 0 ? (
+					<div
+						style={{
+							fontSize: 12,
+							color: T.textFaint,
+							padding: "6px 8px",
+							fontFamily: T.sans,
+						}}
+					>
+						No branches match “{search.trim()}”.
+					</div>
+				) : (
+					filtered.map((b) => (
+						<BranchRow
+							key={b.name}
+							branch={b}
+							baseDir={baseDir}
+							selected={selected === b.name}
+							onSelect={() => onSelect(b.name)}
+							disabled={disabled}
+						/>
+					))
+				)}
 			</div>
 		</div>
 	);
