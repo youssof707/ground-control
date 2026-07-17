@@ -35,6 +35,13 @@ export function SessionsList({
 	const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 	const [deleteError, setDeleteError] = useState<string | null>(null);
 	const [deleting, setDeleting] = useState(false);
+	// Opt-in cascade: when the pending-delete session is the sole
+	// occupant of its worktree, the modal renders a checkbox that
+	// enables `worktrees:delete` right after the session goes away.
+	// Reset on cancel / on each fresh open so a stale check can't leak
+	// across two consecutive deletes.
+	const [alsoDeleteWorktree, setAlsoDeleteWorktree] = useState(false);
+	const worktrees = useWorktreesStore((s) => s.worktrees);
 	const [pendingArchiveId, setPendingArchiveId] = useState<string | null>(
 		null,
 	);
@@ -189,23 +196,83 @@ export function SessionsList({
 		if (wasActive) navigate("/");
 	};
 
+	const pendingDeleteSession = pendingDeleteId
+		? sessions[pendingDeleteId]
+		: null;
+
+	// Worktree attached to the session about to be deleted (if any).
+	// Drives both the "Also delete worktree" checkbox visibility and
+	// the cascade in confirmDelete.
+	const pendingDeleteWorktree =
+		pendingDeleteSession?.worktreeId
+			? worktrees[pendingDeleteSession.worktreeId]
+			: undefined;
+
+	// True when the session being deleted is the sole occupant of its
+	// worktree. We can't trust `pendingDeleteWorktree.sessionIds` — main
+	// broadcasts `state:changed` skip-self when it mutates the reverse
+	// index (attach/detach), so the ORIGINATING window's copy stays
+	// stale until another push. Count from the sessions store instead,
+	// which the same window keeps authoritative via `session:started` /
+	// `session:patch` broadcasts (both delivered even to originator).
+	const isLastOnWorktree = useMemo(() => {
+		if (!pendingDeleteWorktree || !pendingDeleteId) return false;
+		let count = 0;
+		for (const id of order) {
+			if (sessions[id]?.worktreeId === pendingDeleteWorktree.id) {
+				count++;
+				if (count > 1) return false;
+			}
+		}
+		// count === 1 AND that one is the pending-delete session.
+		return (
+			count === 1 &&
+			sessions[pendingDeleteId]?.worktreeId === pendingDeleteWorktree.id
+		);
+	}, [pendingDeleteWorktree, pendingDeleteId, order, sessions]);
+
 	const confirmDelete = async () => {
 		if (!pendingDeleteId || deleting) return;
 		// Capture before the async work — pendingDeleteId may be cleared
 		// by the time we want to make the routing decision.
 		const wasActive = pendingDeleteId === activeSessionId;
+		// Capture the cascade target before the awaits — after
+		// `removeSession` runs, pendingDeleteSession dereferences to
+		// undefined and we lose the worktree id.
+		const cascadeWorktreeId =
+			alsoDeleteWorktree && isLastOnWorktree
+				? pendingDeleteWorktree?.id
+				: undefined;
 		setDeleting(true);
 		setDeleteError(null);
 		try {
 			await window.claude.deleteSession(pendingDeleteId);
 			removeSession(pendingDeleteId);
 			usePermissionsStore.getState().removeBySessionId(pendingDeleteId);
+			// Cascade AFTER session delete: `session:delete` detaches the
+			// session from `worktree.sessionIds` before returning, so by
+			// the time we reach this call `sessionIds` is empty and the
+			// `worktrees:delete` handler's "no delete while attached"
+			// guard passes. Reuses the same IPC AttachWorktreeModal
+			// calls, so on-disk cleanup + registry removal + skip-self
+			// broadcast all behave identically.
+			if (cascadeWorktreeId) {
+				await window.claude.deleteWorktree(cascadeWorktreeId);
+				useWorktreesStore.getState().remove(cascadeWorktreeId);
+			}
 			setPendingDeleteId(null);
+			setAlsoDeleteWorktree(false);
 			// If the deleted session was the one currently open in the right
 			// pane, drop back to "/" so the right pane goes empty — otherwise
 			// SessionChat would render its "Session not found." state.
 			if (wasActive) navigate("/");
 		} catch (err) {
+			// If the session delete succeeded but the worktree delete
+			// failed, the modal stays open with the error visible; the
+			// row is already gone from the sidebar (removeSession ran).
+			// User can dismiss and clean the worktree up later via
+			// AttachWorktreeModal — mirrors how that flow surfaces the
+			// same class of failure.
 			setDeleteError(err instanceof Error ? err.message : String(err));
 		} finally {
 			setDeleting(false);
@@ -216,11 +283,8 @@ export function SessionsList({
 		if (deleting) return;
 		setPendingDeleteId(null);
 		setDeleteError(null);
+		setAlsoDeleteWorktree(false);
 	};
-
-	const pendingDeleteSession = pendingDeleteId
-		? sessions[pendingDeleteId]
-		: null;
 
 	const deleteModal = (
 		<ConfirmModal
@@ -231,6 +295,77 @@ export function SessionsList({
 					Remove <strong>{pendingDeleteSession?.title ?? "this session"}</strong>{" "}
 					from this app. Claude Code's own session history (in{" "}
 					<code>~/.claude</code>) is not affected.
+					{isLastOnWorktree && pendingDeleteWorktree ? (
+						<label
+							style={{
+								display: "flex",
+								alignItems: "center",
+								gap: 8,
+								marginTop: 12,
+								cursor: deleting ? "default" : "pointer",
+								fontSize: 13,
+								color: T.text,
+								userSelect: "none",
+							}}
+						>
+							{/* Hidden native input keeps keyboard/screen-reader
+							    behaviour; the styled span below is the
+							    visible affordance, matching the MenuItem
+							    checkbox pattern in the workspace filter. */}
+							<input
+								type="checkbox"
+								checked={alsoDeleteWorktree}
+								disabled={deleting}
+								onChange={(e) =>
+									setAlsoDeleteWorktree(e.target.checked)
+								}
+								style={{
+									position: "absolute",
+									opacity: 0,
+									pointerEvents: "none",
+									width: 0,
+									height: 0,
+								}}
+							/>
+							<span
+								aria-hidden
+								style={{
+									width: 14,
+									height: 14,
+									borderRadius: 3,
+									flexShrink: 0,
+									border: `1.5px solid ${
+										alsoDeleteWorktree ? T.accent : T.border
+									}`,
+									background: alsoDeleteWorktree
+										? T.accent
+										: "transparent",
+									display: "inline-flex",
+									alignItems: "center",
+									justifyContent: "center",
+									transition:
+										"background 120ms ease, border-color 120ms ease",
+								}}
+							>
+								{alsoDeleteWorktree ? (
+									<svg width="9" height="9" viewBox="0 0 8 8">
+										<path
+											d="M1.5 4l1.8 1.8L6.5 2.2"
+											stroke={T.accentInk}
+											strokeWidth="1.6"
+											fill="none"
+											strokeLinecap="round"
+											strokeLinejoin="round"
+										/>
+									</svg>
+								) : null}
+							</span>
+							<span>
+								Also delete worktree{" "}
+								<strong>{pendingDeleteWorktree.displayName}</strong>
+							</span>
+						</label>
+					) : null}
 				</>
 			}
 			confirmLabel="Delete"
@@ -477,6 +612,7 @@ export function SessionsList({
 									onDelete={() => {
 										setPendingDeleteId(id);
 										setDeleteError(null);
+										setAlsoDeleteWorktree(false);
 									}}
 									onArchive={() => {
 										setPendingArchiveId(id);

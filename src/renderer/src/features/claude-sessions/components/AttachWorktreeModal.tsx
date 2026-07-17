@@ -445,8 +445,9 @@ function ExistingRow({
 	const [hover, setHover] = useState(false);
 	const sessionCount = worktree.sessionIds.length;
 	const canDelete = sessionCount === 0;
-	// Tint the whole row with the worktree's chosen color so this list
-	// visually mirrors the chip the user will see everywhere else.
+	// Worktree color surfaces only as a small dot on the left — the row
+	// itself uses the neutral surface treatment so a long list of rows
+	// doesn't turn into a stripe of tinted blocks.
 	const c = WORKTREE_COLOR_MAP[worktree.color];
 	// Outer is a role="button" div rather than a real <button> so we can
 	// nest an actual <button> (the trash) inside it — nested <button>s are
@@ -471,20 +472,27 @@ function ExistingRow({
 				alignItems: "center",
 				gap: 10,
 				padding: "6px 6px 6px 10px",
-				// Hover swaps the soft border for the vivid `c.fg` — same
-				// hoverable affordance as the original T.accentBorder swap,
-				// but keyed to the row's own color so the whole row still
-				// reads as "one badge, tinted".
-				border: `0.5px solid ${hover ? c.fg : c.border}`,
+				border: `0.5px solid ${hover ? T.accentBorder : T.border}`,
 				borderRadius: 8,
-				background: c.bg,
-				color: c.fg,
+				background: hover ? T.surfaceHi : T.surface,
+				color: T.text,
 				cursor: "pointer",
 				fontSize: 12.5,
-				transition: "border-color 80ms ease",
+				transition: "background 80ms ease, border-color 80ms ease",
 				outline: "none",
 			}}
 		>
+			<span
+				aria-hidden
+				title={`Color: ${worktree.color}`}
+				style={{
+					width: 8,
+					height: 8,
+					borderRadius: "50%",
+					background: c.fg,
+					flexShrink: 0,
+				}}
+			/>
 			<span
 				style={{
 					fontWeight: 600,
@@ -493,7 +501,7 @@ function ExistingRow({
 					whiteSpace: "nowrap",
 					minWidth: 0,
 					flex: 1,
-					color: c.fg,
+					color: T.text,
 				}}
 			>
 				{worktree.displayName}
