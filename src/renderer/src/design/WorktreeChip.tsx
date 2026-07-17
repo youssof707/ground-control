@@ -1,5 +1,23 @@
 import type { CSSProperties } from "react";
+import type { WorktreeColor } from "@shared/schemas/worktrees";
 import { T } from "./tokens";
+
+/**
+ * Maps a `WorktreeColor` to the three design tokens the chip needs.
+ * Colocated here (not in `tokens.ts`) because it's a feature-level
+ * semantic palette — the flat token dictionary should stay flat.
+ * Exported so the create-worktree modal's picker can reuse the same
+ * mapping instead of redefining tuples.
+ */
+export const WORKTREE_COLOR_MAP: Record<
+	WorktreeColor,
+	{ fg: string; bg: string; border: string }
+> = {
+	blue: { fg: T.info, bg: T.infoSoft, border: T.infoBorder },
+	green: { fg: T.ok, bg: T.okSoft, border: T.okBorder },
+	yellow: { fg: T.warn, bg: T.warnSoft, border: T.warnBorder },
+	red: { fg: T.danger, bg: T.dangerSoft, border: T.dangerBorder },
+};
 
 /**
  * Small chip that surfaces the app-owned worktree a session is bound to.
@@ -14,21 +32,24 @@ import { T } from "./tokens";
  *   - "readonly" (session header + sidebar rows): no ✕, no click
  *     handler. Sessions are bound to their worktree forever.
  *
- * Palette borrows the `info` accent so the chip reads as an "attached
- * sandbox" affordance without competing with the green/red BranchChip
- * next to it.
+ * `color` picks the tint from the 4-value palette above. Defaults to
+ * "blue" (matches the previous hardcoded look) so an accidental drop
+ * through still renders a valid chip.
  */
 export function WorktreeChip({
 	displayName,
 	variant,
+	color = "blue",
 	small = false,
 	onDetach,
 }: {
 	displayName: string;
 	variant: "interactive" | "readonly";
+	color?: WorktreeColor;
 	small?: boolean;
 	onDetach?: () => void;
 }) {
+	const c = WORKTREE_COLOR_MAP[color];
 	const height = small ? 18 : 22;
 	const fontSize = small ? 10.5 : 11.5;
 	const radius = height / 2;
@@ -42,10 +63,10 @@ export function WorktreeChip({
 		height,
 		padding: `0 ${paddingRight}px 0 ${small ? 6 : 8}px`,
 		borderRadius: radius,
-		background: T.infoSoft,
-		border: `0.5px solid ${T.infoBorder}`,
+		background: c.bg,
+		border: `0.5px solid ${c.border}`,
 		fontSize,
-		color: T.info,
+		color: c.fg,
 		fontWeight: 500,
 		letterSpacing: 0.1,
 		whiteSpace: "nowrap",
@@ -104,7 +125,7 @@ export function WorktreeChip({
 						appearance: "none",
 						border: "none",
 						background: "transparent",
-						color: T.info,
+						color: c.fg,
 						cursor: "pointer",
 						padding: 0,
 						marginLeft: 2,

@@ -131,50 +131,144 @@ export async function listLocalBranches(
 	}
 }
 
+export type WorktreeRemoveStep =
+	| "remove"
+	| "unlock"
+	| "remove-force"
+	| "remove-force-force"
+	| "fs-rm"
+	| "prune";
+
+export type WorktreeRemoveResult = {
+	/** Path is gone from disk — the caller can drop the registry entry. */
+	ok: boolean;
+	/** True if `worktreePath` still exists after the escalation ladder. */
+	pathStillExists: boolean;
+	/** Per-step failures in the order they were attempted. Populated even
+	 * on `ok: true` if an earlier tier failed and a later one recovered. */
+	errors: { step: WorktreeRemoveStep; message: string }[];
+};
+
 /**
- * Best-effort teardown of a checkout. Tries a clean `git worktree remove`
- * first; on failure (dirty working tree, missing dir, etc.) escalates to
- * `--force`, then runs `git worktree prune` to clean out any dangling
- * administrative entries. Finally rm -rf's the directory if it's still
- * hanging around — since it lives entirely under the app's data dir, we
- * own it and can nuke it.
+ * Pull git's real complaint out of an `execFile` rejection. Matches the
+ * pattern used by `switchBranch` in `./git.ts` — the useful message lives
+ * in `err.stderr`, not in the generic Node `Error.message`.
+ */
+function extractStderr(err: unknown): string {
+	const stderr = (err as { stderr?: string }).stderr?.toString().trim() || "";
+	return stderr || (err as Error).message || String(err);
+}
+
+/**
+ * Teardown of a checkout. Escalation ladder:
  *
- * Swallows all errors after the escalation ladder — the caller (delete
- * handler) needs the registry entry gone regardless of whether git
- * cooperated. If the on-disk state is inconsistent, `prune` on the next
- * `worktreeAdd` in the same repo will straighten things out.
+ *   1. `git worktree remove <path>` — clean case.
+ *   2. `git worktree unlock <path>` — best-effort; some worktrees get
+ *      locked (e.g. by the user via CLI). Ignore "not locked" stderr.
+ *   3. `git worktree remove --force <path>` — handles dirty working tree.
+ *   4. `git worktree remove --force --force <path>` — handles locked
+ *      worktrees on git versions that need double-force.
+ *   5. `fs.rm(<path>)` — nuke the physical dir. Runs BEFORE prune so that
+ *      prune sees the missing dir and cleans the `.git/worktrees/<name>/`
+ *      admin entry.
+ *   6. `git worktree prune` — cleans any leftover admin entries.
+ *   7. `fs.stat` verification — sets `ok` / `pathStillExists`.
+ *
+ * Unlike the previous version, this DOES NOT swallow errors — it collects
+ * them in `errors[]` and returns a structured result so the IPC handler
+ * can decide whether to preserve the registry entry for user retry.
  */
 export async function worktreeRemove(input: {
 	baseDir: string;
 	worktreePath: string;
-}): Promise<void> {
+}): Promise<WorktreeRemoveResult> {
 	assertSafePath(input.worktreePath);
+	const errors: { step: WorktreeRemoveStep; message: string }[] = [];
+
+	// Tier 1: clean remove.
+	let cleanedByGit = false;
 	try {
 		await execFileAsync(
 			"git",
 			["worktree", "remove", input.worktreePath],
 			{ cwd: input.baseDir },
 		);
-	} catch {
+		cleanedByGit = true;
+	} catch (err) {
+		errors.push({ step: "remove", message: extractStderr(err) });
+	}
+
+	// Tier 2: unlock (idempotent — "not locked" is fine).
+	if (!cleanedByGit) {
+		try {
+			await execFileAsync(
+				"git",
+				["worktree", "unlock", input.worktreePath],
+				{ cwd: input.baseDir },
+			);
+		} catch (err) {
+			const message = extractStderr(err);
+			// Not-locked is the happy case for unlock; don't count as a failure.
+			if (!/not locked/i.test(message)) {
+				errors.push({ step: "unlock", message });
+			}
+		}
+	}
+
+	// Tier 3: --force.
+	if (!cleanedByGit) {
 		try {
 			await execFileAsync(
 				"git",
 				["worktree", "remove", "--force", input.worktreePath],
 				{ cwd: input.baseDir },
 			);
-		} catch {
-			// keep going — we still want to prune + rm below
+			cleanedByGit = true;
+		} catch (err) {
+			errors.push({ step: "remove-force", message: extractStderr(err) });
 		}
 	}
-	try {
-		await execFileAsync("git", ["worktree", "prune"], { cwd: input.baseDir });
-	} catch {
-		// non-fatal
+
+	// Tier 4: --force --force (older/newer git combos, locked edge cases).
+	if (!cleanedByGit) {
+		try {
+			await execFileAsync(
+				"git",
+				["worktree", "remove", "--force", "--force", input.worktreePath],
+				{ cwd: input.baseDir },
+			);
+			cleanedByGit = true;
+		} catch (err) {
+			errors.push({ step: "remove-force-force", message: extractStderr(err) });
+		}
 	}
-	// Nuke the physical directory if it's still there — we own it.
+
+	// Tier 5: fs.rm. Runs regardless — `git worktree remove` may have left
+	// the directory behind on partial failure, and we own everything under
+	// the worktrees root so nuking is safe.
 	try {
 		await fs.rm(input.worktreePath, { recursive: true, force: true });
-	} catch {
-		// non-fatal
+	} catch (err) {
+		errors.push({ step: "fs-rm", message: extractStderr(err) });
 	}
+
+	// Tier 6: prune — now that the dir is (hopefully) gone, prune cleans
+	// the admin entry at `.git/worktrees/<name>/`.
+	try {
+		await execFileAsync("git", ["worktree", "prune"], { cwd: input.baseDir });
+	} catch (err) {
+		errors.push({ step: "prune", message: extractStderr(err) });
+	}
+
+	// Verify.
+	const pathStillExists = await fs.stat(input.worktreePath).then(
+		() => true,
+		() => false,
+	);
+
+	return {
+		ok: !pathStillExists,
+		pathStillExists,
+		errors,
+	};
 }

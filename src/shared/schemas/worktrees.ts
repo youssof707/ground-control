@@ -12,13 +12,23 @@ import { z } from "zod";
  * `displayName` is a cosmetic label chosen by the user, distinct from the
  * branch name. It's the only thing shown on the badge.
  *
+ * `color` is the badge's tint. Chosen at creation, immutable, same
+ * lifecycle as `displayName`. Scoped to a small palette that maps to
+ * existing design tokens (info/ok/warn/danger). Defaults to "blue" so
+ * pre-existing rows in `worktrees.json` (written before this field
+ * existed) get backfilled by Zod on read.
+ *
  * `sessionIds` is the reverse index: which sessions currently reference
  * this worktree. Used to enforce "no delete while attached" and to
  * cascade-detach on session delete.
  */
+export const WorktreeColorSchema = z.enum(["blue", "green", "yellow", "red"]);
+export type WorktreeColor = z.infer<typeof WorktreeColorSchema>;
+
 export const WorktreeSchema = z.object({
 	id: z.string(),
 	displayName: z.string(),
+	color: WorktreeColorSchema.default("blue"),
 	baseDir: z.string(),
 	worktreePath: z.string(),
 	branch: z.string(),
@@ -53,12 +63,14 @@ const CreateWorktreeNewBranchInputSchema = z.object({
 	mode: z.literal("new-branch"),
 	baseDir: z.string(),
 	displayName: z.string(),
+	color: WorktreeColorSchema,
 	newBranch: z.string(),
 });
 const CreateWorktreeExistingBranchInputSchema = z.object({
 	mode: z.literal("existing-branch"),
 	baseDir: z.string(),
 	displayName: z.string(),
+	color: WorktreeColorSchema,
 	existingBranch: z.string(),
 });
 export const CreateWorktreeInputSchema = z.discriminatedUnion("mode", [

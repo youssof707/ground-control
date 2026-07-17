@@ -292,6 +292,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					>
 						<WorktreeChip
 							displayName={attachedWorktree.displayName}
+							color={attachedWorktree.color}
 							variant="readonly"
 						/>
 					</div>

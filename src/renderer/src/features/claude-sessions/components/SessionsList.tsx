@@ -598,6 +598,7 @@ function SessionRowSidebar({
 						>
 							<WorktreeChip
 								displayName={worktree.displayName}
+								color={worktree.color}
 								variant="readonly"
 								small
 							/>
@@ -775,6 +776,7 @@ function DraftRowSidebar({
 						>
 							<WorktreeChip
 								displayName={worktree.displayName}
+								color={worktree.color}
 								variant="readonly"
 								small
 							/>

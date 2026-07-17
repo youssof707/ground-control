@@ -147,6 +147,7 @@ export function registerWorktreesHandlers(): void {
 				const wt = await worktreesStore.create({
 					id,
 					displayName,
+					color: input.color,
 					baseDir: input.baseDir,
 					worktreePath,
 					branch: branchName,
@@ -158,7 +159,8 @@ export function registerWorktreesHandlers(): void {
 			} catch (err) {
 				// Registry write failed after git succeeded — try to clean up the
 				// dangling checkout so we don't leave orphaned dirs under the
-				// worktrees root.
+				// worktrees root. Best-effort: swallow both the returned error
+				// list and any thrown exception, since we're already unwinding.
 				await worktreeRemove({ baseDir: input.baseDir, worktreePath }).catch(
 					() => undefined,
 				);
@@ -170,10 +172,36 @@ export function registerWorktreesHandlers(): void {
 	ipcMain.handle("worktrees:delete", async (e, id: string) => {
 		const wt = worktreesStore.get(id);
 		if (!wt) return;
-		// worktreesStore.remove throws if any session still references it.
+
+		// Session-reference guard, hoisted up-front. The equivalent throw
+		// inside `worktreesStore.remove` (core/store/worktrees.ts) still
+		// fires as a defensive backstop, but doing it here means we don't
+		// touch git for a worktree we're about to reject anyway.
+		if (wt.sessionIds.length > 0) {
+			throw new Error(
+				`Cannot delete worktree "${wt.displayName}" — ${wt.sessionIds.length} session(s) still reference it.`,
+			);
+		}
+
+		// Git first. If cleanup fails, we KEEP the registry entry so the
+		// user can retry from the UI — mirrors the "run git first, write
+		// registry after" pattern in `worktrees:create` above.
+		const result = await worktreeRemove({
+			baseDir: wt.baseDir,
+			worktreePath: wt.worktreePath,
+		});
+
+		if (!result.ok) {
+			const detail = result.errors
+				.map((x) => `  ${x.step}: ${x.message}`)
+				.join("\n");
+			throw new Error(
+				`Worktree deletion partially failed — "${wt.worktreePath}" still exists on disk.\n${detail}`,
+			);
+		}
+
+		// On-disk cleanup succeeded — now release the registry entry.
 		await worktreesStore.remove(id);
-		// Only clean up the checkout after the registry has released it.
-		await worktreeRemove({ baseDir: wt.baseDir, worktreePath: wt.worktreePath });
 		broadcast("state:changed", undefined, e.sender.id);
 	});
 }

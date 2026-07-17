@@ -7,7 +7,12 @@ import {
 	type MouseEvent as ReactMouseEvent,
 } from "react";
 import { T } from "../../../design/tokens";
-import type { LocalBranch, Worktree } from "@shared/schemas/worktrees";
+import { WORKTREE_COLOR_MAP } from "../../../design/WorktreeChip";
+import type {
+	LocalBranch,
+	Worktree,
+	WorktreeColor,
+} from "@shared/schemas/worktrees";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
 
 type CreateMode = "new-branch" | "existing-branch";
@@ -48,6 +53,7 @@ export function AttachWorktreeModal({
 	const [branches, setBranches] = useState<LocalBranch[]>([]);
 	const [mode, setMode] = useState<CreateMode>("new-branch");
 	const [displayName, setDisplayName] = useState("");
+	const [color, setColor] = useState<WorktreeColor>("blue");
 	const [newBranch, setNewBranch] = useState("");
 	const [selectedBranch, setSelectedBranch] = useState<string>("");
 	const [creating, setCreating] = useState(false);
@@ -63,6 +69,7 @@ export function AttachWorktreeModal({
 	useEffect(() => {
 		if (!open) return;
 		setDisplayName("");
+		setColor("blue");
 		setNewBranch("");
 		setSelectedBranch("");
 		setMode("new-branch");
@@ -214,12 +221,14 @@ export function AttachWorktreeModal({
 						mode: "new-branch" as const,
 						baseDir,
 						displayName: effectiveDisplayName,
+						color,
 						newBranch: newBranch.trim(),
 					}
 					: {
 						mode: "existing-branch" as const,
 						baseDir,
 						displayName: effectiveDisplayName,
+						color,
 						existingBranch: selectedBranch,
 					};
 			const wt = await window.claude.createWorktree(input);
@@ -240,6 +249,7 @@ export function AttachWorktreeModal({
 		baseDir,
 		mode,
 		displayName,
+		color,
 		newBranch,
 		selectedBranch,
 		canCreate,
@@ -345,6 +355,11 @@ export function AttachWorktreeModal({
 							disabled={creating}
 							maxLength={60}
 						/>
+						<ColorPicker
+							value={color}
+							onChange={setColor}
+							disabled={creating}
+						/>
 						{mode === "new-branch" ? (
 							<LabeledInput
 								label="New branch"
@@ -430,6 +445,9 @@ function ExistingRow({
 	const [hover, setHover] = useState(false);
 	const sessionCount = worktree.sessionIds.length;
 	const canDelete = sessionCount === 0;
+	// Tint the whole row with the worktree's chosen color so this list
+	// visually mirrors the chip the user will see everywhere else.
+	const c = WORKTREE_COLOR_MAP[worktree.color];
 	// Outer is a role="button" div rather than a real <button> so we can
 	// nest an actual <button> (the trash) inside it — nested <button>s are
 	// invalid HTML. Keyboard support (Enter/Space) is preserved manually.
@@ -453,13 +471,17 @@ function ExistingRow({
 				alignItems: "center",
 				gap: 10,
 				padding: "6px 6px 6px 10px",
-				border: `0.5px solid ${hover ? T.accentBorder : T.border}`,
+				// Hover swaps the soft border for the vivid `c.fg` — same
+				// hoverable affordance as the original T.accentBorder swap,
+				// but keyed to the row's own color so the whole row still
+				// reads as "one badge, tinted".
+				border: `0.5px solid ${hover ? c.fg : c.border}`,
 				borderRadius: 8,
-				background: hover ? T.surfaceHi : T.surface,
-				color: T.text,
+				background: c.bg,
+				color: c.fg,
 				cursor: "pointer",
 				fontSize: 12.5,
-				transition: "background 80ms ease, border-color 80ms ease",
+				transition: "border-color 80ms ease",
 				outline: "none",
 			}}
 		>
@@ -471,6 +493,7 @@ function ExistingRow({
 					whiteSpace: "nowrap",
 					minWidth: 0,
 					flex: 1,
+					color: c.fg,
 				}}
 			>
 				{worktree.displayName}
@@ -968,5 +991,86 @@ function LabeledInput({
 				</span>
 			) : null}
 		</label>
+	);
+}
+
+/**
+ * Row of 4 dots for picking the worktree chip's color. Kept inline
+ * rather than extracted — same rationale as `SegmentedToggle` and
+ * `BranchPicker`: `AttachWorktreeModal` is the only site that creates
+ * a worktree, so there's no reuse case yet.
+ *
+ * The selected dot renders a matching-color ring via `boxShadow` so
+ * the picker reads at a glance without a separate checkmark glyph.
+ */
+const COLOR_OPTIONS: WorktreeColor[] = ["blue", "green", "yellow", "red"];
+function ColorPicker({
+	value,
+	onChange,
+	disabled,
+}: {
+	value: WorktreeColor;
+	onChange: (c: WorktreeColor) => void;
+	disabled?: boolean;
+}) {
+	return (
+		<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+			<span
+				style={{
+					fontSize: 11,
+					color: T.textDim,
+					letterSpacing: 0.2,
+				}}
+			>
+				Color
+			</span>
+			<div
+				role="radiogroup"
+				aria-label="Worktree color"
+				style={{
+					display: "flex",
+					alignItems: "center",
+					gap: 14,
+					// Padding so the selected dot's outer ring (3.5px halo) isn't
+					// clipped against the surrounding form controls.
+					padding: "4px 4px",
+				}}
+			>
+				{COLOR_OPTIONS.map((k) => {
+					const c = WORKTREE_COLOR_MAP[k];
+					const selected = value === k;
+					return (
+						<button
+							key={k}
+							type="button"
+							role="radio"
+							aria-checked={selected}
+							aria-label={k}
+							title={k}
+							disabled={disabled}
+							onClick={() => onChange(k)}
+							style={{
+								width: 16,
+								height: 16,
+								borderRadius: "50%",
+								background: c.fg,
+								border: `0.5px solid ${c.border}`,
+								padding: 0,
+								cursor: disabled ? "not-allowed" : "pointer",
+								opacity: disabled ? 0.5 : 1,
+								// Inner shadow of the modal background creates a 2px
+							// gap between the dot and the color ring, so the ring
+							// reads as a halo rather than fusing into a bigger dot.
+							boxShadow: selected
+									? `0 0 0 2px ${T.win}, 0 0 0 3.5px ${c.fg}`
+									: "none",
+								transition: "box-shadow 80ms ease",
+								outline: "none",
+							}}
+						/>
+					);
+				})}
+			</div>
+		</div>
 	);
 }

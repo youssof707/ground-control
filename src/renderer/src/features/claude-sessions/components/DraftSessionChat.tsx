@@ -289,6 +289,7 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 					{draft.worktreeId && attachedWorktree ? (
 						<WorktreeChip
 							displayName={attachedWorktree.displayName}
+							color={attachedWorktree.color}
 							variant="interactive"
 							onDetach={() =>
 								useDraftSessionsStore
