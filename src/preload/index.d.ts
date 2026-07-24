@@ -15,6 +15,10 @@ import type {
 	LocalBranch,
 	Worktree,
 } from "../shared/schemas/worktrees";
+import type {
+	CreateSessionGroupInput,
+	SessionGroup,
+} from "../shared/schemas/session_groups";
 import type { SDKRateLimitInfo } from "@anthropic-ai/claude-agent-sdk";
 
 export type RateLimitType = NonNullable<SDKRateLimitInfo["rateLimitType"]>;
@@ -69,6 +73,17 @@ declare global {
 			listBranches: (baseDir: string) => Promise<LocalBranch[]>;
 			createWorktree: (input: CreateWorktreeInput) => Promise<Worktree>;
 			deleteWorktree: (id: string) => Promise<void>;
+			listGroups: () => Promise<SessionGroup[]>;
+			createGroup: (input: CreateSessionGroupInput) => Promise<SessionGroup>;
+			setSessionGroup: (
+				sessionId: string,
+				groupId: string | null,
+			) => Promise<void>;
+			setGroupCollapsed: (
+				groupId: string,
+				collapsed: boolean,
+			) => Promise<void>;
+			renameGroup: (groupId: string, name: string) => Promise<void>;
 			getAppInfo: () => Promise<{
 				env: "dev" | "prod";
 				storeFolder: string;

@@ -10,6 +10,7 @@ import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useReadStore } from "../stores/useReadStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
+import { useSessionGroupsStore } from "../stores/useSessionGroupsStore";
 import {
 	useRateLimitStore,
 	type RateLimitSnapshot,
@@ -42,6 +43,7 @@ export function useSessionsBootstrap() {
 			settings: 0,
 			rateLimit: 0,
 			worktrees: 0,
+			groups: 0,
 		};
 
 		async function refetchSessions(): Promise<void> {
@@ -87,6 +89,13 @@ export function useSessionsBootstrap() {
 			useWorktreesStore.getState().hydrate(list);
 		}
 
+		async function refetchGroups(): Promise<void> {
+			const my = ++seq.groups;
+			const list = await window.claude.listGroups();
+			if (my !== seq.groups) return;
+			useSessionGroupsStore.getState().hydrate(list);
+		}
+
 		function refetchAll(): void {
 			void refetchSessions();
 			void refetchReadState();
@@ -94,6 +103,7 @@ export function useSessionsBootstrap() {
 			void refetchSettings();
 			void refetchRateLimit();
 			void refetchWorktrees();
+			void refetchGroups();
 		}
 
 		// CRITICAL ORDERING: register the per-event listeners FIRST so that

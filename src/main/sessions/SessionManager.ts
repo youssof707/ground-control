@@ -328,6 +328,9 @@ export class SessionManager {
 			// independently forked (separate conversation threads), but tools
 			// run in the same sandbox directory.
 			worktreeId: parent.worktreeId,
+			// Fork also inherits the parent's sidebar group — a fork of a
+			// grouped session lands next to its parent in the sidebar.
+			groupId: parent.groupId,
 			// Re-id each entry so they don't collide with the parent's message
 			// ids in the renderer's flat store. Original SDK content and
 			// timestamps are preserved.
@@ -368,6 +371,7 @@ export class SessionManager {
 			sdkSessionId: newSessionFull.sdkSessionId,
 			mode: newSessionFull.mode,
 			worktreeId: newSessionFull.worktreeId,
+			groupId: newSessionFull.groupId,
 		};
 
 		// Tell the renderer the new session exists, then hydrate its history

@@ -152,6 +152,14 @@ export const ClaudeSessionSchema = z.object({
 	 * resolveEffectiveCwd`. Displayed to the user as a badge above the
 	 * session title (label = worktree's `displayName`). */
 	worktreeId: z.string().optional(),
+	/** Sidebar session group the row is filed under. Mutable (unlike
+	 * `worktreeId`): set/cleared via `groups:setSessionGroup`. Membership
+	 * survives archiving — an archived member is merely hidden with the
+	 * rest of the group and returns to it on unarchive. When the last
+	 * member leaves a group (removed or deleted, not archived), main
+	 * auto-deletes the group record. A dangling id (group missing)
+	 * renders as "ungrouped" in the sidebar. */
+	groupId: z.string().optional(),
 });
 export type ClaudeSession = z.infer<typeof ClaudeSessionSchema>;
 

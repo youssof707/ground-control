@@ -20,6 +20,10 @@ import { registerAppInfoHandlers } from "./appInfoHandlers";
 import { registerNotesHandlers } from "./notesHandlers";
 import { registerRateLimitHandlers } from "./rateLimitHandlers";
 import { registerWorktreesHandlers } from "./worktreesHandlers";
+import {
+	registerGroupsHandlers,
+	pruneGroupIfEmpty,
+} from "./groupsHandlers";
 
 /**
  * Open the native macOS "choose a directory" dialog. Returns the absolute
@@ -77,6 +81,7 @@ export function registerSessionsHandlers(): SessionManager {
 	registerNotesHandlers();
 	registerRateLimitHandlers();
 	registerWorktreesHandlers();
+	registerGroupsHandlers();
 
 	ipcMain.handle("session:start", async (e, input: StartSessionInput) => {
 		// Guard against stale `cwd` values (e.g. a `lastUsedWorkspace` whose
@@ -219,6 +224,13 @@ export function registerSessionsHandlers(): SessionManager {
 		manager.cancel(sessionId);
 		broker.cancelAllForSession(sessionId, "Session archived");
 		await readStore.mark(sessionId);
+		// Archiving intentionally KEEPS the session's group membership —
+		// the row returns to its group on unarchive / "Show archived
+		// sessions". Archived members still count for the auto-delete
+		// check, so a group whose members are all archived survives (it's
+		// merely hidden, because the sidebar derives group sections from
+		// visible rows only). Only remove-from-group and session delete
+		// can empty a group.
 		const archivedAt = Date.now();
 		const updated = await sessionStore.updateSession(sessionId, {
 			archivedAt,
@@ -250,6 +262,10 @@ export function registerSessionsHandlers(): SessionManager {
 		// afterwards so the "no delete while attached" invariant holds.
 		const preDeleteSession = sessionStore.getSession(sessionId);
 		const worktreeIdToDetach = preDeleteSession?.worktreeId;
+		// Same capture for the sidebar group — after deleteSession runs the
+		// record is gone, and we still need to auto-delete the group if this
+		// was its last member.
+		const groupIdToPrune = preDeleteSession?.groupId;
 		// Tombstone first — synchronous. Any subsequent SDK event for this
 		// session id is dropped by SessionManager.send, so leaked status /
 		// cancelled / message / patch broadcasts from the still-winding-down
@@ -283,6 +299,15 @@ export function registerSessionsHandlers(): SessionManager {
 				await worktreesStore.detachSession(worktreeIdToDetach, sessionId);
 			} catch (err) {
 				console.error("[ccw] worktree detachSession failed:", err);
+			}
+		}
+		// Auto-delete the session's group if it just lost its last member.
+		// Best-effort, same rationale as the worktree detach above.
+		if (groupIdToPrune) {
+			try {
+				await pruneGroupIfEmpty(groupIdToPrune);
+			} catch (err) {
+				console.error("[ccw] group pruneGroupIfEmpty failed:", err);
 			}
 		}
 		// Structural ping → other windows refetch and drop this session from

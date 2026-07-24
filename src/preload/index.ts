@@ -7,6 +7,7 @@ import type {
 	UserTurn,
 } from "../shared/schemas/claude_session";
 import type { CreateWorktreeInput } from "../shared/schemas/worktrees";
+import type { CreateSessionGroupInput } from "../shared/schemas/session_groups";
 
 const api = {};
 
@@ -81,6 +82,15 @@ const claude = {
 	createWorktree: (input: CreateWorktreeInput) =>
 		ipcRenderer.invoke("worktrees:create", input),
 	deleteWorktree: (id: string) => ipcRenderer.invoke("worktrees:delete", id),
+	listGroups: () => ipcRenderer.invoke("groups:list"),
+	createGroup: (input: CreateSessionGroupInput) =>
+		ipcRenderer.invoke("groups:create", input),
+	setSessionGroup: (sessionId: string, groupId: string | null) =>
+		ipcRenderer.invoke("groups:setSessionGroup", { sessionId, groupId }),
+	setGroupCollapsed: (groupId: string, collapsed: boolean) =>
+		ipcRenderer.invoke("groups:setCollapsed", { groupId, collapsed }),
+	renameGroup: (groupId: string, name: string) =>
+		ipcRenderer.invoke("groups:rename", { groupId, name }),
 	getAppInfo: () => ipcRenderer.invoke("appInfo:get"),
 	toggleDevTools: () => ipcRenderer.invoke("devtools:toggle"),
 	on: (channel: string, fn: (payload: unknown) => void) => {

@@ -123,6 +123,7 @@ export type SessionPatch = Partial<
 		| "sdkSessionId"
 		| "mode"
 		| "archivedAt"
+		| "groupId"
 	>
 >;
 

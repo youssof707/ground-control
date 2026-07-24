@@ -10,15 +10,19 @@ import {
 } from "../stores/useDraftSessionsStore";
 import { useDraftStore } from "../stores/useDraftStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
+import { useSessionGroupsStore } from "../stores/useSessionGroupsStore";
 import { ConfirmModal } from "../../../components/ConfirmModal";
+import { AddToGroupModal } from "./AddToGroupModal";
+import { RenameGroupModal } from "./RenameGroupModal";
 import { T } from "../../../design/tokens";
 import { BranchChipWithDelta, StatusPill } from "../../../design/Atoms";
-import { WorktreeChip } from "../../../design/WorktreeChip";
+import { WorktreeChip, WORKTREE_COLOR_MAP } from "../../../design/WorktreeChip";
 import type {
 	ClaudeSessionFull,
 	PermissionRequest,
 	SessionMessage,
 } from "@shared/claude-sessions/types";
+import type { SessionGroup } from "@shared/schemas/session_groups";
 
 export function SessionsList({
 	activeSessionId,
@@ -47,6 +51,21 @@ export function SessionsList({
 	);
 	const [archiveError, setArchiveError] = useState<string | null>(null);
 	const [archiving, setArchiving] = useState(false);
+	// Session currently picking a group in the AddToGroupModal. Mirrors the
+	// pendingDeleteId / pendingArchiveId pattern above; null = closed.
+	const [pendingGroupSessionId, setPendingGroupSessionId] = useState<
+		string | null
+	>(null);
+	// Group currently being renamed via RenameGroupModal. Same null-sentinel
+	// pattern as pendingGroupSessionId; opened from the group header's
+	// right-click context menu.
+	const [pendingRenameGroupId, setPendingRenameGroupId] = useState<
+		string | null
+	>(null);
+	const groups = useSessionGroupsStore((s) => s.groups);
+	// Whole map (not per-row selector): needed to compute aggregate unread
+	// counts for collapsed group headers without calling hooks in a loop.
+	const lastReadAtMap = useReadStore((s) => s.lastReadAt);
 	const [workspaceFilter, setWorkspaceFilter] = useState<string[]>([]);
 	// Non-persistent view toggle: when true, archived sessions are no longer
 	// filtered out of the sidebar list (and their cwds appear in the
@@ -125,6 +144,38 @@ export function SessionsList({
 			return true;
 		});
 	}, [sortedOrder, sessions, workspaceFilter, showArchived]);
+
+	// Partition the visible rows into "ungrouped" (rendered first, flat)
+	// and per-group sections (rendered after, newest group first). Built
+	// from `visibleOrder`, so:
+	//   - intra-group ordering matches the flat list's comparator exactly;
+	//   - a group whose members are all filtered out (workspace filter,
+	//     archived-hidden) never materializes a section → hidden, per spec;
+	//   - a dangling groupId (group record missing — crash window, stale
+	//     cache) degrades to "ungrouped" instead of vanishing the row.
+	const { ungroupedIds, groupSections } = useMemo(() => {
+		const ungrouped: string[] = [];
+		const byGroup = new Map<string, string[]>();
+		for (const id of visibleOrder) {
+			const gid = sessions[id]?.groupId;
+			if (gid && groups[gid]) {
+				const list = byGroup.get(gid);
+				if (list) list.push(id);
+				else byGroup.set(gid, [id]);
+			} else {
+				ungrouped.push(id);
+			}
+		}
+		const sections = Array.from(byGroup.entries())
+			.map(([gid, ids]) => ({ group: groups[gid], ids }))
+			// Newest group first; ulid tie-break keeps same-ms creates stable.
+			.sort(
+				(a, b) =>
+					b.group.createdAt - a.group.createdAt ||
+					b.group.id.localeCompare(a.group.id),
+			);
+		return { ungroupedIds: ungrouped, groupSections: sections };
+	}, [visibleOrder, sessions, groups]);
 
 	// New-session target cwd: only use the filter when exactly one workspace is
 	// selected (ambiguous otherwise). Otherwise fall back to last-used cwd.
@@ -437,6 +488,46 @@ export function SessionsList({
 		setArchiveError(null);
 	};
 
+	const removeFromGroup = async (sessionId: string) => {
+		// No confirm modal — removal is benign and self-undoable (re-add via
+		// the ⋯ menu), mirroring unarchive. If this was the group's last
+		// member, main auto-deletes the group and pings all windows.
+		try {
+			await window.claude.setSessionGroup(sessionId, null);
+		} catch (err) {
+			setStartError(err instanceof Error ? err.message : String(err));
+		}
+	};
+
+	// Ungrouped rows render flat; each group renders into its own bordered
+	// wrapper (header + member rows share one framed block, colored on
+	// every side by the group's border token). Session rows inside a group
+	// live under a different DOM parent than ungrouped ones, so moving a
+	// row between the two remounts it — an acceptable cost for the framed
+	// look; session cards hold only trivial local state (menu open).
+	const sidebarRows = useMemo<SidebarRow[]>(() => {
+		const rows: SidebarRow[] = ungroupedIds.map((id) => ({
+			kind: "session" as const,
+			id,
+		}));
+		for (const section of groupSections) {
+			rows.push({ kind: "group", section });
+		}
+		return rows;
+	}, [ungroupedIds, groupSections]);
+
+	const toggleGroupCollapsed = (group: SessionGroup) => {
+		const next = { ...group, collapsed: !group.collapsed };
+		// Optimistic local flip so the section folds on the same tick as the
+		// click; the IPC persists it and pings other windows (skip-self).
+		useSessionGroupsStore.getState().upsert(next);
+		void window.claude
+			.setGroupCollapsed(group.id, next.collapsed)
+			.catch((err) => {
+				console.error("[ccw] setGroupCollapsed failed:", err);
+			});
+	};
+
 	const pendingArchiveSession = pendingArchiveId
 		? sessions[pendingArchiveId]
 		: null;
@@ -593,11 +684,49 @@ export function SessionsList({
 							<DraftRowSidebar
 								draft={draft}
 								active={draft.id === activeSessionId}
-								last={visibleOrder.length === 0}
+								last={sidebarRows.length === 0}
 								onDiscard={() => discardDraft(draft.id)}
 							/>
 						) : null}
-						{visibleOrder.map((id, i) => {
+						{sidebarRows.map((row, i) => {
+							const last = i === sidebarRows.length - 1;
+							if (row.kind === "group") {
+								const { group, ids } = row.section;
+								return (
+									<GroupSection
+										key={`group:${group.id}`}
+										group={group}
+										ids={ids}
+										sessions={sessions}
+										queue={queue}
+										lastReadAtMap={lastReadAtMap}
+										activeSessionId={activeSessionId}
+										onToggleCollapsed={() =>
+											toggleGroupCollapsed(group)
+										}
+										onRename={(id) =>
+											setPendingRenameGroupId(id)
+										}
+										onDelete={(id) => {
+											setPendingDeleteId(id);
+											setDeleteError(null);
+											setAlsoDeleteWorktree(false);
+										}}
+										onArchive={(id) => {
+											setPendingArchiveId(id);
+											setArchiveError(null);
+										}}
+										onUnarchive={(id) => void unarchive(id)}
+										onAddToGroup={(id) =>
+											setPendingGroupSessionId(id)
+										}
+										onRemoveFromGroup={(id) =>
+											void removeFromGroup(id)
+										}
+									/>
+								);
+							}
+							const id = row.id;
 							const s = sessions[id];
 							const sessionPending = queue.filter(
 								(q) => q.sessionId === id,
@@ -606,7 +735,7 @@ export function SessionsList({
 								<SessionRowSidebar
 									key={id}
 									session={s}
-									last={i === visibleOrder.length - 1}
+									last={last}
 									pending={sessionPending}
 									active={id === activeSessionId}
 									onDelete={() => {
@@ -619,6 +748,12 @@ export function SessionsList({
 										setArchiveError(null);
 									}}
 									onUnarchive={() => void unarchive(id)}
+									onAddToGroup={() =>
+										setPendingGroupSessionId(id)
+									}
+									onRemoveFromGroup={() =>
+										void removeFromGroup(id)
+									}
 								/>
 							);
 						})}
@@ -628,9 +763,22 @@ export function SessionsList({
 
 			{deleteModal}
 			{archiveModal}
+			<AddToGroupModal
+				sessionId={pendingGroupSessionId}
+				onClose={() => setPendingGroupSessionId(null)}
+			/>
+			<RenameGroupModal
+				groupId={pendingRenameGroupId}
+				onClose={() => setPendingRenameGroupId(null)}
+			/>
 		</div>
 	);
 }
+
+/** One entry in the sidebar's top-level render sequence. */
+type SidebarRow =
+	| { kind: "session"; id: string }
+	| { kind: "group"; section: { group: SessionGroup; ids: string[] } };
 
 /**
  * Shared derivation used by SessionRowSidebar — keeps "unread", "pending",
@@ -658,17 +806,28 @@ function SessionRowSidebar({
 	last,
 	pending,
 	active,
+	inGroup = false,
 	onDelete,
 	onArchive,
 	onUnarchive,
+	onAddToGroup,
+	onRemoveFromGroup,
 }: {
 	session: ClaudeSessionFull;
 	last: boolean;
 	pending: PermissionRequest[];
 	active: boolean;
+	/** True when the row renders inside a group's bordered section — the
+	 * container owns the color border, so the row itself just adopts the
+	 * raised surface + indent + grouped ⋯ menu options. Also the source of
+	 * truth for the menu's grouped state: a dangling groupId renders (and
+	 * behaves) as ungrouped. */
+	inGroup?: boolean;
 	onDelete: () => void;
 	onArchive: () => void;
 	onUnarchive: () => void;
+	onAddToGroup: () => void;
+	onRemoveFromGroup: () => void;
 }) {
 	const { hasPending, summary, unread } = useRowDerived(session, pending);
 	const markUnread = useReadStore((s) => s.markUnread);
@@ -684,7 +843,14 @@ function SessionRowSidebar({
 				borderBottom: last ? "none" : `0.5px solid ${T.borderSoft}`,
 				// Only highlight the active row. Pending state is conveyed by the
 				// "waiting for input" StatusPill and the count badge below.
-				background: active ? T.surfaceHi : "transparent",
+				// Grouped members render transparent so the parent group
+				// section's subtle color wash shows through the whole width
+				// — one continuous tint instead of just a header strip.
+				background: active
+					? T.surfaceHi
+					: inGroup
+						? "transparent"
+						: "transparent",
 				position: "relative",
 				// Archived rows dim heavily so they read as "set aside"
 				// against the active list. The full row dims — including
@@ -782,6 +948,9 @@ function SessionRowSidebar({
 							archived={archived}
 							onMarkUnread={() => markUnread(session.id)}
 							showMarkUnread={!unread}
+							grouped={inGroup}
+							onAddToGroup={onAddToGroup}
+							onRemoveFromGroup={onRemoveFromGroup}
 						/>
 					</div>
 					{/* Summary — two-line clamp */}
@@ -838,6 +1007,364 @@ function SessionRowSidebar({
 					) : null}
 				</div>
 			</Link>
+		</div>
+	);
+}
+
+/**
+ * Framed container for a single group: colored border on every side (the
+ * group's `border` token), raised `surfaceLow` fill, and a hairline
+ * bottom-margin so successive groups don't fuse. Header sits at the top,
+ * followed by member rows (when expanded). No rounding — matches the
+ * app's square-cornered vocabulary.
+ */
+function GroupSection({
+	group,
+	ids,
+	sessions,
+	queue,
+	lastReadAtMap,
+	activeSessionId,
+	onToggleCollapsed,
+	onRename,
+	onDelete,
+	onArchive,
+	onUnarchive,
+	onAddToGroup,
+	onRemoveFromGroup,
+}: {
+	group: SessionGroup;
+	ids: string[];
+	sessions: Record<string, ClaudeSessionFull>;
+	queue: PermissionRequest[];
+	lastReadAtMap: Record<string, number>;
+	activeSessionId?: string;
+	onToggleCollapsed: () => void;
+	onRename: (groupId: string) => void;
+	onDelete: (id: string) => void;
+	onArchive: (id: string) => void;
+	onUnarchive: (id: string) => void;
+	onAddToGroup: (id: string) => void;
+	onRemoveFromGroup: (id: string) => void;
+}) {
+	const c = WORKTREE_COLOR_MAP[group.color];
+	// Only draw aggregate indicators when the section is folded — expanded
+	// members show their own dots/pills; doubling up would be noise.
+	const aggregates = group.collapsed
+		? deriveGroupAggregates(ids, sessions, queue, lastReadAtMap)
+		: null;
+	return (
+		<div
+			style={{
+				// Horizontal rules only (top + bottom) in the group's color.
+				// A very subtle wash of the group hue tints the entire section
+				// (header + rows) — the rows themselves render transparent
+				// when `inGroup` so this fill shows through the full width.
+				// 2% of `c.fg` keeps the wash whisper-quiet against `T.win`.
+				borderTop: `1px solid ${c.border}`,
+				borderBottom: `1px solid ${c.border}`,
+				margin: 0,
+				background: `color-mix(in oklab, ${c.fg} 2%, transparent)`,
+				overflow: "hidden",
+			}}
+		>
+			<GroupHeaderRow
+				group={group}
+				count={ids.length}
+				aggregates={aggregates}
+				onToggle={onToggleCollapsed}
+				onRename={() => onRename(group.id)}
+			/>
+			{group.collapsed
+				? null
+				: ids.map((id, i) => {
+					const s = sessions[id];
+					const sessionPending = queue.filter(
+						(q) => q.sessionId === id,
+					);
+					return (
+						<SessionRowSidebar
+							key={id}
+							session={s}
+							last={i === ids.length - 1}
+							pending={sessionPending}
+							active={id === activeSessionId}
+							inGroup
+							onDelete={() => onDelete(id)}
+							onArchive={() => onArchive(id)}
+							onUnarchive={() => onUnarchive(id)}
+							onAddToGroup={() => onAddToGroup(id)}
+							onRemoveFromGroup={() =>
+								onRemoveFromGroup(id)
+							}
+						/>
+					);
+				})}
+		</div>
+	);
+}
+
+/**
+ * Collapsible section header for a session group. The bordered box lives
+ * on the outer `GroupSection`; this component paints the clickable header
+ * strip (chevron + colored uppercase name + count + optional aggregate
+ * indicators when collapsed).
+ */
+function GroupHeaderRow({
+	group,
+	count,
+	aggregates,
+	onToggle,
+	onRename,
+}: {
+	group: SessionGroup;
+	count: number;
+	aggregates: { waiting: number; unread: number } | null;
+	onToggle: () => void;
+	onRename: () => void;
+}) {
+	// Cursor coords of the current right-click, or null when the menu is
+	// closed. Fixed positioning against the viewport so the menu escapes
+	// the sidebar's scroll container / overflow-hidden group box.
+	const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(
+		null,
+	);
+	const c = WORKTREE_COLOR_MAP[group.color];
+	return (
+		<>
+			<button
+				type="button"
+				onClick={onToggle}
+				onContextMenu={(e) => {
+					e.preventDefault();
+					setMenuPos({ x: e.clientX, y: e.clientY });
+				}}
+				aria-expanded={!group.collapsed}
+				style={{
+					appearance: "none",
+					width: "100%",
+					display: "flex",
+					alignItems: "center",
+					gap: 7,
+					padding: "8px 12px",
+					// Bottom hairline appears only when expanded, splitting the
+					// header from the first member row; collapsed headers stand
+					// alone inside the bordered box.
+					borderTop: "none",
+					borderLeft: "none",
+					borderRight: "none",
+					borderBottom: group.collapsed
+						? "none"
+						: `0.5px solid ${T.borderSoft}`,
+					background: "transparent",
+					cursor: "pointer",
+					textAlign: "left",
+					outline: "none",
+				}}
+			>
+				<svg
+					width="8"
+					height="8"
+					viewBox="0 0 8 8"
+					fill="none"
+					aria-hidden
+					style={{
+						flexShrink: 0,
+						color: T.textFaint,
+						transform: group.collapsed
+							? "rotate(0deg)"
+							: "rotate(90deg)",
+						transition: "transform 120ms ease",
+					}}
+				>
+					<path
+						d="M2.5 1.5L6 4L2.5 6.5"
+						stroke="currentColor"
+						strokeWidth="1.4"
+						strokeLinecap="round"
+						strokeLinejoin="round"
+					/>
+				</svg>
+				{/* Group color lives on the name itself (no separate dot) —
+				    one fewer element, and the label doubles as the swatch. */}
+				<span
+					style={{
+						fontSize: 11,
+						fontWeight: 600,
+						letterSpacing: 0.5,
+						textTransform: "uppercase",
+						color: c.fg,
+						overflow: "hidden",
+						textOverflow: "ellipsis",
+						whiteSpace: "nowrap",
+						minWidth: 0,
+					}}
+				>
+					{group.name}
+				</span>
+				<span
+					style={{
+						fontSize: 10.5,
+						color: T.textFaint,
+						flexShrink: 0,
+					}}
+				>
+					{count}
+				</span>
+				{aggregates &&
+				(aggregates.unread > 0 || aggregates.waiting > 0) ? (
+						<span
+							style={{
+								marginLeft: "auto",
+								display: "inline-flex",
+								alignItems: "center",
+								gap: 6,
+								flexShrink: 0,
+							}}
+						>
+							{aggregates.waiting > 0 ? (
+								<span
+									title={`${aggregates.waiting} session${
+										aggregates.waiting === 1 ? "" : "s"
+									} waiting for input`}
+									style={{
+										display: "inline-flex",
+										alignItems: "center",
+										height: 16,
+										padding: "0 6px",
+										borderRadius: 8,
+										border: `0.5px solid ${T.warnBorder}`,
+										background: T.warnSoft,
+										color: T.warn,
+										fontSize: 10,
+										fontWeight: 600,
+									}}
+								>
+									{aggregates.waiting}
+								</span>
+							) : null}
+							{aggregates.unread > 0 ? (
+								<span
+									title={`${aggregates.unread} unread`}
+									style={{
+										display: "inline-flex",
+										alignItems: "center",
+										height: 16,
+										padding: "0 6px",
+										borderRadius: 8,
+										border: `0.5px solid ${T.accentBorder}`,
+										background: T.accentSoft,
+										color: T.accent,
+										fontSize: 10,
+										fontWeight: 600,
+									}}
+								>
+									{aggregates.unread}
+								</span>
+							) : null}
+						</span>
+					) : null}
+			</button>
+			{menuPos ? (
+				<GroupContextMenu
+					x={menuPos.x}
+					y={menuPos.y}
+					onClose={() => setMenuPos(null)}
+					onRename={() => {
+						setMenuPos(null);
+						onRename();
+					}}
+				/>
+			) : null}
+		</>
+	);
+}
+
+/**
+ * Right-click context menu for a group header. Deliberately minimal —
+ * one item today ("Rename") — but structured so more (Change color,
+ * Delete, …) drop in as `MenuItem`s under the same shell.
+ *
+ * Positioning: `position: fixed` at the cursor's viewport coordinates so
+ * the menu escapes the sidebar's scroll container and the group box's
+ * `overflow: hidden`. Dismissal: Escape or a mousedown anywhere outside
+ * the menu, matching the RowMenuButton dropdown pattern already used
+ * throughout the sidebar.
+ */
+function GroupContextMenu({
+	x,
+	y,
+	onClose,
+	onRename,
+}: {
+	x: number;
+	y: number;
+	onClose: () => void;
+	onRename: () => void;
+}) {
+	const ref = useRef<HTMLDivElement | null>(null);
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				e.preventDefault();
+				onClose();
+			}
+		};
+		const onDown = (e: MouseEvent) => {
+			if (!ref.current) return;
+			if (!ref.current.contains(e.target as Node)) onClose();
+		};
+		window.addEventListener("keydown", onKey);
+		document.addEventListener("mousedown", onDown);
+		return () => {
+			window.removeEventListener("keydown", onKey);
+			document.removeEventListener("mousedown", onDown);
+		};
+	}, [onClose]);
+	return (
+		<div
+			ref={ref}
+			role="menu"
+			style={{
+				position: "fixed",
+				top: y,
+				left: x,
+				minWidth: 160,
+				background: T.surfaceHi,
+				border: `0.5px solid ${T.border}`,
+				borderRadius: 8,
+				boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+				padding: 4,
+				zIndex: 1000,
+			}}
+		>
+			<button
+				type="button"
+				role="menuitem"
+				onClick={onRename}
+				style={{
+					appearance: "none",
+					width: "100%",
+					textAlign: "left",
+					background: "transparent",
+					border: "none",
+					color: T.text,
+					font: "inherit",
+					fontSize: 12.5,
+					padding: "6px 10px",
+					borderRadius: 4,
+					cursor: "pointer",
+					transition: "background 60ms ease",
+				}}
+				onMouseEnter={(e) => {
+					e.currentTarget.style.background = T.accentSoft;
+				}}
+				onMouseLeave={(e) => {
+					e.currentTarget.style.background = "transparent";
+				}}
+			>
+				Rename…
+			</button>
 		</div>
 	);
 }
@@ -1495,6 +2022,9 @@ function RowMenuButton({
 	archived,
 	onMarkUnread,
 	showMarkUnread,
+	grouped,
+	onAddToGroup,
+	onRemoveFromGroup,
 }: {
 	onDelete: () => void;
 	onArchive: () => void;
@@ -1502,6 +2032,9 @@ function RowMenuButton({
 	archived: boolean;
 	onMarkUnread: () => void;
 	showMarkUnread: boolean;
+	grouped: boolean;
+	onAddToGroup: () => void;
+	onRemoveFromGroup: () => void;
 }) {
 	const [open, setOpen] = useState(false);
 	const ref = useRef<HTMLDivElement>(null);
@@ -1617,6 +2150,23 @@ function RowMenuButton({
 							onClick={runAndClose(onArchive)}
 						/>
 					)}
+					{/* Available on archived rows too — membership survives
+					    archiving, so an archived row (visible via "Show
+					    archived sessions") can be re-filed or pulled out of
+					    its group like any other. */}
+					{grouped ? (
+						<MenuItem
+							active={false}
+							label="Remove from group"
+							onClick={runAndClose(onRemoveFromGroup)}
+						/>
+					) : (
+						<MenuItem
+							active={false}
+							label="Add to group…"
+							onClick={runAndClose(onAddToGroup)}
+						/>
+					)}
 					<MenuItem
 						active={false}
 						label="Delete"
@@ -1633,6 +2183,39 @@ function folderName(path: string): string {
 	const trimmed = path.replace(/\/+$/, "");
 	const idx = trimmed.lastIndexOf("/");
 	return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
+/**
+ * Attention rollup for a collapsed group header. Plain function (not a
+ * hook) on purpose — it runs once per group inside the row-render loop,
+ * where per-session hooks like `useRowDerived` would be illegal. Mirrors
+ * that hook's rules exactly:
+ *   - waiting: pending permission request in the queue, or the session
+ *     status itself is awaiting_permission (same pair StatusPill uses);
+ *   - unread: not running AND last incoming message is newer than the
+ *     session's lastReadAt mark.
+ */
+function deriveGroupAggregates(
+	ids: string[],
+	sessions: Record<string, ClaudeSessionFull>,
+	queue: PermissionRequest[],
+	lastReadAt: Record<string, number>,
+): { waiting: number; unread: number } {
+	let waiting = 0;
+	let unread = 0;
+	const pendingIds = new Set(queue.map((q) => q.sessionId));
+	for (const id of ids) {
+		const s = sessions[id];
+		if (!s) continue;
+		if (pendingIds.has(id) || s.status === "awaiting_permission") waiting++;
+		if (
+			s.status !== "running" &&
+			lastIncomingMessageTs(s) > (lastReadAt[id] ?? 0)
+		) {
+			unread++;
+		}
+	}
+	return { waiting, unread };
 }
 
 function lastIncomingMessageTs(session: ClaudeSessionFull): number {
