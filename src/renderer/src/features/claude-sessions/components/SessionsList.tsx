@@ -807,6 +807,7 @@ function SessionRowSidebar({
 	pending,
 	active,
 	inGroup = false,
+	groupColor,
 	onDelete,
 	onArchive,
 	onUnarchive,
@@ -823,6 +824,11 @@ function SessionRowSidebar({
 	 * truth for the menu's grouped state: a dangling groupId renders (and
 	 * behaves) as ungrouped. */
 	inGroup?: boolean;
+	/** Resolved color spec of the enclosing group, if any. When set, the
+	 * active-row background and left stripe tint to this hue instead of the
+	 * neutral `T.surfaceHi` + `T.accent` — otherwise a selected row inside
+	 * a colored group reads as a foreign grey block over the group's wash. */
+	groupColor?: { fg: string; bg: string; border: string };
 	onDelete: () => void;
 	onArchive: () => void;
 	onUnarchive: () => void;
@@ -846,11 +852,14 @@ function SessionRowSidebar({
 				// Grouped members render transparent so the parent group
 				// section's subtle color wash shows through the whole width
 				// — one continuous tint instead of just a header strip.
+				// When active inside a group, tint the highlight to the group's
+				// hue so the selection stays part of the color family instead of
+				// dropping a neutral grey block on top of the group's wash.
 				background: active
-					? T.surfaceHi
-					: inGroup
-						? "transparent"
-						: "transparent",
+					? groupColor
+						? `color-mix(in oklab, ${groupColor.fg} 7%, transparent)`
+						: T.surfaceHi
+					: "transparent",
 				position: "relative",
 				// Archived rows dim heavily so they read as "set aside"
 				// against the active list. The full row dims — including
@@ -870,7 +879,7 @@ function SessionRowSidebar({
 						top: 0,
 						bottom: 0,
 						width: 3,
-						background: T.accent,
+						background: groupColor ? groupColor.fg : T.accent,
 					}}
 				/>
 			) : null}
@@ -1063,7 +1072,10 @@ function GroupSection({
 				// 2% of `c.fg` keeps the wash whisper-quiet against `T.win`.
 				borderTop: `1px solid ${c.border}`,
 				borderBottom: `1px solid ${c.border}`,
-				margin: 0,
+				// Breathing room above/below so consecutive groups (or a
+				// group next to a top-level row) don't butt up against each
+				// other — the colored borders read as their own object.
+				margin: "8px 0",
 				background: `color-mix(in oklab, ${c.fg} 2%, transparent)`,
 				overflow: "hidden",
 			}}
@@ -1090,6 +1102,7 @@ function GroupSection({
 							pending={sessionPending}
 							active={id === activeSessionId}
 							inGroup
+							groupColor={c}
 							onDelete={() => onDelete(id)}
 							onArchive={() => onArchive(id)}
 							onUnarchive={() => onUnarchive(id)}
