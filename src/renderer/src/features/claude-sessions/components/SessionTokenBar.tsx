@@ -1,9 +1,11 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type {
 	ClaudeSessionFull,
 	SessionMessage,
 } from "@shared/schemas/claude_session";
 import { T } from "../../../design/tokens";
+import { deriveDisplayedModel, formatModelName } from "../lib/sessionModel";
+import { ModelPickerModal } from "./ModelPickerModal";
 
 // ─── Shapes pulled from the Claude Agent SDK message stream ──────────────────
 
@@ -67,6 +69,23 @@ export function SessionTokenBar({
 		return totalIn + totalOut + totalCacheRead + totalCacheCreation;
 	}, [session.messages]);
 
+	// Stream-derived model label — reflects the model actually producing
+	// responses (self-corrects on fallback flips). While a switch awaits its
+	// first response, shows the requested model dimmed/italic ("pending").
+	// Deps are the fields deriveDisplayedModel actually reads — the `session`
+	// object identity churns on every store update, so depending on it
+	// directly would defeat the memo.
+	const displayed = useMemo(
+		() => deriveDisplayedModel(session),
+		[session.messages, session.model, session.modelChangedAt],
+	);
+	const [pickerOpen, setPickerOpen] = useState(false);
+	const [modelHover, setModelHover] = useState(false);
+
+	const modelLabel = displayed.model
+		? formatModelName(displayed.model)
+		: "Default";
+
 	return (
 		<div
 			style={{
@@ -93,7 +112,37 @@ export function SessionTokenBar({
 				}}
 			>
 				<span style={{ color: T.textDim }}>{fmtTokens(totalTokens)} tok</span>
+				<button
+					onClick={() => setPickerOpen(true)}
+					onMouseEnter={() => setModelHover(true)}
+					onMouseLeave={() => setModelHover(false)}
+					style={{
+						marginLeft: 12,
+						padding: 0,
+						border: "none",
+						background: "none",
+						font: "inherit",
+						fontStyle: displayed.pending ? "italic" : "normal",
+						color: displayed.pending
+							? T.textMute
+							: modelHover
+								? T.text
+								: T.textDim,
+						textDecoration: modelHover ? "underline" : "none",
+						textUnderlineOffset: 3,
+						cursor: "pointer",
+					}}
+				>
+					{modelLabel}
+					{displayed.pending ? "…" : ""}
+				</button>
 			</div>
+			<ModelPickerModal
+				open={pickerOpen}
+				sessionId={session.id}
+				currentModel={session.model}
+				onClose={() => setPickerOpen(false)}
+			/>
 		</div>
 	);
 }

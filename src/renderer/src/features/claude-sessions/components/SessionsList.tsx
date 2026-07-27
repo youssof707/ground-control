@@ -2050,28 +2050,66 @@ function RowMenuButton({
 	onRemoveFromGroup: () => void;
 }) {
 	const [open, setOpen] = useState(false);
+	// Viewport coordinates of the anchor point (the button's bottom-right
+	// corner) captured at open time. `null` when the menu is closed. Used
+	// with `position: fixed` on the menu so it escapes the group box's
+	// `overflow: hidden` — see the block comment on `GroupContextMenu` for
+	// the same pattern applied to the group header's right-click menu.
+	const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(
+		null,
+	);
 	const ref = useRef<HTMLDivElement>(null);
+	const btnRef = useRef<HTMLButtonElement>(null);
+
+	const close = () => {
+		setOpen(false);
+		setAnchor(null);
+	};
+
+	const openMenu = () => {
+		const rect = btnRef.current?.getBoundingClientRect();
+		if (!rect) return;
+		// `top`: 4px gap below the button, matching the previous
+		// `calc(100% + 4px)` offset. `left`: pin to the button's right edge;
+		// the menu is right-aligned via `translateX(-100%)` in its style,
+		// preserving the pre-fix placement without needing to know the
+		// menu's rendered width.
+		setAnchor({ top: rect.bottom + 4, left: rect.right });
+		setOpen(true);
+	};
 
 	useEffect(() => {
 		if (!open) return;
 		const onDocClick = (e: MouseEvent) => {
 			if (ref.current && !ref.current.contains(e.target as Node)) {
-				setOpen(false);
+				close();
 			}
 		};
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") setOpen(false);
+			if (e.key === "Escape") close();
 		};
+		// A fixed-positioned menu doesn't track its anchor when the viewport
+		// changes, so close on scroll/resize rather than recompute. Capture
+		// phase on `scroll` catches the sidebar's inner scroller, not just
+		// window. This intentionally diverges from `GroupContextMenu` (which
+		// doesn't handle either): that menu is a transient right-click
+		// gesture, this one is a click-opened dropdown users may leave
+		// hovering while they scroll.
+		const onViewportChange = () => close();
 		document.addEventListener("mousedown", onDocClick);
 		document.addEventListener("keydown", onKey);
+		window.addEventListener("scroll", onViewportChange, true);
+		window.addEventListener("resize", onViewportChange);
 		return () => {
 			document.removeEventListener("mousedown", onDocClick);
 			document.removeEventListener("keydown", onKey);
+			window.removeEventListener("scroll", onViewportChange, true);
+			window.removeEventListener("resize", onViewportChange);
 		};
 	}, [open]);
 
 	const runAndClose = (fn: () => void) => () => {
-		setOpen(false);
+		close();
 		fn();
 	};
 
@@ -2086,8 +2124,9 @@ function RowMenuButton({
 			style={{ position: "relative", display: "inline-flex", marginRight: -12 }}
 		>
 			<button
+				ref={btnRef}
 				type="button"
-				onClick={() => setOpen((o) => !o)}
+				onClick={() => (open ? close() : openMenu())}
 				aria-haspopup="menu"
 				aria-expanded={open}
 				title="More actions"
@@ -2127,19 +2166,26 @@ function RowMenuButton({
 					<circle cx="7" cy="11" r="1.3" />
 				</svg>
 			</button>
-			{open ? (
+			{open && anchor ? (
 				<div
 					role="menu"
 					style={{
-						position: "absolute",
-						top: "calc(100% + 4px)",
-						right: 0,
+						// `position: fixed` at the button's viewport-space
+						// bottom-right corner lets the menu escape the group
+						// box's `overflow: hidden` (see `GroupSection`) which
+						// used to clip the last item when the row lived in a
+						// group. `translateX(-100%)` right-aligns the menu
+						// to the button without needing to know its width.
+						position: "fixed",
+						top: anchor.top,
+						left: anchor.left,
+						transform: "translateX(-100%)",
 						minWidth: 160,
 						background: T.surfaceHi,
 						border: `0.5px solid ${T.border}`,
 						borderRadius: 8,
 						padding: 4,
-						zIndex: 50,
+						zIndex: 1000,
 						boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
 					}}
 				>

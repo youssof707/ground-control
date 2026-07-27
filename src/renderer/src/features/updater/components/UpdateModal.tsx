@@ -192,26 +192,6 @@ function renderBody({
 				<div className="modal-message">
 					You're running v{info.currentVersion}. Install v{info.latestVersion}?
 				</div>
-				{info.releaseNotes ? (
-					<div
-						style={{
-							fontSize: 12,
-							lineHeight: 1.5,
-							color: "oklch(0.72 0.008 70)",
-							background: "oklch(0.18 0.006 60)",
-							border: "0.5px solid oklch(0.28 0.008 60)",
-							borderRadius: 8,
-							padding: "10px 12px",
-							marginBottom: 16,
-							maxHeight: 200,
-							overflow: "auto",
-							whiteSpace: "pre-wrap",
-							fontFamily: "ui-monospace, SF Mono, Menlo, monospace",
-						}}
-					>
-						{info.releaseNotes}
-					</div>
-				) : null}
 				<div className="modal-actions">
 					<button className="btn" onClick={onClose}>
 						Later

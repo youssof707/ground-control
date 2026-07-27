@@ -13,6 +13,7 @@ import { initialize as initializeReadStore } from "./core/store/read_state";
 import { initialize as initializeSessionNotesStore } from "./core/store/session_notes";
 import { initialize as initializeWorktreesStore } from "./core/store/worktrees";
 import { initialize as initializeSessionGroupsStore } from "./core/store/session_groups";
+import { initialize as initializeSupportedModelsStore } from "./core/store/supported_models";
 import {
 	initialize as initializeAppSettingsStore,
 	get as getAppSettings,
@@ -166,6 +167,7 @@ app.whenReady().then(async () => {
 		await initializeSessionNotesStore(dataDir);
 		await initializeWorktreesStore(dataDir);
 		await initializeSessionGroupsStore(dataDir);
+		await initializeSupportedModelsStore(dataDir);
 	} catch (err) {
 		console.error(`[ccw] failed to initialize store at ${dataDir}:`, err);
 		app.exit(1);

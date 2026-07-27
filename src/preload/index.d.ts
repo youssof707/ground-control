@@ -19,7 +19,12 @@ import type {
 	CreateSessionGroupInput,
 	SessionGroup,
 } from "../shared/schemas/session_groups";
-import type { SDKRateLimitInfo } from "@anthropic-ai/claude-agent-sdk";
+import type {
+	ModelInfo,
+	SDKRateLimitInfo,
+} from "@anthropic-ai/claude-agent-sdk";
+
+export type { ModelInfo };
 
 export type RateLimitType = NonNullable<SDKRateLimitInfo["rateLimitType"]>;
 export type RateLimitSnapshot = Partial<Record<RateLimitType, SDKRateLimitInfo>>;
@@ -44,6 +49,13 @@ declare global {
 				sessionId: string,
 				mode: SessionMode,
 			) => Promise<void>;
+			setSessionModel: (
+				sessionId: string,
+				model?: string,
+			) => Promise<void>;
+			getSupportedModels: (
+				sessionId: string,
+			) => Promise<ModelInfo[] | null>;
 			respondPermission: (decision: PermissionDecision) => void;
 			listSessions: () => Promise<ClaudeSessionFull[]>;
 			deleteSession: (sessionId: string) => Promise<void>;

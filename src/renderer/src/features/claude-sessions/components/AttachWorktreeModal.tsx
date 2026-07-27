@@ -441,7 +441,7 @@ function ExistingRow({
 }: {
 	worktree: Worktree;
 	onClick: () => void;
-	onDelete: () => void;
+	onDelete: () => Promise<void>;
 }) {
 	const [hover, setHover] = useState(false);
 	const sessionCount = worktree.sessionIds.length;
@@ -545,16 +545,30 @@ const CONFIRM_REVERT_MS = 3000;
  * stopped from bubbling so hitting the trash doesn't also fire the row's
  * attach handler.
  */
-function DeleteWorktreeButton({ onDelete }: { onDelete: () => void }) {
+function DeleteWorktreeButton({
+	onDelete,
+}: {
+	onDelete: () => Promise<void>;
+}) {
 	const [confirming, setConfirming] = useState(false);
+	const [deleting, setDeleting] = useState(false);
 	const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	// Guard against setState after the row unmounts — the success path removes
+	// this worktree from the parent's `existing` list, which unmounts us before
+	// the awaited IPC settles. Only the failure path stays mounted long enough
+	// to need the `setDeleting(false)` reset.
+	const mountedRef = useRef(true);
 	useEffect(() => {
 		return () => {
+			mountedRef.current = false;
 			if (timerRef.current) clearTimeout(timerRef.current);
 		};
 	}, []);
-	const handleClick = (e: ReactMouseEvent<HTMLButtonElement>) => {
+	const handleClick = async (e: ReactMouseEvent<HTMLButtonElement>) => {
 		e.stopPropagation();
+		// Ignore stray clicks while the IPC is in flight — the button is also
+		// `disabled` in that branch, but keyboard/synthetic paths bypass that.
+		if (deleting) return;
 		if (!confirming) {
 			setConfirming(true);
 			timerRef.current = setTimeout(() => {
@@ -568,8 +582,44 @@ function DeleteWorktreeButton({ onDelete }: { onDelete: () => void }) {
 			timerRef.current = null;
 		}
 		setConfirming(false);
-		onDelete();
+		setDeleting(true);
+		try {
+			await onDelete();
+		} finally {
+			if (mountedRef.current) setDeleting(false);
+		}
 	};
+	if (deleting) {
+		// Same pill dimensions/border as the "Confirm delete?" branch so the
+		// row doesn't reflow when we swap in the spinner. Spinner CSS is the
+		// shared `.asyncy-btn-spinner` from index.css (14×14, fits the pill).
+		return (
+			<button
+				type="button"
+				disabled
+				aria-busy
+				aria-label="Deleting worktree"
+				style={{
+					padding: "4px 10px",
+					borderRadius: 6,
+					border: `0.5px solid ${T.dangerBorder}`,
+					background: T.dangerSoft,
+					color: T.danger,
+					fontSize: 11.5,
+					fontWeight: 500,
+					fontFamily: T.sans,
+					lineHeight: 1.2,
+					cursor: "default",
+					flexShrink: 0,
+					display: "inline-flex",
+					alignItems: "center",
+					justifyContent: "center",
+				}}
+			>
+				<span className="asyncy-btn-spinner" aria-hidden />
+			</button>
+		);
+	}
 	if (confirming) {
 		return (
 			<button

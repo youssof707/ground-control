@@ -152,6 +152,18 @@ export const ClaudeSessionSchema = z.object({
 	 * resolveEffectiveCwd`. Displayed to the user as a badge above the
 	 * session title (label = worktree's `displayName`). */
 	worktreeId: z.string().optional(),
+	/** Requested model override for the session's SDK query (e.g.
+	 * "claude-opus-4-6"). Passed to the SDK at query start and switchable
+	 * live via `SessionManager.setModel`. Unset = the CLI default model
+	 * (~/.claude settings). Note this is the *requested* model — the model
+	 * actually in use is derived in the renderer from the SDK message
+	 * stream, which self-corrects on fallback flips. */
+	model: z.string().optional(),
+	/** When the model override last changed (Date.now()). Lets the renderer
+	 * distinguish "switch requested, no response yet" (label shows the new
+	 * model as pending) from "SDK answered with a different model after the
+	 * switch" (label trusts the stream — e.g. a fallback flip). */
+	modelChangedAt: z.number().optional(),
 	/** Sidebar session group the row is filed under. Mutable (unlike
 	 * `worktreeId`): set/cleared via `groups:setSessionGroup`. Membership
 	 * survives archiving — an archived member is merely hidden with the
@@ -183,5 +195,6 @@ export const StartSessionInputSchema = z.object({
 	cwd: z.string(),
 	mode: SessionModeSchema.optional(),
 	worktreeId: z.string().optional(),
+	model: z.string().optional(),
 });
 export type StartSessionInput = z.infer<typeof StartSessionInputSchema>;

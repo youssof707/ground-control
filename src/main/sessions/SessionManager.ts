@@ -1,6 +1,7 @@
 import {
 	forkSession as sdkForkSession,
 	query,
+	type ModelInfo,
 	type Options,
 	type Query,
 	type SDKMessage,
@@ -34,6 +35,7 @@ import {
 } from "./git";
 import * as sessionStore from "../core/store/claude_session";
 import * as worktreesStore from "../core/store/worktrees";
+import * as supportedModelsStore from "../core/store/supported_models";
 import * as rateLimitTracker from "./RateLimitTracker";
 import * as windows from "../windows";
 
@@ -129,8 +131,23 @@ export class SessionManager {
 	// (which lazy-creates entries from upsert payloads). UUIDs are random,
 	// so we don't need to evict — one entry per delete per process lifetime.
 	private deletedIds = new Set<string>();
+	// In-RAM copy of the SDK's supported-models list. Seeded from the on-disk
+	// `supported_models` store at construction and refreshed on every
+	// successful live-query fetch. Falls back to null only when this process
+	// has never seen a list AND the store had nothing persisted (fresh
+	// install). Renderer callers get the static FALLBACK_MODELS stub only in
+	// that null case; every other path serves a real SDK-derived list.
+	private supportedModelsCache: ModelInfo[] | null;
 
-	constructor(private broker: PermissionBroker) {}
+	constructor(private broker: PermissionBroker) {
+		// Seed synchronously from the already-initialized on-disk store so the
+		// first `supportedModels()` call from the renderer — which may arrive
+		// before any session has a live query — can serve a real list right
+		// away. Cast is safe: what we persist is exactly what the SDK returned,
+		// with unknown SDK fields preserved via `.passthrough()`.
+		this.supportedModelsCache =
+			(supportedModelsStore.get() as ModelInfo[] | null) ?? null;
+	}
 
 	/**
 	 * Mark a session id as deleted. After this point, `send()` drops any
@@ -203,6 +220,7 @@ export class SessionManager {
 			// in StartSessionInput if it ever wants to.
 			mode: input.mode ?? "plan",
 			worktreeId: input.worktreeId,
+			model: input.model,
 		};
 
 		const fullForPersist: ClaudeSessionFull = { ...session, messages: [] };
@@ -323,6 +341,10 @@ export class SessionManager {
 			startCommit,
 			sdkSessionId: newSdkId,
 			mode: parent.mode,
+			// Fork inherits the parent's model override — same conversation,
+			// same expectations about which model continues it.
+			model: parent.model,
+			modelChangedAt: parent.modelChangedAt,
 			// Fork inherits parent's worktree binding — both sessions share
 			// the same on-disk checkout. The SDK-side sessions are
 			// independently forked (separate conversation threads), but tools
@@ -371,6 +393,8 @@ export class SessionManager {
 			sdkSessionId: newSessionFull.sdkSessionId,
 			mode: newSessionFull.mode,
 			worktreeId: newSessionFull.worktreeId,
+			model: newSessionFull.model,
+			modelChangedAt: newSessionFull.modelChangedAt,
 			groupId: newSessionFull.groupId,
 		};
 
@@ -439,6 +463,10 @@ export class SessionManager {
 			// when the store loaded them.
 			mode: persisted.mode,
 			worktreeId: persisted.worktreeId,
+			// Persisted model override survives restarts — runLoop reads it
+			// into the SDK options below.
+			model: persisted.model,
+			modelChangedAt: persisted.modelChangedAt,
 		};
 
 		await sessionStore.updateSession(persisted.id, {
@@ -550,6 +578,9 @@ export class SessionManager {
 				//                                    other tools still hit the broker)
 				permissionMode: sdkPermissionModeFor(session.mode),
 				pathToClaudeCodeExecutable: resolveClaudeBinary(),
+				// Per-session model override. Unset = the CLI default model, so
+				// we only pass the key when the user picked one explicitly.
+				...(session.model ? { model: session.model } : {}),
 				canUseTool: async (toolName, toolInput) => {
 					const result = await this.broker.ask({
 						sessionId: id,
@@ -838,6 +869,82 @@ export class SessionManager {
 		}
 		await sessionStore.updateSession(sessionId, { mode });
 		this.send("session:patch", { sessionId, mode });
+	}
+
+	/**
+	 * Set (or clear, with `undefined`) the session's model override.
+	 * Mirrors `setMode`: live-switches the active SDK query when one exists
+	 * (applies from the next turn), and always persists + broadcasts so
+	 * inactive sessions pick the model up on their next resume.
+	 */
+	async setModel(sessionId: string, model: string | undefined): Promise<void> {
+		const modelChangedAt = Date.now();
+		const entry = this.sessions.get(sessionId);
+		if (entry) {
+			if (entry.session.model === model) return;
+			entry.session.model = model;
+			entry.session.modelChangedAt = modelChangedAt;
+			try {
+				await entry.queryRef.current?.setModel(model);
+			} catch (err) {
+				console.error("[ccw] setModel failed:", err);
+			}
+		}
+		await sessionStore.updateSession(sessionId, { model, modelChangedAt });
+		this.send("session:patch", { sessionId, model, modelChangedAt });
+	}
+
+	/**
+	 * List the models the SDK reports as available. Prefers the requested
+	 * session's live query, then falls back to *any* live query in the app,
+	 * then to the cached list from an earlier fetch. Returns null only when
+	 * no session has ever produced a list this process — callers fall back to
+	 * a static list in that case.
+	 */
+	async supportedModels(sessionId: string): Promise<ModelInfo[] | null> {
+		const preferred = this.sessions.get(sessionId)?.queryRef.current;
+		type LiveQuery = NonNullable<typeof preferred>;
+		const tried = new Set<LiveQuery>();
+		const attempt = async (
+			q: LiveQuery | null | undefined,
+		): Promise<ModelInfo[] | null> => {
+			if (!q || tried.has(q)) return null;
+			tried.add(q);
+			try {
+				const list = await q.supportedModels();
+				if (list && list.length > 0) {
+					this.supportedModelsCache = list;
+					// Fire-and-forget persist. The store's enqueue serializes
+					// writes, so overlapping fetches from different sessions
+					// can't corrupt the file. Errors are non-fatal — we already
+					// have the list in RAM for this process.
+					void supportedModelsStore.set(list).catch((err) => {
+						console.error(
+							"[ccw] supportedModels persist failed:",
+							err,
+						);
+					});
+					return list;
+				}
+				return null;
+			} catch (err) {
+				console.error("[ccw] supportedModels failed:", err);
+				return null;
+			}
+		};
+
+		const fromPreferred = await attempt(preferred);
+		if (fromPreferred) return fromPreferred;
+
+		// Piggyback on any other session's live query — the model list is
+		// process-wide (depends on CLI version + auth), so any query answers
+		// the same question.
+		for (const entry of this.sessions.values()) {
+			const list = await attempt(entry.queryRef.current);
+			if (list) return list;
+		}
+
+		return this.supportedModelsCache;
 	}
 
 	async interrupt(sessionId: string) {

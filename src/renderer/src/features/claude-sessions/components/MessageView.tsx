@@ -345,7 +345,17 @@ function MenuItem({
 
 function UserMessage({ sdk }: { sdk: SdkLike }) {
 	const blocks = blocksOfSdk(sdk);
-	const isToolResult = blocks.length > 0 && blocks[0].type === "tool_result";
+	// Skip user turns with nothing to show — the SDK synthesises empty
+	// user messages around some flows (failed `setModel`, cancelled turns,
+	// tool-only bookkeeping) and rendering them leaves a hollow bubble in
+	// the transcript. A "visible" block is any non-text block, or a text
+	// block whose text isn't just whitespace.
+	const hasVisibleContent = blocks.some((b) =>
+		b.type === "text" ? (b.text ?? "").trim().length > 0 : true,
+	);
+	if (!hasVisibleContent) return null;
+
+	const isToolResult = blocks[0].type === "tool_result";
 
 	if (isToolResult) {
 		return (

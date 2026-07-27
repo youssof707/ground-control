@@ -172,6 +172,21 @@ export function registerSessionsHandlers(): SessionManager {
 			broadcast("state:changed", undefined, e.sender.id);
 		},
 	);
+	ipcMain.handle(
+		"session:setModel",
+		async (e, payload: { sessionId: string; model?: string }) => {
+			await manager.setModel(payload.sessionId, payload.model);
+			// Skip the originator — its UI updated from the IPC response and from
+			// the existing `session:patch` broadcast SessionManager fires.
+			broadcast("state:changed", undefined, e.sender.id);
+		},
+	);
+	// Returns the SDK's model list via the session's live query, or null when
+	// the session has no active loop — the renderer falls back to a static
+	// list in that case.
+	ipcMain.handle("session:supportedModels", (_e, sessionId: string) =>
+		manager.supportedModels(sessionId),
+	);
 	ipcMain.handle("sessions:list", () => sessionStore.listSessions());
 	ipcMain.handle("permissions:list", () => broker.listPending());
 	ipcMain.on("notifications:setUnreadCount", (_e, count: number) => {

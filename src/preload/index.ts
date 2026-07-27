@@ -34,6 +34,10 @@ const claude = {
 		ipcRenderer.invoke("session:fork", { sessionId, messageId }),
 	setSessionMode: (sessionId: string, mode: SessionMode) =>
 		ipcRenderer.invoke("session:setMode", { sessionId, mode }),
+	setSessionModel: (sessionId: string, model?: string) =>
+		ipcRenderer.invoke("session:setModel", { sessionId, model }),
+	getSupportedModels: (sessionId: string) =>
+		ipcRenderer.invoke("session:supportedModels", sessionId),
 	respondPermission: (decision: PermissionDecision) =>
 		ipcRenderer.send("permission:respond", decision),
 	listSessions: () => ipcRenderer.invoke("sessions:list"),
