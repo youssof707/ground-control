@@ -24,6 +24,7 @@ import {
 	registerGroupsHandlers,
 	pruneGroupIfEmpty,
 } from "./groupsHandlers";
+import { registerUpdaterHandlers } from "./updaterHandlers";
 
 /**
  * Open the native macOS "choose a directory" dialog. Returns the absolute
@@ -82,6 +83,7 @@ export function registerSessionsHandlers(): SessionManager {
 	registerRateLimitHandlers();
 	registerWorktreesHandlers();
 	registerGroupsHandlers();
+	registerUpdaterHandlers();
 
 	ipcMain.handle("session:start", async (e, input: StartSessionInput) => {
 		// Guard against stale `cwd` values (e.g. a `lastUsedWorkspace` whose

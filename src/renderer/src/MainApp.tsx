@@ -8,6 +8,8 @@ import { Route, Routes, useMatch, useParams } from "react-router-dom";
 import { useSessionsBootstrap } from "./features/claude-sessions/hooks/useSessionsBootstrap";
 import { useNotificationRouter } from "./features/claude-sessions/hooks/useNotificationRouter";
 import { useDockUnreadBadge } from "./features/claude-sessions/hooks/useDockUnreadBadge";
+import { useUpdater } from "./features/updater/hooks/useUpdater";
+import { UpdateModal } from "./features/updater/components/UpdateModal";
 import { SessionsList } from "./features/claude-sessions/components/SessionsList";
 import { SessionChat } from "./features/claude-sessions/components/SessionChat";
 import { InboxSidebar } from "./features/claude-sessions/components/InboxSidebar";
@@ -31,6 +33,7 @@ export default function MainApp() {
 	useSessionsBootstrap();
 	useNotificationRouter();
 	useDockUnreadBadge();
+	useUpdater();
 	const [rightPanel, setRightPanel] = useState<RightPanel>(null);
 	return (
 		<div
@@ -48,6 +51,7 @@ export default function MainApp() {
 			    rather than floating fixed over the window corner. */}
 			<AppNav rightPanel={rightPanel} setRightPanel={setRightPanel} />
 			<MainBody rightPanel={rightPanel} setRightPanel={setRightPanel} />
+			<UpdateModal />
 		</div>
 	);
 }

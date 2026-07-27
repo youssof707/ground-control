@@ -98,10 +98,35 @@ function createWindow(): BrowserWindow {
 
 function buildMenu(): Electron.Menu {
 	const isMac = process.platform === "darwin";
+	// Custom app menu so we can insert "Check for Updates…" in the standard
+	// macOS location (right below "About"). Otherwise identical to the default
+	// `{ role: "appMenu" }` template.
+	const appMenu: Electron.MenuItemConstructorOptions = {
+		role: "appMenu",
+		submenu: [
+			{ role: "about" },
+			{
+				label: "Check for Updates…",
+				click: () => {
+					// The renderer owns the UX (modal, progress, "you're up to
+					// date" toast). Main just pings — the check itself runs via
+					// IPC from the renderer so both entry points (menu click,
+					// startup check) flow through the same code path.
+					windows.broadcast("updater:menu-triggered", {});
+				},
+			},
+			{ type: "separator" },
+			{ role: "services" },
+			{ type: "separator" },
+			{ role: "hide" },
+			{ role: "hideOthers" },
+			{ role: "unhide" },
+			{ type: "separator" },
+			{ role: "quit" },
+		],
+	};
 	const template: Electron.MenuItemConstructorOptions[] = [
-		...(isMac
-			? ([{ role: "appMenu" }] as Electron.MenuItemConstructorOptions[])
-			: []),
+		...(isMac ? [appMenu] : []),
 		{
 			label: "File",
 			submenu: [

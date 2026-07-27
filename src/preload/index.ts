@@ -93,6 +93,9 @@ const claude = {
 		ipcRenderer.invoke("groups:rename", { groupId, name }),
 	getAppInfo: () => ipcRenderer.invoke("appInfo:get"),
 	toggleDevTools: () => ipcRenderer.invoke("devtools:toggle"),
+	checkForUpdate: () => ipcRenderer.invoke("updater:check"),
+	installUpdate: (downloadUrl: string) =>
+		ipcRenderer.invoke("updater:install", downloadUrl),
 	on: (channel: string, fn: (payload: unknown) => void) => {
 		const listener = (_e: IpcRendererEvent, payload: unknown) => fn(payload);
 		ipcRenderer.on(channel, listener);

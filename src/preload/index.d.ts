@@ -89,6 +89,16 @@ declare global {
 				storeFolder: string;
 			}>;
 			toggleDevTools: () => Promise<void>;
+			checkForUpdate: () => Promise<{
+				available: boolean;
+				currentVersion: string;
+				latestVersion: string | null;
+				downloadUrl: string | null;
+				releaseUrl: string | null;
+				releaseNotes: string | null;
+				error?: string;
+			}>;
+			installUpdate: (downloadUrl: string) => Promise<void>;
 			on: (channel: string, fn: (payload: unknown) => void) => () => void;
 		};
 	}
