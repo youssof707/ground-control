@@ -49,10 +49,15 @@ jobs:
         run: git push --follow-tags origin HEAD:main
 
       - name: Build (electron-vite + electron-builder)
-        run: npm run build
+        # Inline the steps from `npm run build` so we can pass `--publish never`
+        # to electron-builder. Without it, electron-builder detects CI and tries
+        # to auto-publish to GitHub, which requires GH_TOKEN and fails. We
+        # publish ourselves in the next step via softprops/action-gh-release.
+        run: |
+          npm run clean
+          npx electron-vite build
+          npx electron-builder --publish never
         env:
-          # electron-builder auto-uploads only when we tell it to; we handle
-          # the release ourselves below, so leave GH_TOKEN unset here.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
       - name: Create GitHub Release with dmg attached
