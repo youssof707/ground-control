@@ -27,18 +27,26 @@ import * as windows from "./windows";
 
 let server: FastifyInstance | null = null;
 let sessionManager: SessionManager | null = null;
+// Single flag governing the shutdown sequence. Set synchronously — either at
+// the top of `before-quit` when there's nothing to prompt about, or inside the
+// dialog resolution *before* re-issuing `app.quit()`. Anything downstream that
+// needs to know "are we tearing down?" (the window `close` handler, re-entered
+// `before-quit`) reads this one flag. No async races.
 let isQuitting = false;
-let confirmedQuit = false;
 
 const preloadPath = join(__dirname, "../preload/index.mjs");
 
 function createWindow(): BrowserWindow {
-	const offset = windows.count() * 24;
+	// Hard single-window guard. Any accidental caller (menu action, IPC, etc.)
+	// gets bounced to the existing window instead of stamping out a second one.
+	const existing = windows.getPrimary();
+	if (existing) {
+		windows.showAndFocusAny();
+		return existing;
+	}
 	const win = new BrowserWindow({
 		width: 1200,
 		height: 800,
-		x: offset > 0 ? offset : undefined,
-		y: offset > 0 ? offset : undefined,
 		show: false,
 		title: "Ground Control",
 		webPreferences: {
@@ -79,13 +87,16 @@ function createWindow(): BrowserWindow {
 	});
 
 	win.on("close", (event) => {
+		// Two cases:
+		//   1. `isQuitting` is already true — the quit sequence is committed,
+		//      let the window destroy so `will-quit` can fire.
+		//   2. Fresh close (red button, Cmd+W) — funnel through `app.quit()`
+		//      so the "N sessions active" dialog owns whether we actually
+		//      quit. If the user cancels the dialog, we prevented default
+		//      here so the window stays open.
 		if (isQuitting) return;
-		// Keep the app alive when the last window is closed by hiding instead
-		// of destroying — so the dock icon can re-show it on macOS. Other
-		// windows close normally.
-		if (windows.count() > 1) return;
 		event.preventDefault();
-		win.hide();
+		app.quit();
 	});
 
 	if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
@@ -131,17 +142,7 @@ function buildMenu(): Electron.Menu {
 		...(isMac ? [appMenu] : []),
 		{
 			label: "File",
-			submenu: [
-				{
-					label: "New Window",
-					accelerator: "CommandOrControl+N",
-					click: () => {
-						createWindow();
-					},
-				},
-				{ type: "separator" },
-				isMac ? { role: "close" } : { role: "quit" },
-			],
+			submenu: [isMac ? { role: "close" } : { role: "quit" }],
 		},
 		{ role: "editMenu" },
 		{ role: "viewMenu" },
@@ -242,20 +243,26 @@ app.whenReady().then(async () => {
 	);
 
 	app.on("activate", () => {
-		const existing = windows.getPrimary();
-		if (existing) {
+		if (windows.getPrimary()) {
 			windows.showAndFocusAny();
-		} else if (BrowserWindow.getAllWindows().length === 0) {
-			createWindow();
+			return;
 		}
+		createWindow();
 	});
 });
 
-app.on("before-quit", async (event) => {
-	if (confirmedQuit) {
-		isQuitting = true;
-		return;
-	}
+// NOTE: this handler is intentionally NOT async. Electron does not await
+// event listeners — an `async` handler that `await`s a dialog lets Electron
+// continue tearing things down (closing windows, firing subsequent events)
+// while the dialog is still open. That's what caused the "Cmd+Q needs two
+// tries" bug: `event.preventDefault()` was called synchronously but the flag
+// bookkeeping happened after the await, and re-entered events raced past it.
+//
+// New shape: preventDefault + fire the dialog + resolve via `.then()`. Flip
+// `isQuitting` synchronously *before* re-issuing `app.quit()` so the second
+// pass of this handler (and the window `close` handler) short-circuit cleanly.
+app.on("before-quit", (event) => {
+	if (isQuitting) return;
 
 	const active = sessionManager?.activeCount ?? 0;
 	if (active === 0) {
@@ -276,35 +283,51 @@ app.on("before-quit", async (event) => {
 		cancelId: 0,
 	};
 	const focused = windows.getPrimary();
-	const result = focused
-		? await dialog.showMessageBox(focused, opts)
-		: await dialog.showMessageBox(opts);
-
-	if (result.response === 1) {
-		confirmedQuit = true;
+	const p = focused
+		? dialog.showMessageBox(focused, opts)
+		: dialog.showMessageBox(opts);
+	p.then((result) => {
+		if (result.response !== 1) return; // Cancel — leave everything as-is.
+		isQuitting = true; // MUST be set before app.quit() so re-entry sees it.
 		sessionManager?.cancelAll();
 		app.quit();
-	}
+	}).catch((err) => {
+		console.error("[ccw] quit-confirm dialog errored:", err);
+	});
 });
 
-app.on("will-quit", async (event) => {
-	if (server) {
-		event.preventDefault();
+// The load-bearing fix. Previously this called `app.quit()` after async
+// cleanup, which re-entered the entire quit cycle and could leave the
+// process alive (blocking the auto-update swap script's parent-PID wait).
+// New shape:
+//   1. `server = null` synchronously — makes this handler idempotent so a
+//      re-entered `will-quit` is a no-op.
+//   2. Await cleanup off the event loop.
+//   3. `app.exit(0)` — hard-exits the process. Bypasses will-quit re-entry
+//      and terminates regardless of any leaked handles / open sockets that
+//      might otherwise keep Node's event loop alive.
+app.on("will-quit", (event) => {
+	if (server === null) return;
+	event.preventDefault();
+	const s = server;
+	server = null;
+	void (async () => {
 		try {
-			await server.close();
+			await s.close();
 		} catch (err) {
 			console.error("[ccw] error closing fastify:", err);
 		}
-		server = null;
 		try {
 			await flushStore();
 		} catch (err) {
 			console.error("[ccw] error flushing store:", err);
 		}
-		app.quit();
-	}
+		app.exit(0);
+	})();
 });
 
 app.on("window-all-closed", () => {
-	// No-op on macOS — keep app alive so dock icon click can reopen the window.
+	// Single-window app: no windows = quit. Belt-and-suspenders in case the
+	// OS destroys the window without our `close` handler running.
+	app.quit();
 });
