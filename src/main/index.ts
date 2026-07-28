@@ -21,6 +21,7 @@ import {
 } from "./core/store/app_settings";
 import { resolveDataDir } from "./core/store/data_dir";
 import { registerSessionsHandlers } from "./ipc/sessionsHandlers";
+import { cleanupDuplicateInstalls } from "./updater";
 import type { SessionManager } from "./sessions/SessionManager";
 import * as windows from "./windows";
 
@@ -157,6 +158,25 @@ app.whenReady().then(async () => {
 	});
 
 	Menu.setApplicationMenu(buildMenu());
+
+	// Silently sweep /Applications/ for stray "Ground Control 2.app" /
+	// "Ground Control (1).app" siblings left behind by past botched updates
+	// or manual Finder drags. Fire-and-forget on prod only — in dev the
+	// running app isn't installed to /Applications and there's no
+	// meaningful cleanup to do. Errors are already swallowed inside.
+	if (!is.dev) {
+		cleanupDuplicateInstalls()
+			.then((removed) => {
+				if (removed.length > 0) {
+					console.log(
+						`[ccw] updater: cleaned ${removed.length} duplicate install(s) on startup`,
+					);
+				}
+			})
+			.catch((err) => {
+				console.warn("[ccw] updater: startup cleanup errored:", err);
+			});
+	}
 
 	const dataDir = resolveDataDir();
 	console.log(`[ccw] store dataDir: ${dataDir} (dev=${is.dev})`);

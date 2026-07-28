@@ -388,13 +388,20 @@ mv "$STAGE" "$INSTALL"
 echo "[updater] swap complete"
 
 # Reap any lingering "Ground Control 2.app" / "Ground Control (1).app"
-# siblings from past botched updates or manual Finder drag+drop.
+# siblings from past botched updates or manual Finder drag+drop. Match
+# is intentionally narrow — numeric suffix or (N) suffix only — so a
+# hypothetical "Ground Control Beta.app" wouldn't get nuked.
+shopt -s nullglob
 for dupe in /Applications/"Ground Control "*.app /Applications/"Ground Control ("*").app"; do
-  if [ -d "$dupe" ] && [ "$dupe" != "$INSTALL" ]; then
+  [ -d "$dupe" ] || continue
+  [ "$dupe" = "$INSTALL" ] && continue
+  base=$(basename "$dupe")
+  if [[ "$base" =~ ^Ground\ Control\ ([0-9]+|\([0-9]+\))\.app$ ]]; then
     echo "[updater] removing duplicate: $dupe"
     rm -rf "$dupe" || echo "[updater]   (failed, continuing)"
   fi
 done
+shopt -u nullglob
 
 echo "[updater] detaching dmg"
 hdiutil detach ${sq(mountpoint)} -quiet -force || true
@@ -413,10 +420,32 @@ open -n "$INSTALL"
 }
 
 /**
- * The full install flow: download → mount → locate app → schedule swap →
- * quit. Broadcasts status updates so the renderer can show progress.
+ * The full install flow: verify install path → download → mount → locate
+ * app → schedule swap → quit. Broadcasts status updates so the renderer
+ * can show progress.
+ *
+ * The path check runs FIRST, before any status broadcast, so that a
+ * "you're running from ~/Downloads, move me to /Applications first" error
+ * shows up as a plain error modal instead of a stuck "Downloading…" state.
  */
 export async function downloadAndInstall(downloadUrl: string): Promise<void> {
+	// Walk up from the exe path to the .app bundle:
+	//   /Applications/Ground Control.app/Contents/MacOS/Ground Control
+	//     → dirname × 3 → the .app itself.
+	const exe = app.getPath("exe");
+	const runningFrom = resolve(dirname(exe), "..", "..");
+	if (runningFrom !== CANONICAL_INSTALL_PATH) {
+		// Don't guess. If the user launched from ~/Downloads, a DMG mount,
+		// or anywhere else, we'd either be rm/cp'ing a read-only volume
+		// or leaving orphan bundles. Force them to move it first.
+		throw new Error(
+			`Ground Control is running from ${runningFrom}, not ${CANONICAL_INSTALL_PATH}. ` +
+				`Move Ground Control.app into /Applications/ (drag it there in Finder) ` +
+				`and relaunch before updating.`,
+		);
+	}
+	const installedAppPath = CANONICAL_INSTALL_PATH;
+
 	broadcast("updater:status", { phase: "downloading" });
 	const dmgName = basename(new URL(downloadUrl).pathname);
 	const dmgPath = join(tmpdir(), dmgName);
@@ -426,11 +455,21 @@ export async function downloadAndInstall(downloadUrl: string): Promise<void> {
 	const mountpoint = await mountDmg(dmgPath);
 	const newAppPath = await findAppInMount(mountpoint);
 
-	// Where's our currently-installed .app bundle? Walk up from the exe path:
-	// /Applications/Ground Control.app/Contents/MacOS/Ground Control
-	//   → dirname × 3 → the .app itself.
-	const exe = app.getPath("exe");
-	const installedAppPath = resolve(dirname(exe), "..", "..");
+	// Log the attempted transition to the persistent log before the bash
+	// script takes over. If the swap somehow crashes before writing its
+	// own header, at least the log shows what was being attempted.
+	try {
+		const logPath = updaterLogPath();
+		await fs.mkdir(dirname(logPath), { recursive: true });
+		await fs.appendFile(
+			logPath,
+			`[updater] ${new Date().toISOString()} preparing install: ` +
+				`current=${app.getVersion()} url=${downloadUrl} ` +
+				`newApp=${newAppPath}\n`,
+		);
+	} catch {
+		// Non-fatal — log is a nice-to-have.
+	}
 
 	broadcast("updater:status", { phase: "installing" });
 	await scheduleSwapAndRelaunch(
