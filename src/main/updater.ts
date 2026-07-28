@@ -29,6 +29,39 @@ const GH_OWNER = "youssof707";
 const GH_REPO = "ground-control";
 const RELEASES_API = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/releases/latest`;
 
+/**
+ * The one and only place we ever install the app. Deriving the install
+ * target from `app.getPath("exe")` used to bite us: if the user ever
+ * launched from a DMG mount (/Volumes/…) or ~/Downloads, the swap script
+ * would rm/cp against a read-only or unrelated location and silently
+ * fail. Meanwhile Finder's "duplicate name" auto-rename could stamp out
+ * a "Ground Control 2.app" sibling. Force everything through this one
+ * canonical path.
+ */
+const CANONICAL_INSTALL_PATH = "/Applications/Ground Control.app";
+const APPLICATIONS_DIR = "/Applications";
+
+/**
+ * Matches sibling duplicate installs that macOS / Finder / a botched
+ * previous update might have left behind. Explicitly does NOT match the
+ * canonical `Ground Control.app`.
+ *
+ *   "Ground Control 2.app"       ← Finder's numeric suffix
+ *   "Ground Control (1).app"     ← Finder's parenthesized suffix
+ */
+const DUPLICATE_APP_NAME_RE = /^Ground Control(?: \d+| \(\d+\))\.app$/;
+
+/**
+ * Where we tee the swap script's output. macOS convention is
+ * ~/Library/Logs/<appName>/. Electron's `app.getPath('logs')` returns
+ * exactly that (with appName = productName = "Ground Control"). Kept in
+ * a stable location so we can `tail -f` it during postmortems instead of
+ * hunting through /tmp.
+ */
+function updaterLogPath(): string {
+	return join(app.getPath("logs"), "updater.log");
+}
+
 export interface UpdateCheckResult {
 	available: boolean;
 	currentVersion: string;
@@ -233,10 +266,56 @@ async function findAppInMount(mountpoint: string): Promise<string> {
 }
 
 /**
+ * Silently sweep `/Applications/` for sibling duplicate installs and
+ * remove them. Called from two places:
+ *
+ *   1. `app.whenReady()` on every launch, so any lingering
+ *      `Ground Control 2.app` from a previous botched update or a
+ *      user's manual drag-and-drop disappears on next start with zero
+ *      UI prompts.
+ *   2. Inside the swap script, post-copy, so a fresh update also mops
+ *      up before relaunching.
+ *
+ * Failure to remove any individual duplicate is warned-and-swallowed —
+ * we don't want to block startup on a permissions edge case. Returns
+ * the list of removed paths for logging.
+ */
+export async function cleanupDuplicateInstalls(): Promise<string[]> {
+	const removed: string[] = [];
+	let entries: string[];
+	try {
+		entries = await fs.readdir(APPLICATIONS_DIR);
+	} catch (err) {
+		console.warn("[updater] cleanup scan failed:", err);
+		return removed;
+	}
+	for (const name of entries) {
+		if (!DUPLICATE_APP_NAME_RE.test(name)) continue;
+		const p = join(APPLICATIONS_DIR, name);
+		try {
+			await fs.rm(p, { recursive: true, force: true });
+			removed.push(p);
+			console.log(`[updater] removed duplicate install: ${p}`);
+		} catch (err) {
+			console.warn(`[updater] failed to remove duplicate ${p}:`, err);
+		}
+	}
+	return removed;
+}
+
+/**
  * We can't overwrite our own .app bundle while running. Standard macOS
  * hot-swap trick: write a shell script to /tmp that (1) waits for our PID to
- * exit, (2) rms the old app, (3) copies the new one over, (4) detaches the
- * DMG, (5) relaunches. Spawn it detached, then `app.quit()`.
+ * exit, (2) stages the new app under `<install>.new`, (3) rms the old app and
+ * mv's the staged copy over it (never nests — cp -R over an existing dir
+ * would create `<install>/<install>` and then `open -n` would launch the
+ * stale binary), (4) sweeps any `Ground Control N.app` siblings from prior
+ * botched updates, (5) detaches the DMG, (6) relaunches. Spawn it detached,
+ * then `app.quit()`.
+ *
+ * `set -eo pipefail` on top means any step's failure halts the script — no
+ * more "copy silently failed but we relaunched anyway" mystery half-installs.
+ * Errors + the resolved paths are teed to ~/Library/Logs/Ground Control/updater.log.
  */
 async function scheduleSwapAndRelaunch(
 	mountpoint: string,
@@ -248,29 +327,81 @@ async function scheduleSwapAndRelaunch(
 		tmpdir(),
 		`gc-updater-${Date.now()}-${process.pid}.sh`,
 	);
-	const logPath = join(tmpdir(), `gc-updater-${Date.now()}-${process.pid}.log`);
+	const logPath = updaterLogPath();
+	// Make sure the log directory exists — app.getPath('logs') creates it
+	// lazily on some paths but we can't assume that in a detached bash script.
+	await fs.mkdir(dirname(logPath), { recursive: true });
 	// Shell-safe path quoting. Single-quote everything and escape any embedded
 	// single quotes by closing/reopening the quoted string.
 	const sq = (s: string): string => `'${s.replace(/'/g, "'\\''")}'`;
+	const stagePath = `${installedAppPath}.new`;
 	const script = `#!/usr/bin/env bash
-set -u
+set -eo pipefail
 exec >>${sq(logPath)} 2>&1
-echo "[updater] starting swap at $(date)"
+echo "[updater] $(date) starting swap"
+echo "[updater]   install: ${installedAppPath}"
+echo "[updater]   new:     ${newAppPath}"
+echo "[updater]   mount:   ${mountpoint}"
+
 PARENT_PID=${process.pid}
 # Wait up to 30s for the parent app to exit.
 for i in $(seq 1 60); do
   if ! kill -0 "$PARENT_PID" 2>/dev/null; then break; fi
   sleep 0.5
 done
-echo "[updater] parent exited, swapping app"
-rm -rf ${sq(installedAppPath)}
-cp -R ${sq(newAppPath)} ${sq(installedAppPath)}
-echo "[updater] copy done, detaching dmg"
+if kill -0 "$PARENT_PID" 2>/dev/null; then
+  echo "[updater] ERROR: parent $PARENT_PID still alive after 30s, aborting"
+  exit 1
+fi
+echo "[updater] parent exited, staging new bundle"
+
+INSTALL=${sq(installedAppPath)}
+NEW=${sq(newAppPath)}
+STAGE=${sq(stagePath)}
+
+# Refuse to touch anything outside /Applications — defense in depth in
+# case something upstream miscalculated the install path.
+case "$INSTALL" in
+  /Applications/*.app) ;;
+  *)
+    echo "[updater] ERROR: install path outside /Applications: $INSTALL"
+    exit 1
+    ;;
+esac
+
+# Verify the source exists before we touch anything.
+if [ ! -d "$NEW" ]; then
+  echo "[updater] ERROR: new app not found at $NEW"
+  exit 1
+fi
+
+# Stage first — if this fails, the old bundle is still fully intact.
+rm -rf "$STAGE"
+cp -R "$NEW" "$STAGE"
+echo "[updater] staged new bundle at $STAGE"
+
+# Atomic-ish swap. rm the old, mv the staged copy into place. Between
+# rm and mv there's a ~ms window with no bundle at the install path, but
+# no window where a partial copy is presented as the "real" install.
+rm -rf "$INSTALL"
+mv "$STAGE" "$INSTALL"
+echo "[updater] swap complete"
+
+# Reap any lingering "Ground Control 2.app" / "Ground Control (1).app"
+# siblings from past botched updates or manual Finder drag+drop.
+for dupe in /Applications/"Ground Control "*.app /Applications/"Ground Control ("*").app"; do
+  if [ -d "$dupe" ] && [ "$dupe" != "$INSTALL" ]; then
+    echo "[updater] removing duplicate: $dupe"
+    rm -rf "$dupe" || echo "[updater]   (failed, continuing)"
+  fi
+done
+
+echo "[updater] detaching dmg"
 hdiutil detach ${sq(mountpoint)} -quiet -force || true
 rm -f ${sq(dmgPath)}
 rm -f ${sq(scriptPath)}
-echo "[updater] relaunching"
-open -n ${sq(installedAppPath)}
+echo "[updater] relaunching $INSTALL"
+open -n "$INSTALL"
 `;
 	await fs.writeFile(scriptPath, script, { mode: 0o755 });
 	// Spawn detached so the script survives the parent quitting.
