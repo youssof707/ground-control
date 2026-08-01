@@ -109,19 +109,3 @@ export function formatModelName(id: string): string {
 	return bare;
 }
 
-// ─── Fallback model list ─────────────────────────────────────────────────────
-
-/** Shown when the session has no live SDK query to ask (done / errored /
- * not yet resumed), so `getSupportedModels` returned null. Keep in rough
- * sync with current Claude model families — selection still round-trips
- * through the SDK, which validates the id for real. */
-export const FALLBACK_MODELS: {
-	value: string;
-	displayName: string;
-}[] = [
-	{ value: "opus", displayName: "Opus" },
-	{ value: "sonnet", displayName: "Sonnet" },
-	{ value: "haiku", displayName: "Haiku" },
-	{ value: "fable", displayName: "Fable" },
-	{ value: "opusplan", displayName: "Opus Plan" },
-];

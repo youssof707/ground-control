@@ -181,9 +181,11 @@ export function registerSessionsHandlers(): SessionManager {
 			broadcast("state:changed", undefined, e.sender.id);
 		},
 	);
-	// Returns the SDK's model list via the session's live query, or null when
-	// the session has no active loop — the renderer falls back to a static
-	// list in that case.
+	// Returns the CLI's live model list. Uses the session's live query when
+	// one exists, otherwise spawns a transient probe query against the same
+	// binary that would run the real session — so the picker never shows a
+	// model the binary can't actually spawn. Rejects on error; the renderer
+	// surfaces the message in the picker's error slot.
 	ipcMain.handle("session:supportedModels", (_e, sessionId: string) =>
 		manager.supportedModels(sessionId),
 	);

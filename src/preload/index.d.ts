@@ -53,9 +53,7 @@ declare global {
 				sessionId: string,
 				model?: string,
 			) => Promise<void>;
-			getSupportedModels: (
-				sessionId: string,
-			) => Promise<ModelInfo[] | null>;
+			getSupportedModels: (sessionId: string) => Promise<ModelInfo[]>;
 			respondPermission: (decision: PermissionDecision) => void;
 			listSessions: () => Promise<ClaudeSessionFull[]>;
 			deleteSession: (sessionId: string) => Promise<void>;

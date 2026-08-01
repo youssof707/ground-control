@@ -9,13 +9,126 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { app } from "electron";
 import { randomUUID } from "node:crypto";
+import { accessSync, constants as fsConstants } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
+/**
+ * Resolve which `claude` CLI binary the SDK should spawn.
+ *
+ * Prefer the user's globally-installed CLI — it's the one they keep
+ * up-to-date via the official autoupdater and it knows about any models
+ * Anthropic has released since we last shipped. Only fall back to the
+ * binary bundled inside our `node_modules` when no global install is
+ * present; that fallback binary is frozen at whatever ships in the SDK
+ * npm package and can lag behind newer model releases (which is how
+ * "fable" ended up rejected in Ground Control despite working in the
+ * global CLI).
+ *
+ * Search order:
+ *   1. `CLAUDE_CODE_EXECUTABLE` env var (explicit override).
+ *   2. `~/.local/bin/claude` — Anthropic native-installer default.
+ *   3. `~/.claude/local/claude` — legacy Claude Code shim path.
+ *   4. `PATH` walk for `claude` (`claude.exe` on Windows).
+ *   5. Bundled `node_modules/@anthropic-ai/claude-agent-sdk-<plat>-<arch>/claude`.
+ *
+ * Each candidate is probed with `accessSync(p, X_OK)`; broken symlinks
+ * and non-executable entries are skipped silently. The resolved path is
+ * memoized and logged once — critical breadcrumb for support/debugging
+ * because "which binary am I actually running?" is otherwise invisible.
+ */
+let cachedClaudeBinary: string | null = null;
 function resolveClaudeBinary(): string {
+	if (cachedClaudeBinary) return cachedClaudeBinary;
+
+	const isWin = process.platform === "win32";
+	const exe = isWin ? "claude.exe" : "claude";
+
 	const pkg = `@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}`;
-	const ext = process.platform === "win32" ? "claude.exe" : "claude";
-	const root = app.getAppPath().replace(/app\.asar(?!\.unpacked)/, "app.asar.unpacked");
-	return join(root, "node_modules", pkg, ext);
+	const root = app
+		.getAppPath()
+		.replace(/app\.asar(?!\.unpacked)/, "app.asar.unpacked");
+	const bundled = join(root, "node_modules", pkg, exe);
+
+	const candidates: string[] = [];
+	if (process.env.CLAUDE_CODE_EXECUTABLE) {
+		candidates.push(process.env.CLAUDE_CODE_EXECUTABLE);
+	}
+	candidates.push(join(homedir(), ".local", "bin", exe));
+	candidates.push(join(homedir(), ".claude", "local", exe));
+	const pathSep = isWin ? ";" : ":";
+	for (const dir of (process.env.PATH ?? "").split(pathSep)) {
+		if (dir) candidates.push(join(dir, exe));
+	}
+	candidates.push(bundled);
+
+	for (const p of candidates) {
+		try {
+			accessSync(p, fsConstants.X_OK);
+			cachedClaudeBinary = p;
+			console.log(
+				`[ground-control] Using Claude binary: ${p}${
+					p === bundled ? " (bundled)" : ""
+				}`,
+			);
+			return p;
+		} catch {
+			/* not executable / doesn't exist — try next */
+		}
+	}
+
+	cachedClaudeBinary = bundled;
+	console.warn(
+		`[ground-control] No Claude binary resolved; falling back to bundled path ${bundled}`,
+	);
+	return bundled;
+}
+
+/**
+ * Spawn a throw-away Claude query just to enumerate supported models.
+ *
+ * Used by `supportedModels()` when the target session has no live query
+ * (draft, done, errored). The SDK's `supportedModels()` is a control
+ * request that "only works in streaming input mode" — so we open a
+ * streaming prompt that stays idle (never yields, never resolves) while
+ * we ask for the model list, then abort the whole thing.
+ *
+ * The abort has to happen even on success: without it the CLI subprocess
+ * stays alive waiting for the next prompt chunk, leaking a process per
+ * picker open. `try/finally` guarantees teardown even if `supportedModels`
+ * throws (network flake, CLI crash, etc.).
+ *
+ * `cwd` is `homedir()` — the probe doesn't need repo context and picking
+ * an always-valid path avoids ENOENT if the draft's cwd was deleted.
+ */
+async function probeSupportedModels(): Promise<ModelInfo[]> {
+	const abort = new AbortController();
+	// Idle prompt: never yields. The CLI stays running until we abort.
+	// Marked async because the SDK expects an AsyncIterable.
+	const idlePrompt = (async function* (): AsyncGenerator<
+		SDKUserMessage,
+		void,
+		void
+	> {
+		await new Promise<void>((resolve) => {
+			abort.signal.addEventListener("abort", () => resolve(), {
+				once: true,
+			});
+		});
+	})();
+	const q = query({
+		prompt: idlePrompt,
+		options: {
+			cwd: homedir(),
+			pathToClaudeCodeExecutable: resolveClaudeBinary(),
+			abortController: abort,
+		},
+	});
+	try {
+		return await q.supportedModels();
+	} finally {
+		abort.abort();
+	}
 }
 import type {
 	ClaudeSession,
@@ -35,7 +148,6 @@ import {
 } from "./git";
 import * as sessionStore from "../core/store/claude_session";
 import * as worktreesStore from "../core/store/worktrees";
-import * as supportedModelsStore from "../core/store/supported_models";
 import * as rateLimitTracker from "./RateLimitTracker";
 import * as windows from "../windows";
 
@@ -131,23 +243,8 @@ export class SessionManager {
 	// (which lazy-creates entries from upsert payloads). UUIDs are random,
 	// so we don't need to evict — one entry per delete per process lifetime.
 	private deletedIds = new Set<string>();
-	// In-RAM copy of the SDK's supported-models list. Seeded from the on-disk
-	// `supported_models` store at construction and refreshed on every
-	// successful live-query fetch. Falls back to null only when this process
-	// has never seen a list AND the store had nothing persisted (fresh
-	// install). Renderer callers get the static FALLBACK_MODELS stub only in
-	// that null case; every other path serves a real SDK-derived list.
-	private supportedModelsCache: ModelInfo[] | null;
 
-	constructor(private broker: PermissionBroker) {
-		// Seed synchronously from the already-initialized on-disk store so the
-		// first `supportedModels()` call from the renderer — which may arrive
-		// before any session has a live query — can serve a real list right
-		// away. Cast is safe: what we persist is exactly what the SDK returned,
-		// with unknown SDK fields preserved via `.passthrough()`.
-		this.supportedModelsCache =
-			(supportedModelsStore.get() as ModelInfo[] | null) ?? null;
-	}
+	constructor(private broker: PermissionBroker) {}
 
 	/**
 	 * Mark a session id as deleted. After this point, `send()` drops any
@@ -895,56 +992,25 @@ export class SessionManager {
 	}
 
 	/**
-	 * List the models the SDK reports as available. Prefers the requested
-	 * session's live query, then falls back to *any* live query in the app,
-	 * then to the cached list from an earlier fetch. Returns null only when
-	 * no session has ever produced a list this process — callers fall back to
-	 * a static list in that case.
+	 * List the models the CLI actually supports *right now*. Live-only: no
+	 * cache, no hardcoded fallback, no piggyback on other sessions' queries.
+	 *
+	 * The picker's contract is "what will the binary accept if I pick it?" —
+	 * so the answer must come from the same binary that would spawn the
+	 * session. If the requested session has a live query we ask it directly;
+	 * otherwise (draft, done, errored) we spin up a **transient probe query**
+	 * against the same binary purely to enumerate models, then abort it.
+	 * That mirrors what `/model` does in a fresh CLI invocation.
+	 *
+	 * Throws on error rather than returning null/empty — the picker surfaces
+	 * the error message instead of quietly showing a stale list.
 	 */
-	async supportedModels(sessionId: string): Promise<ModelInfo[] | null> {
-		const preferred = this.sessions.get(sessionId)?.queryRef.current;
-		type LiveQuery = NonNullable<typeof preferred>;
-		const tried = new Set<LiveQuery>();
-		const attempt = async (
-			q: LiveQuery | null | undefined,
-		): Promise<ModelInfo[] | null> => {
-			if (!q || tried.has(q)) return null;
-			tried.add(q);
-			try {
-				const list = await q.supportedModels();
-				if (list && list.length > 0) {
-					this.supportedModelsCache = list;
-					// Fire-and-forget persist. The store's enqueue serializes
-					// writes, so overlapping fetches from different sessions
-					// can't corrupt the file. Errors are non-fatal — we already
-					// have the list in RAM for this process.
-					void supportedModelsStore.set(list).catch((err) => {
-						console.error(
-							"[ccw] supportedModels persist failed:",
-							err,
-						);
-					});
-					return list;
-				}
-				return null;
-			} catch (err) {
-				console.error("[ccw] supportedModels failed:", err);
-				return null;
-			}
-		};
-
-		const fromPreferred = await attempt(preferred);
-		if (fromPreferred) return fromPreferred;
-
-		// Piggyback on any other session's live query — the model list is
-		// process-wide (depends on CLI version + auth), so any query answers
-		// the same question.
-		for (const entry of this.sessions.values()) {
-			const list = await attempt(entry.queryRef.current);
-			if (list) return list;
+	async supportedModels(sessionId: string): Promise<ModelInfo[]> {
+		const live = this.sessions.get(sessionId)?.queryRef.current;
+		if (live) {
+			return await live.supportedModels();
 		}
-
-		return this.supportedModelsCache;
+		return await probeSupportedModels();
 	}
 
 	async interrupt(sessionId: string) {
