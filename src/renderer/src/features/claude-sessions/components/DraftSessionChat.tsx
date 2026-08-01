@@ -6,8 +6,10 @@ import { useSettingsStore } from "../stores/useSettingsStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { ImagePasteTextarea } from "./ImagePasteTextarea";
 import { AttachWorktreeModal } from "./AttachWorktreeModal";
+import { ModelPickerModal } from "./ModelPickerModal";
 import { WorktreeChip } from "../../../design/WorktreeChip";
 import { T } from "../../../design/tokens";
+import { formatModelName } from "../lib/sessionModel";
 
 /**
  * Right-pane view for a draft session — one that exists only in the renderer
@@ -34,6 +36,8 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 	const [folderHover, setFolderHover] = useState(false);
 	// Worktree modal state — opens on "Add worktree" button click.
 	const [worktreeModalOpen, setWorktreeModalOpen] = useState(false);
+	// Model picker modal state — opens on the model chip click.
+	const [modelPickerOpen, setModelPickerOpen] = useState(false);
 	// Whether the draft's cwd is a git repo. Determines whether the
 	// "Add worktree" button is visible at all — worktrees are a git
 	// concept, so we hide the affordance entirely for non-git folders
@@ -339,6 +343,39 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 				</div>
 			</div>
 
+			{/* Static analogue of SessionChat's resize-divider row: draws the
+			    same 1px separator above the model bar so the draft footer's
+			    visual chrome matches a real session. No pointer handlers —
+			    there's no transcript to resize yet. */}
+			<div
+				style={{
+					flexShrink: 0,
+					height: 6,
+					display: "flex",
+					alignItems: "center",
+				}}
+				aria-hidden="true"
+			>
+				<div
+					style={{ height: 1, width: "100%", background: T.borderSoft }}
+				/>
+			</div>
+
+			<DraftModelBar
+				model={draft.model}
+				onOpen={() => setModelPickerOpen(true)}
+			/>
+
+			<ModelPickerModal
+				open={modelPickerOpen}
+				sessionId={draftId}
+				currentModel={draft.model}
+				onSelect={(value) =>
+					useDraftSessionsStore.getState().updateDraft({ model: value })
+				}
+				onClose={() => setModelPickerOpen(false)}
+			/>
+
 			<ImagePasteTextarea
 				sessionId={draftId}
 				textareaHeight={inputHeight}
@@ -419,6 +456,66 @@ function folderName(path: string): string {
 // is kept as the "add / not yet attached" affordance — we don't want to
 // borrow the info-accent palette on hover because that reads as a
 // selection state, not an "invite to click."
+// Draft-analogue of SessionTokenBar. Same shell + same clickable-label
+// styling, just without the token count (a draft has no messages yet).
+// Sits between the empty body and the input textarea so the model chip
+// lives in exactly the same on-screen spot it will occupy once the draft
+// is promoted to a real session.
+function DraftModelBar({
+	model,
+	onOpen,
+}: {
+	model: string | undefined;
+	onOpen: () => void;
+}) {
+	const [hover, setHover] = useState(false);
+	const label = model ? formatModelName(model) : "Default";
+	return (
+		<div
+			style={{
+				flexShrink: 0,
+				display: "flex",
+				alignItems: "center",
+				gap: 16,
+				padding: "4px 32px 6px",
+				fontSize: 11,
+				fontFamily: T.mono,
+				color: T.textMute,
+				background: T.win,
+				userSelect: "none",
+			}}
+		>
+			<div
+				style={{
+					maxWidth: 760,
+					margin: "0 auto",
+					width: "100%",
+					display: "flex",
+					alignItems: "center",
+				}}
+			>
+				<button
+					onClick={onOpen}
+					onMouseEnter={() => setHover(true)}
+					onMouseLeave={() => setHover(false)}
+					style={{
+						padding: 0,
+						border: "none",
+						background: "none",
+						font: "inherit",
+						color: hover ? T.text : T.textDim,
+						textDecoration: hover ? "underline" : "none",
+						textUnderlineOffset: 3,
+						cursor: "pointer",
+					}}
+				>
+					{label}
+				</button>
+			</div>
+		</div>
+	);
+}
+
 function AddWorktreeButton({ onClick }: { onClick: () => void }) {
 	const [hover, setHover] = useState(false);
 	return (

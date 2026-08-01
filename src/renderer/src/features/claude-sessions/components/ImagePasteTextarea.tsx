@@ -79,6 +79,11 @@ function createSessionFromDraft(draft: DraftSession): Promise<string> {
 				// and rewires the SDK cwd to the worktree's checkout path
 				// via resolveEffectiveCwd — see SessionManager.run.
 				worktreeId: draft.worktreeId,
+				// Carry the model override the user picked in the draft
+				// header. Undefined = use the CLI default (SessionManager
+				// stamps this onto the session record; the SDK loop reads
+				// it on the first turn).
+				model: draft.model,
 			})
 			.catch((err) => {
 				off?.();

@@ -15,22 +15,37 @@ const DEFAULT_OPTION: ModelOption = {
 };
 
 /**
- * Per-session model picker. Fetches the SDK's own model list via the
- * session's live query when one exists; falls back to a static list for
- * done/errored sessions (the selection still round-trips through the SDK
- * on the next resume, which validates the id for real).
+ * Model picker used by both real sessions (via SessionTokenBar) and draft
+ * sessions (via DraftSessionChat's header). Fetches the SDK's own model
+ * list via the session's live query when one exists; falls back to a
+ * static list otherwise. `sessionId` may be a draft id — the main-side
+ * `SessionManager.supportedModels` gracefully falls through to any other
+ * live query and then to a cached list, so drafts still get the real
+ * SDK list whenever the process has ever seen one.
+ *
+ * Selection is delegated via `onSelect(value)` — the caller decides what
+ * to do with the pick (real sessions call `setSessionModel`; drafts
+ * stash the value on the draft record and forward it to `startSession`
+ * on first send). Errors thrown from `onSelect` surface in the modal's
+ * error slot instead of crashing.
  */
 export function ModelPickerModal({
 	open,
 	sessionId,
 	currentModel,
+	onSelect,
 	onClose,
 }: {
 	open: boolean;
 	sessionId: string;
-	/** The session's *requested* override (`session.model`), not the
-	 * stream-derived label — highlighting reflects what's been asked for. */
+	/** The session's *requested* override (`session.model` or
+	 * `draft.model`), not the stream-derived label — highlighting reflects
+	 * what's been asked for. */
 	currentModel: string | undefined;
+	/** Called with the chosen model id, or `undefined` to clear the
+	 * override. May be async; the modal disables its buttons while the
+	 * promise is pending and surfaces thrown errors in the error slot. */
+	onSelect: (value: string | undefined) => Promise<void> | void;
 	onClose: () => void;
 }) {
 	const [options, setOptions] = useState<ModelOption[]>(FALLBACK_MODELS);
@@ -54,12 +69,21 @@ export function ModelPickerModal({
 				const list = await window.claude.getSupportedModels(sessionId);
 				if (my !== fetchSeq.current) return;
 				if (list && list.length > 0) {
-					setOptions(
-						list.map((m: ModelInfo) => ({
-							value: m.value,
-							displayName: m.displayName,
-						})),
+					// Merge SDK-reported models with FALLBACK_MODELS extras
+					// (e.g. `fable`, `opusplan`) that the SDK's own list omits.
+					// Dedupe by normalized id so bare aliases (`sonnet`) and
+					// full SDK ids (`claude-sonnet-4-5-…`) don't double-render.
+					const sdkOptions = list.map((m: ModelInfo) => ({
+						value: m.value,
+						displayName: m.displayName,
+					}));
+					const seen = new Set(
+						sdkOptions.map((o) => normalizeModelId(o.value)),
 					);
+					const extras = FALLBACK_MODELS.filter(
+						(o) => !seen.has(normalizeModelId(o.value)),
+					);
+					setOptions([...sdkOptions, ...extras]);
 				} else {
 					// No live SDK query (done/errored session) → static list.
 					setOptions(FALLBACK_MODELS);
@@ -94,7 +118,7 @@ export function ModelPickerModal({
 		setSaving(true);
 		setError(null);
 		try {
-			await window.claude.setSessionModel(sessionId, value);
+			await onSelect(value);
 			onClose();
 		} catch (err) {
 			setSaving(false);

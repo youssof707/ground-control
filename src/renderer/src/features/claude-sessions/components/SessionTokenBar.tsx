@@ -141,6 +141,9 @@ export function SessionTokenBar({
 				open={pickerOpen}
 				sessionId={session.id}
 				currentModel={session.model}
+				onSelect={(value) =>
+					window.claude.setSessionModel(session.id, value)
+				}
 				onClose={() => setPickerOpen(false)}
 			/>
 		</div>

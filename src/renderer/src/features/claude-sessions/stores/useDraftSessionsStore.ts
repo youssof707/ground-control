@@ -32,6 +32,13 @@ export interface DraftSession {
 	 * `startSession`, at which point the SessionManager persists the
 	 * binding onto the created session record. */
 	worktreeId?: string;
+	/** Optional model override chosen in the draft header. Undefined = use
+	 * the CLI default. Forwarded to `startSession` on first send;
+	 * SessionManager stamps it onto the created session record and hands
+	 * it to the SDK loop. Same id space as `session.model` (bare aliases
+	 * like `sonnet`, `fable`, or full SDK ids like `claude-sonnet-4-5-…`),
+	 * validated for real by the SDK on the first turn. */
+	model?: string;
 }
 
 interface State {
@@ -41,10 +48,14 @@ interface State {
 		title: string;
 		mode?: SessionMode;
 	}) => DraftSession;
-	// The patch type intentionally allows `worktreeId: undefined` so the
-	// folder-change handler can clear the binding in the same call.
+	// The patch type intentionally allows `worktreeId: undefined` and
+	// `model: undefined` so the folder-change handler can clear the
+	// worktree binding, and the model picker can clear the override back
+	// to the CLI default, in the same call shape.
 	updateDraft: (
-		patch: Partial<Pick<DraftSession, "cwd" | "title" | "mode" | "worktreeId">>,
+		patch: Partial<
+			Pick<DraftSession, "cwd" | "title" | "mode" | "worktreeId" | "model">
+		>,
 	) => void;
 	discardDraft: () => void;
 }
