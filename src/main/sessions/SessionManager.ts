@@ -193,6 +193,73 @@ function roleFromSdkMessage(
 	return "result";
 }
 
+/**
+ * Terminal task states, unioned across the two vocabularies the CLI uses:
+ * `task_updated.patch.status` (pending|running|completed|failed|killed) and
+ * `task_notification.status` (completed|failed|stopped). One set tolerates
+ * either side gaining a value without us having to care which emitted it.
+ */
+const TERMINAL_TASK_STATUSES = new Set([
+	"completed",
+	"failed",
+	"killed",
+	"stopped",
+]);
+
+/**
+ * Read `subtype` off a system message defensively, as a plain string.
+ *
+ * We spawn the user's **global** `claude` binary whenever one exists (see
+ * `resolveClaudeBinary` above), and that binary is routinely newer than the
+ * `sdk.d.ts` we compile against. Subtypes like `background_tasks_changed`
+ * and `thinking_tokens` are emitted by the CLI today but aren't in the SDK's
+ * `SDKMessage` union at all — so `msg.subtype === "background_tasks_changed"`
+ * doesn't even typecheck. Reading through a cast makes an unknown subtype a
+ * silent no-op instead of a compile error or a runtime crash.
+ */
+function systemSubtype(msg: SDKMessage): string | null {
+	if (msg.type !== "system") return null;
+	const st = (msg as { subtype?: unknown }).subtype;
+	return typeof st === "string" ? st : null;
+}
+
+/**
+ * Task ids from a `background_tasks_changed` snapshot.
+ *
+ * Returns `null` — not `[]` — when `tasks` isn't an array. That distinction
+ * is load-bearing: a malformed or renamed payload must be *ignored*, never
+ * mistaken for "no background tasks are running".
+ */
+function backgroundTaskIds(msg: SDKMessage): string[] | null {
+	const tasks = (msg as { tasks?: unknown }).tasks;
+	if (!Array.isArray(tasks)) return null;
+	const ids: string[] = [];
+	for (const t of tasks) {
+		const id = (t as { task_id?: unknown })?.task_id;
+		if (typeof id === "string") ids.push(id);
+	}
+	return ids;
+}
+
+function taskIdOf(msg: SDKMessage): string | null {
+	const id = (msg as { task_id?: unknown }).task_id;
+	return typeof id === "string" ? id : null;
+}
+
+/**
+ * True when a `task_updated` / `task_notification` message means the task is
+ * over. Reads both fields — `task_notification` carries `status` at the top
+ * level, `task_updated` nests it under `patch`.
+ */
+function taskStatusIsTerminal(msg: SDKMessage): boolean {
+	const m = msg as { status?: unknown; patch?: { status?: unknown } };
+	if (typeof m.status === "string" && TERMINAL_TASK_STATUSES.has(m.status)) {
+		return true;
+	}
+	const patched = m.patch?.status;
+	return typeof patched === "string" && TERMINAL_TASK_STATUSES.has(patched);
+}
+
 function extractSdkSessionId(msg: SDKMessage): string | undefined {
 	const sid = (msg as { session_id?: unknown }).session_id;
 	return typeof sid === "string" ? sid : undefined;
@@ -607,25 +674,119 @@ export class SessionManager {
 			state.waitForTurn?.();
 		};
 
-		const setRunning = () => {
-			if (session.status === "running") return;
-			session.status = "running";
-			this.send("session:status", { sessionId: id, status: "running" });
-			void sessionStore.updateSession(id, { status: "running" });
+		// ── Activity model ───────────────────────────────────────────────────
+		// A session is "working" iff EITHER a top-level turn is in flight OR at
+		// least one background task is still alive.
+		//
+		// The second half is the fix for the fable/opus-5 breakage: those CLI
+		// builds background their subagents, emit a top-level `result` when the
+		// *main* turn ends while the subagents keep running, and then re-enter
+		// the loop by themselves (no user turn from us) once one finishes. The
+		// old machine only ever armed "running" from a pushed user turn, so
+		// every one of those self-resumed stretches rendered as "idle".
+		const activity = {
+			// Seeded from initialTurns: `run()` pre-sets status to "running"
+			// when the session was created with a prompt, and that turn is
+			// pushed straight into `turns` rather than via pushTurnWithStatus.
+			turnActive: cfg.initialTurns.length > 0,
+			backgroundTasks: new Set<string>(),
 		};
+		// True once *we* have asked for work (initial prompt or a composer
+		// message). Guards against a connect-time `init` handshake on a bare
+		// resume() lighting the pill with nothing to turn it back off.
+		let anyTurnPushed = cfg.initialTurns.length > 0;
+		let streamMessagesSeen = 0;
+
+		// The single writer of session.status for the lifetime of this loop.
+		const syncStatus = () => {
+			// Only "running" and "idle" are ours. Once the loop has moved the
+			// session to a terminal state (done/cancelled/errored), a late
+			// message must not resurrect it.
+			if (session.status !== "running" && session.status !== "idle") return;
+			const next =
+				activity.turnActive || activity.backgroundTasks.size > 0
+					? "running"
+					: "idle";
+			if (session.status === next) return;
+			session.status = next;
+			console.log(
+				`[session ${id}] ${next} (turn=${activity.turnActive} bg=${activity.backgroundTasks.size})`,
+			);
+			this.send("session:status", { sessionId: id, status: next });
+			void sessionStore.updateSession(id, { status: next });
+		};
+
+		/**
+		 * Fold one SDK message into the activity model, then re-derive status.
+		 *
+		 * Note what is deliberately absent: `task_started` is **not** an "add"
+		 * source. Backgrounded tasks are always announced by a
+		 * `background_tasks_changed` snapshot *before* their `task_started`, so
+		 * nothing is missed; foreground subagents emit `task_started` with no
+		 * snapshot at all but run inside the main turn, which `turnActive`
+		 * already covers. Keeping exactly one event able to *grow* the set is
+		 * what makes "this can never get stuck on running" provable.
+		 */
+		const applyActivity = (msg: SDKMessage) => {
+			if (msg.type === "result") {
+				// A `result` ends the top-level turn. It does NOT mean the
+				// session stopped working — background subagents routinely
+				// outlive it. Assuming otherwise *was* the bug.
+				activity.turnActive = false;
+			} else if (msg.type === "assistant") {
+				// Top-level assistant output means the main loop is alive.
+				// Defensive re-arm for CLI builds that self-resume without
+				// re-emitting `init`. Loose `== null` covers a missing field.
+				if (msg.parent_tool_use_id == null) activity.turnActive = true;
+			} else {
+				switch (systemSubtype(msg)) {
+					case "init":
+						if (anyTurnPushed || streamMessagesSeen > 1) {
+							activity.turnActive = true;
+						}
+						break;
+					case "background_tasks_changed": {
+						// Authoritative full snapshot — replace, don't merge.
+						const ids = backgroundTaskIds(msg);
+						if (ids) {
+							activity.backgroundTasks.clear();
+							for (const tid of ids) activity.backgroundTasks.add(tid);
+						}
+						break;
+					}
+					case "task_updated":
+					case "task_notification": {
+						if (!taskStatusIsTerminal(msg)) break;
+						const tid = taskIdOf(msg);
+						// No-op on unknown ids — foreground tasks, which never
+						// enter the set, close out through here constantly.
+						if (tid) activity.backgroundTasks.delete(tid);
+						break;
+					}
+				}
+			}
+			syncStatus();
+		};
+
+		/**
+		 * Hard stop, used by `interrupt()`. Clears BOTH halves of the model:
+		 * an interrupt kills in-flight background subagents too, and the CLI
+		 * isn't guaranteed to emit their task_updated/task_notification
+		 * closures afterwards — so we must not leave ghost ids pinning
+		 * "running". Stays async so `interrupt()` and `RunningEntry` are
+		 * unchanged.
+		 */
 		const setIdle = async () => {
-			if (session.status !== "running") return;
-			session.status = "idle";
-			this.send("session:status", {
-				sessionId: id,
-				status: "idle",
-			});
-			void sessionStore.updateSession(id, { status: "idle" });
+			activity.turnActive = false;
+			activity.backgroundTasks.clear();
+			syncStatus();
 		};
 
 		const pushTurnWithStatus = (blocks: UserContentBlock[]) => {
 			pushTurn(blocks);
-			setRunning();
+			anyTurnPushed = true;
+			activity.turnActive = true;
+			syncStatus();
 		};
 
 		async function* userStream(): AsyncIterable<SDKUserMessage> {
@@ -724,7 +885,13 @@ export class SessionManager {
 					continue;
 				}
 
+				streamMessagesSeen++;
 				logSdkErrors(id, msg);
+
+				// Fold into the running/idle model before anything else — the
+				// status flip should not wait on the persist/broadcast path,
+				// and some of the messages that drive it are dropped below.
+				applyActivity(msg);
 
 				if (!sdkIdCaptured) {
 					const sid = extractSdkSessionId(msg);
@@ -733,6 +900,20 @@ export class SessionManager {
 						sdkIdCaptured = true;
 						void sessionStore.updateSession(id, { sdkSessionId: sid });
 					}
+				}
+
+				// High-frequency progress chatter from the newer CLI. Both render
+				// as nothing (`groupMessages.isInvisibleMessage` treats every
+				// system message as invisible), but each one costs a
+				// `session:message` broadcast plus a full JSON.stringify +
+				// atomic rewrite of the entire session store. In the existing
+				// data that's ~1,260 whole-file rewrites for ~0.5 MB of content
+				// nobody can see. Drop them from the transcript the same way
+				// `rate_limit_event` is dropped above — after `applyActivity`,
+				// which is the only thing that cares about them.
+				const subtype = systemSubtype(msg);
+				if (subtype === "thinking_tokens" || subtype === "task_progress") {
+					continue;
 				}
 
 				const sessionMessage: SessionMessage = {
@@ -746,7 +927,6 @@ export class SessionManager {
 					message: sessionMessage,
 				});
 				void sessionStore.appendMessage(id, sessionMessage);
-				if (msg.type === "result") await setIdle();
 			}
 
 			if (abort.signal.aborted) {
@@ -1013,6 +1193,15 @@ export class SessionManager {
 		return await probeSupportedModels();
 	}
 
+	/**
+	 * Stop in-flight work and drop the session to idle.
+	 *
+	 * `setIdle` is a hard reset of the activity model (turn + background
+	 * tasks), which is what makes this stick: everything the CLI emits in the
+	 * post-interrupt tail — `task_updated{killed}`, `task_notification
+	 * {stopped}`, `result error_during_execution` — is either shrink-only or
+	 * clears `turnActive`, so none of it can flip the session back to running.
+	 */
 	async interrupt(sessionId: string) {
 		const entry = this.sessions.get(sessionId);
 		if (!entry) return;
