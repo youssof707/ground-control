@@ -109,6 +109,12 @@ declare global {
 				error?: string;
 			}>;
 			installUpdate: (downloadUrl: string) => Promise<void>;
+			dictationModelStatus: () => Promise<{
+				state: "ready" | "absent" | "downloading";
+			}>;
+			downloadDictationModel: () => Promise<void>;
+			requestMicAccess: () => Promise<boolean>;
+			transcribeDictation: (pcm: Float32Array) => Promise<string>;
 			on: (channel: string, fn: (payload: unknown) => void) => () => void;
 		};
 	}

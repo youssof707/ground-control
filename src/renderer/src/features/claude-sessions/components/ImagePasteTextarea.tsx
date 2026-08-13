@@ -22,6 +22,7 @@ import {
 import type { PendingImage } from "../lib/pendingImage";
 import { T } from "../../../design/tokens";
 import { Kbd, ModeToggle, isBranchStale } from "../../../design/Atoms";
+import { DictationButton, type DictationHandle } from "./DictationButton";
 
 interface Props {
 	sessionId: string;
@@ -122,6 +123,7 @@ export function ImagePasteTextarea({
 		useDraftStore.getState().setDraftImages(sessionId, value);
 	};
 	const [sending, setSending] = useState(false);
+	const [dictating, setDictating] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [modeSwitching, setModeSwitching] = useState(false);
 	// Draft awareness — when the sessionId is a draft, status / mode / branch
@@ -160,6 +162,7 @@ export function ImagePasteTextarea({
 	// any route transition / layout work so the call lands on the real DOM
 	// node after it has been (re)mounted.
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	const dictationRef = useRef<DictationHandle>(null);
 	useEffect(() => {
 		const id = window.setTimeout(() => {
 			textareaRef.current?.focus();
@@ -313,6 +316,10 @@ export function ImagePasteTextarea({
 		// Plain Enter → send
 		if (!e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
 			e.preventDefault();
+			// While dictating, Enter commits the recording instead of sending —
+			// so you can stop talking and hit Enter without firing off a
+			// half-finished message. A second Enter sends.
+			if (dictationRef.current?.commitIfRecording()) return;
 			void send();
 			return;
 		}
@@ -332,6 +339,51 @@ export function ImagePasteTextarea({
 		}
 
 		// Shift+Enter and anything else: let the browser handle it.
+	};
+
+	// Enter commits an in-progress recording no matter where focus is — you
+	// shouldn't have to click back into the box to finish dictating. Capture
+	// phase so we win before any element-level handler (including the
+	// textarea's own onKeyDown above) sees the key.
+	useEffect(() => {
+		if (!dictating) return;
+		const onWindowKeyDown = (e: globalThis.KeyboardEvent) => {
+			if (e.key !== "Enter") return;
+			if (e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+			const target = e.target as HTMLElement | null;
+			// Don't steal Enter from some *other* text field (rename inputs,
+			// the note editor) — only from the composer or from nothing.
+			if (
+				target
+				&& target !== textareaRef.current
+				&& (target.isContentEditable
+					|| ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+			) {
+				return;
+			}
+			if (!dictationRef.current?.commitIfRecording()) return;
+			e.preventDefault();
+			e.stopPropagation();
+		};
+		window.addEventListener("keydown", onWindowKeyDown, true);
+		return () => window.removeEventListener("keydown", onWindowKeyDown, true);
+	}, [dictating]);
+
+	// Insert dictated text at the caret (replacing any selection), mirroring
+	// the Cmd+Enter newline-insert pattern above. Adds a leading space when
+	// gluing onto existing non-whitespace text.
+	const insertDictation = (t: string) => {
+		const ta = textareaRef.current;
+		const start = ta?.selectionStart ?? text.length;
+		const end = ta?.selectionEnd ?? text.length;
+		const sep = start > 0 && !/\s$/.test(text.slice(0, start)) ? " " : "";
+		const next = text.slice(0, start) + sep + t + text.slice(end);
+		setText(next);
+		requestAnimationFrame(() => {
+			if (!ta) return;
+			ta.focus();
+			ta.selectionStart = ta.selectionEnd = start + sep.length + t.length;
+		});
 	};
 
 	const canSend = !!(text.trim() || images.length > 0);
@@ -498,12 +550,25 @@ export function ImagePasteTextarea({
 						}}
 					>
 						<Kbd>↵</Kbd>
-						<span>to send ·</span>
-						<Kbd>⇧</Kbd>
-						<Kbd>↵</Kbd>
-						<span>for newline · paste images directly</span>
+						{dictating ? (
+							<span>to finish dictating</span>
+						) : (
+							<>
+								<span>to send ·</span>
+								<Kbd>⇧</Kbd>
+								<Kbd>↵</Kbd>
+								<span>for newline · paste images directly</span>
+							</>
+						)}
 					</span>
 					<div style={{ flex: 1 }} />
+					<DictationButton
+						ref={dictationRef}
+						disabled={disabled || sending}
+						onRecordingChange={setDictating}
+						onInsert={insertDictation}
+						onError={setError}
+					/>
 					<ModeToggle
 						mode={mode}
 						onChange={(next) => void changeMode(next)}

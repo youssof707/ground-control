@@ -3,6 +3,7 @@ productName: Ground Control
 asar: true
 asarUnpack:
   - "node_modules/@anthropic-ai/**"
+  - "node_modules/@kutalia/whisper-node-addon/**"
 directories:
   buildResources: build
 files:
@@ -18,5 +19,11 @@ mac:
         - arm64
   category: public.app-category.productivity
   identity: null
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: >-
+      Ground Control uses the microphone for on-device voice dictation.
+      Audio never leaves your Mac.
 dmg:
   artifactName: ${name}-${version}-${arch}.${ext}

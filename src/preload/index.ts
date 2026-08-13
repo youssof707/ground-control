@@ -100,6 +100,11 @@ const claude = {
 	checkForUpdate: () => ipcRenderer.invoke("updater:check"),
 	installUpdate: (downloadUrl: string) =>
 		ipcRenderer.invoke("updater:install", downloadUrl),
+	dictationModelStatus: () => ipcRenderer.invoke("dictation:modelStatus"),
+	downloadDictationModel: () => ipcRenderer.invoke("dictation:downloadModel"),
+	requestMicAccess: () => ipcRenderer.invoke("dictation:requestMicAccess"),
+	transcribeDictation: (pcm: Float32Array) =>
+		ipcRenderer.invoke("dictation:transcribe", pcm),
 	on: (channel: string, fn: (payload: unknown) => void) => {
 		const listener = (_e: IpcRendererEvent, payload: unknown) => fn(payload);
 		ipcRenderer.on(channel, listener);
