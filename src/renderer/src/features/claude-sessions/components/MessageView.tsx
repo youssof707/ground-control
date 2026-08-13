@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { SessionMessage } from "@shared/claude-sessions/types";
 import {
 	interruptMarkerText,
+	isInjectedUserProse,
 	isSubagentContent,
 } from "@shared/claude-sessions/transcript";
 import { MarkdownText } from "./MarkdownText";
@@ -53,6 +54,10 @@ export const MessageView = memo(function MessageView({
 		// a dim centered line, brackets stripped, instead of a user bubble.
 		const interrupt = interruptMarkerText(m.content);
 		if (interrupt) return <InterruptMarker text={interrupt} />;
+		// Machine-injected prose (Skill expansions, command expansions,
+		// compaction summaries) must never wear the user bubble. Normally
+		// filtered upstream in groupMessages; kept as a guard here too.
+		if (isInjectedUserProse(m.content)) return null;
 		return <UserMessage sdk={sdk} />;
 	}
 	if (m.role === "system") return null;

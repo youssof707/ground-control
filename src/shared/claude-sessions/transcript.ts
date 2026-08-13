@@ -97,6 +97,25 @@ export function interruptMarkerText(content: unknown): string | null {
 	return match ? match[1] : null;
 }
 
+/** Machine-injected user prose: a `user` message that arrived through the
+ * SDK stream (the `parent_tool_use_id` key is present — locally-echoed human
+ * turns omit it entirely) carrying no tool-like blocks and no interrupt
+ * marker. The SDK never echoes the human's typed turns back through the
+ * stream, so ANY such message is content the CLI injected on its own —
+ * Skill instruction expansions ("Base directory for this skill: …"),
+ * slash-command expansions, compaction summaries, <local-command-stdout>,
+ * and whatever gets added next. Catch-all by design: hiding keys off
+ * provenance, not on recognizing each injection shape. Subagent prompt
+ * echoes (ptid = string) match too — same verdict either way. */
+export function isInjectedUserProse(content: unknown): boolean {
+	const env = envelopeOf(content);
+	if (!env || !("parent_tool_use_id" in env)) return false; // human local echo
+	if (blocksOfContent(content).some((b) => isToolLikeBlockType(b.type))) {
+		return false; // tool results — belongs to the tool-run rows
+	}
+	return interruptMarkerText(content) === null;
+}
+
 /** Mirrors UserMessage's hasVisibleContent guard (MessageView.tsx): a user
  * turn with no renderable blocks — bare-string content like
  * <local-command-stdout>, or whitespace-only text — renders nothing in the
@@ -114,5 +133,6 @@ export function hasVisibleUserContent(content: unknown): boolean {
  * are already excluded by the role checks at every call site. */
 export function isConversationSkipped(role: string, content: unknown): boolean {
 	if (isSubagentContent(content)) return true;
-	return role === "user" && !hasVisibleUserContent(content);
+	if (role !== "user") return false;
+	return isInjectedUserProse(content) || !hasVisibleUserContent(content);
 }

@@ -12,6 +12,11 @@ import { randomUUID } from "node:crypto";
 import { accessSync, constants as fsConstants } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import {
+	PROVISIONAL_SWEEP_INTERVAL_MS,
+	SessionActivity,
+	systemSubtype,
+} from "./sessionActivity";
 
 /**
  * Resolve which `claude` CLI binary the SDK should spawn.
@@ -138,7 +143,10 @@ import type {
 	StartSessionInput,
 	UserContentBlock,
 } from "../../shared/schemas/claude_session";
-import { isSubagentProse } from "../../shared/claude-sessions/transcript";
+import {
+	isInjectedUserProse,
+	isSubagentProse,
+} from "../../shared/claude-sessions/transcript";
 import { PermissionBroker } from "./PermissionBroker";
 import {
 	getCurrentBranch,
@@ -192,73 +200,6 @@ function roleFromSdkMessage(
 	if (msg.type === "user") return "user";
 	if (msg.type === "system") return "system";
 	return "result";
-}
-
-/**
- * Terminal task states, unioned across the two vocabularies the CLI uses:
- * `task_updated.patch.status` (pending|running|completed|failed|killed) and
- * `task_notification.status` (completed|failed|stopped). One set tolerates
- * either side gaining a value without us having to care which emitted it.
- */
-const TERMINAL_TASK_STATUSES = new Set([
-	"completed",
-	"failed",
-	"killed",
-	"stopped",
-]);
-
-/**
- * Read `subtype` off a system message defensively, as a plain string.
- *
- * We spawn the user's **global** `claude` binary whenever one exists (see
- * `resolveClaudeBinary` above), and that binary is routinely newer than the
- * `sdk.d.ts` we compile against. Subtypes like `background_tasks_changed`
- * and `thinking_tokens` are emitted by the CLI today but aren't in the SDK's
- * `SDKMessage` union at all — so `msg.subtype === "background_tasks_changed"`
- * doesn't even typecheck. Reading through a cast makes an unknown subtype a
- * silent no-op instead of a compile error or a runtime crash.
- */
-function systemSubtype(msg: SDKMessage): string | null {
-	if (msg.type !== "system") return null;
-	const st = (msg as { subtype?: unknown }).subtype;
-	return typeof st === "string" ? st : null;
-}
-
-/**
- * Task ids from a `background_tasks_changed` snapshot.
- *
- * Returns `null` — not `[]` — when `tasks` isn't an array. That distinction
- * is load-bearing: a malformed or renamed payload must be *ignored*, never
- * mistaken for "no background tasks are running".
- */
-function backgroundTaskIds(msg: SDKMessage): string[] | null {
-	const tasks = (msg as { tasks?: unknown }).tasks;
-	if (!Array.isArray(tasks)) return null;
-	const ids: string[] = [];
-	for (const t of tasks) {
-		const id = (t as { task_id?: unknown })?.task_id;
-		if (typeof id === "string") ids.push(id);
-	}
-	return ids;
-}
-
-function taskIdOf(msg: SDKMessage): string | null {
-	const id = (msg as { task_id?: unknown }).task_id;
-	return typeof id === "string" ? id : null;
-}
-
-/**
- * True when a `task_updated` / `task_notification` message means the task is
- * over. Reads both fields — `task_notification` carries `status` at the top
- * level, `task_updated` nests it under `patch`.
- */
-function taskStatusIsTerminal(msg: SDKMessage): boolean {
-	const m = msg as { status?: unknown; patch?: { status?: unknown } };
-	if (typeof m.status === "string" && TERMINAL_TASK_STATUSES.has(m.status)) {
-		return true;
-	}
-	const patched = m.patch?.status;
-	return typeof patched === "string" && TERMINAL_TASK_STATUSES.has(patched);
 }
 
 function extractSdkSessionId(msg: SDKMessage): string | undefined {
@@ -676,117 +617,51 @@ export class SessionManager {
 		};
 
 		// ── Activity model ───────────────────────────────────────────────────
-		// A session is "working" iff EITHER a top-level turn is in flight OR at
-		// least one background task is still alive.
+		// Lives in `./sessionActivity` so it can be replayed offline against
+		// captured transcripts (this module imports electron; that one must
+		// not). See `scripts/replay-activity.ts` — that harness is the only
+		// real test this logic has, because the failure it guards against is
+		// CLI-build-dependent and doesn't reproduce on every machine.
 		//
-		// The second half is the fix for the fable/opus-5 breakage: those CLI
-		// builds background their subagents, emit a top-level `result` when the
-		// *main* turn ends while the subagents keep running, and then re-enter
-		// the loop by themselves (no user turn from us) once one finishes. The
-		// old machine only ever armed "running" from a pushed user turn, so
-		// every one of those self-resumed stretches rendered as "idle".
-		const activity = {
+		// `onChange` is an arrow rather than `syncStatus` itself so the
+		// reference resolves at call time, after the const below is initialized.
+		const activity = new SessionActivity({
 			// Seeded from initialTurns: `run()` pre-sets status to "running"
 			// when the session was created with a prompt, and that turn is
 			// pushed straight into `turns` rather than via pushTurnWithStatus.
-			turnActive: cfg.initialTurns.length > 0,
-			backgroundTasks: new Set<string>(),
-		};
-		// True once *we* have asked for work (initial prompt or a composer
-		// message). Guards against a connect-time `init` handshake on a bare
-		// resume() lighting the pill with nothing to turn it back off.
-		let anyTurnPushed = cfg.initialTurns.length > 0;
-		let streamMessagesSeen = 0;
+			initiallyActive: cfg.initialTurns.length > 0,
+			onChange: () => syncStatus(),
+		});
 
 		// The single writer of session.status for the lifetime of this loop.
+		// SessionActivity deliberately never dedupes its own notifications —
+		// the comparison against `session.status` lives here, which is what
+		// lets status self-heal after the terminal-state early-return below.
 		const syncStatus = () => {
 			// Only "running" and "idle" are ours. Once the loop has moved the
 			// session to a terminal state (done/cancelled/errored), a late
 			// message must not resurrect it.
 			if (session.status !== "running" && session.status !== "idle") return;
-			const next =
-				activity.turnActive || activity.backgroundTasks.size > 0
-					? "running"
-					: "idle";
+			const next = activity.isActive ? "running" : "idle";
 			if (session.status === next) return;
 			session.status = next;
+			const d = activity.debug;
 			console.log(
-				`[session ${id}] ${next} (turn=${activity.turnActive} bg=${activity.backgroundTasks.size})`,
+				`[session ${id}] ${next} (turn=${d.turn} bg=${d.bg} prov=${d.prov})`,
 			);
 			this.send("session:status", { sessionId: id, status: next });
 			void sessionStore.updateSession(id, { status: next });
 		};
 
-		/**
-		 * Fold one SDK message into the activity model, then re-derive status.
-		 *
-		 * Note what is deliberately absent: `task_started` is **not** an "add"
-		 * source. Backgrounded tasks are always announced by a
-		 * `background_tasks_changed` snapshot *before* their `task_started`, so
-		 * nothing is missed; foreground subagents emit `task_started` with no
-		 * snapshot at all but run inside the main turn, which `turnActive`
-		 * already covers. Keeping exactly one event able to *grow* the set is
-		 * what makes "this can never get stuck on running" provable.
-		 */
-		const applyActivity = (msg: SDKMessage) => {
-			if (msg.type === "result") {
-				// A `result` ends the top-level turn. It does NOT mean the
-				// session stopped working — background subagents routinely
-				// outlive it. Assuming otherwise *was* the bug.
-				activity.turnActive = false;
-			} else if (msg.type === "assistant") {
-				// Top-level assistant output means the main loop is alive.
-				// Defensive re-arm for CLI builds that self-resume without
-				// re-emitting `init`. Loose `== null` covers a missing field.
-				if (msg.parent_tool_use_id == null) activity.turnActive = true;
-			} else {
-				switch (systemSubtype(msg)) {
-					case "init":
-						if (anyTurnPushed || streamMessagesSeen > 1) {
-							activity.turnActive = true;
-						}
-						break;
-					case "background_tasks_changed": {
-						// Authoritative full snapshot — replace, don't merge.
-						const ids = backgroundTaskIds(msg);
-						if (ids) {
-							activity.backgroundTasks.clear();
-							for (const tid of ids) activity.backgroundTasks.add(tid);
-						}
-						break;
-					}
-					case "task_updated":
-					case "task_notification": {
-						if (!taskStatusIsTerminal(msg)) break;
-						const tid = taskIdOf(msg);
-						// No-op on unknown ids — foreground tasks, which never
-						// enter the set, close out through here constantly.
-						if (tid) activity.backgroundTasks.delete(tid);
-						break;
-					}
-				}
-			}
-			syncStatus();
-		};
-
-		/**
-		 * Hard stop, used by `interrupt()`. Clears BOTH halves of the model:
-		 * an interrupt kills in-flight background subagents too, and the CLI
-		 * isn't guaranteed to emit their task_updated/task_notification
-		 * closures afterwards — so we must not leave ghost ids pinning
-		 * "running". Stays async so `interrupt()` and `RunningEntry` are
-		 * unchanged.
-		 */
+		/** Stays async so `interrupt()` and `RunningEntry` are unchanged. */
 		const setIdle = async () => {
-			activity.turnActive = false;
-			activity.backgroundTasks.clear();
+			activity.hardStop();
 			syncStatus();
 		};
 
 		const pushTurnWithStatus = (blocks: UserContentBlock[]) => {
 			pushTurn(blocks);
-			anyTurnPushed = true;
-			activity.turnActive = true;
+			activity.noteUserTurn();
 			syncStatus();
 		};
 
@@ -827,8 +702,20 @@ export class SessionManager {
 		this.send("session:started", session);
 
 		let sdkIdCaptured = !!session.sdkSessionId;
+		let cliVersionLogged = false;
+		let sweepTimer: NodeJS.Timeout | null = null;
 
 		try {
+			// Armed inside the try so the finally below is guaranteed to clear
+			// it. Expires provisional background tasks whose closing event never
+			// arrived; a message-driven sweep alone can't cover that, since the
+			// stream is silent in exactly the case this exists for.
+			sweepTimer = setInterval(
+				() => activity.tick(),
+				PROVISIONAL_SWEEP_INTERVAL_MS,
+			);
+			sweepTimer.unref?.();
+
 			const options: Options = {
 				cwd,
 				// Map our 2-state app mode to the SDK's permissionMode.
@@ -886,13 +773,25 @@ export class SessionManager {
 					continue;
 				}
 
-				streamMessagesSeen++;
 				logSdkErrors(id, msg);
 
 				// Fold into the running/idle model before anything else — the
 				// status flip should not wait on the persist/broadcast path,
 				// and some of the messages that drive it are dropped below.
-				applyActivity(msg);
+				activity.apply(msg);
+
+				// Which CLI build are we actually talking to? The background-task
+				// messages this session's status depends on vary between builds,
+				// and the bug this logging exists for reproduces on some machines
+				// and not others — without the version a report is undiagnosable.
+				if (!cliVersionLogged && systemSubtype(msg) === "init") {
+					const ver = (msg as { claude_code_version?: unknown })
+						.claude_code_version;
+					if (typeof ver === "string") {
+						cliVersionLogged = true;
+						console.log(`[session ${id}] claude cli ${ver}`);
+					}
+				}
 
 				if (!sdkIdCaptured) {
 					const sid = extractSdkSessionId(msg);
@@ -946,6 +845,17 @@ export class SessionManager {
 					continue;
 				}
 
+				// Machine-injected top-level user prose — Skill instruction
+				// expansions, slash-command expansions, compaction summaries,
+				// <local-command-stdout>. The SDK never echoes the human's typed
+				// turns back through the stream (pushUserMessage persists those
+				// locally), so any stream `user` message without tool results is
+				// the CLI talking to itself. Interrupt markers are excluded by
+				// the predicate — they persist and render as a dim state marker.
+				if (msg.type === "user" && isInjectedUserProse(msg as unknown)) {
+					continue;
+				}
+
 				const sessionMessage: SessionMessage = {
 					id: randomUUID(),
 					role: roleFromSdkMessage(msg),
@@ -996,6 +906,7 @@ export class SessionManager {
 				error: session.error,
 			});
 		} finally {
+			if (sweepTimer) clearInterval(sweepTimer);
 			state.finished = true;
 			state.waitForTurn?.();
 			this.sessions.delete(id);

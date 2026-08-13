@@ -1,5 +1,6 @@
 import type { SessionMessage } from "@shared/claude-sessions/types";
 import {
+	isInjectedUserProse,
 	isSubagentContent,
 	isToolLikeBlockType,
 } from "@shared/claude-sessions/transcript";
@@ -82,6 +83,14 @@ export function groupMessagesIntoUnits(
 			if (!run) run = { kind: "toolRun", key: "", entries: [] };
 			run.entries.push(...toolEntries);
 			if (!run.key) run.key = `toolrun:${m.id}:0`;
+			continue;
+		}
+		if (m.role === "user" && isInjectedUserProse(m.content)) {
+			// Top-level machine injections (Skill instruction expansions,
+			// slash-command expansions, compaction summaries) — hidden, and
+			// like other invisible rows they must not fragment a tool run:
+			// a Skill tool_use is typically followed immediately by its
+			// injected instructions, then more tool calls.
 			continue;
 		}
 		if (isToolOnlyMessage(m)) {
