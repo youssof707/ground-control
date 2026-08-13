@@ -1,12 +1,16 @@
 import { useEffect } from "react";
 import type { ClaudeSessionFull } from "@shared/claude-sessions/types";
+import { isConversationSkipped } from "@shared/claude-sessions/transcript";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { useReadStore } from "../stores/useReadStore";
 
 function lastIncomingMessageTs(session: ClaudeSessionFull): number {
 	for (let i = session.messages.length - 1; i >= 0; i--) {
 		const m = session.messages[i];
-		if (m.role === "assistant") return m.ts;
+		// Skip hidden subagent traffic (old stores) — see SessionsList's copy.
+		if (m.role === "assistant" && !isConversationSkipped(m.role, m.content)) {
+			return m.ts;
+		}
 	}
 	return 0;
 }

@@ -1,4 +1,8 @@
 import type { SessionMessage } from "@shared/claude-sessions/types";
+import {
+	isSubagentContent,
+	isToolLikeBlockType,
+} from "@shared/claude-sessions/transcript";
 import { blocksOf, type ContentBlock } from "./messageContent";
 
 // A flat render unit emitted by `groupMessagesIntoUnits`. Either:
@@ -61,6 +65,23 @@ export function groupMessagesIntoUnits(
 	for (const m of messages) {
 		if (isInvisibleMessage(m)) {
 			// Don't flush — these render as nothing and shouldn't fragment runs.
+			continue;
+		}
+		if (isSubagentContent(m.content)) {
+			// Subagent traffic: tool-like blocks fold into the current run (the
+			// user audits ALL tool access in one merged place, agent-agnostic);
+			// prose blocks render nowhere. Handles old persisted prose rows
+			// (ingest now drops them, but the store keeps history) and defensive
+			// mixed-block messages (text + tool_use in one envelope) without
+			// breaking the run. Map before filter so `blockIndex` keeps its
+			// original position — ToolRunGroup keys on `${messageId}:${blockIndex}`.
+			const toolEntries = blocksOf(m)
+				.map((block, blockIndex) => ({ messageId: m.id, blockIndex, block }))
+				.filter((e) => isToolLikeBlockType(e.block.type));
+			if (toolEntries.length === 0) continue; // pure prose — don't flush
+			if (!run) run = { kind: "toolRun", key: "", entries: [] };
+			run.entries.push(...toolEntries);
+			if (!run.key) run.key = `toolrun:${m.id}:0`;
 			continue;
 		}
 		if (isToolOnlyMessage(m)) {

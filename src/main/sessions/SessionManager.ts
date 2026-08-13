@@ -138,6 +138,7 @@ import type {
 	StartSessionInput,
 	UserContentBlock,
 } from "../../shared/schemas/claude_session";
+import { isSubagentProse } from "../../shared/claude-sessions/transcript";
 import { PermissionBroker } from "./PermissionBroker";
 import {
 	getCurrentBranch,
@@ -913,6 +914,35 @@ export class SessionManager {
 				// which is the only thing that cares about them.
 				const subtype = systemSubtype(msg);
 				if (subtype === "thinking_tokens" || subtype === "task_progress") {
+					continue;
+				}
+
+				// Live-only bookkeeping subtypes: `applyActivity` (above) is their
+				// only consumer, nothing ever renders them, and each persisted one
+				// costs a broadcast plus a whole-file store rewrite. Delete this
+				// block if some future feature wants them back in the transcript.
+				if (
+					subtype === "task_started" ||
+					subtype === "task_updated" ||
+					subtype === "task_notification" ||
+					subtype === "background_tasks_changed" ||
+					subtype === "status"
+				) {
+					continue;
+				}
+
+				// Subagent prose — the Agent tool's prompt echo (arrives as a
+				// `user` message) and the subagent's own narration/report text
+				// (`assistant`). Both read in the transcript as if the human or
+				// top-level Claude said them, so they must never render — and per
+				// the same logic as the drops above, never persist. Tool traffic
+				// from the same subagent still flows through below: the collapsed
+				// tool-run rows need it after a restart. (Renderer-side filters in
+				// groupMessages keep OLD store rows hidden.)
+				if (
+					(msg.type === "user" || msg.type === "assistant") &&
+					isSubagentProse(msg as unknown)
+				) {
 					continue;
 				}
 

@@ -22,6 +22,10 @@ import type {
 	PermissionRequest,
 	SessionMessage,
 } from "@shared/claude-sessions/types";
+import {
+	interruptMarkerText,
+	isConversationSkipped,
+} from "@shared/claude-sessions/transcript";
 import type { SessionGroup } from "@shared/schemas/session_groups";
 
 export function SessionsList({
@@ -2280,7 +2284,11 @@ function deriveGroupAggregates(
 function lastIncomingMessageTs(session: ClaudeSessionFull): number {
 	for (let i = session.messages.length - 1; i >= 0; i--) {
 		const m = session.messages[i];
-		if (m.role === "assistant") return m.ts;
+		if (m.role !== "assistant") continue;
+		// Subagent traffic is hidden from the conversation (old stores still
+		// contain it) — it must not drive unread/recency derivations.
+		if (isConversationSkipped(m.role, m.content)) continue;
+		return m.ts;
 	}
 	return 0;
 }
@@ -2290,7 +2298,12 @@ function lastConversationMessage(
 ): SessionMessage | undefined {
 	for (let i = session.messages.length - 1; i >= 0; i--) {
 		const m = session.messages[i];
-		if (m.role === "user" || m.role === "assistant") return m;
+		if (m.role !== "user" && m.role !== "assistant") continue;
+		// Skip messages hidden from the transcript — subagent traffic and
+		// user turns that render nothing (e.g. <local-command-stdout>) —
+		// so the summary never attributes them to the conversation.
+		if (isConversationSkipped(m.role, m.content)) continue;
+		return m;
 	}
 	return undefined;
 }
@@ -2308,6 +2321,10 @@ function deriveSummary(session: ClaudeSessionFull): string {
 		if (text) return text.slice(0, 140);
 		return "Working…";
 	}
+	// Interrupt markers are visible transcript rows, so they legitimately end
+	// up here — but they're state, not speech, so no "You:" prefix.
+	const interrupt = interruptMarkerText(last.content);
+	if (interrupt) return interrupt;
 	const userText = extractUserText(last.content);
 	if (userText) return `You: ${userText.slice(0, 140)}`;
 	return "You sent a message.";

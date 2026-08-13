@@ -1,6 +1,10 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { SessionMessage } from "@shared/claude-sessions/types";
+import {
+	interruptMarkerText,
+	isSubagentContent,
+} from "@shared/claude-sessions/transcript";
 import { MarkdownText } from "./MarkdownText";
 import { T } from "../../../design/tokens";
 import {
@@ -29,6 +33,11 @@ export const MessageView = memo(function MessageView({
 	forkPending?: boolean;
 }) {
 	const sdk = m.content as SdkLike;
+	// Subagent traffic never renders as a message — tool blocks reach the
+	// transcript only via ToolRunGroup (see groupMessages), prose not at all.
+	// Unreachable while groupMessages filters upstream; kept as a guard so a
+	// future grouping change can't re-leak subagent prose into bubbles.
+	if (isSubagentContent(m.content)) return null;
 	if (m.role === "assistant") {
 		return (
 			<AssistantMessage
@@ -39,7 +48,13 @@ export const MessageView = memo(function MessageView({
 			/>
 		);
 	}
-	if (m.role === "user") return <UserMessage sdk={sdk} />;
+	if (m.role === "user") {
+		// SDK-synthesized interrupt markers are state, not speech — render as
+		// a dim centered line, brackets stripped, instead of a user bubble.
+		const interrupt = interruptMarkerText(m.content);
+		if (interrupt) return <InterruptMarker text={interrupt} />;
+		return <UserMessage sdk={sdk} />;
+	}
 	if (m.role === "system") return null;
 	if (m.role === "result") return null;
 	return null;
@@ -340,6 +355,25 @@ function MenuItem({
 		>
 			{label}
 		</button>
+	);
+}
+
+function InterruptMarker({ text }: { text: string }) {
+	// Same dim mono treatment as the ToolRunGroup summary line, centered —
+	// reads as a transcript state marker rather than something anyone said.
+	return (
+		<div
+			style={{
+				maxWidth: 760,
+				margin: "0 auto 18px",
+				textAlign: "center",
+				fontSize: 12,
+				fontFamily: T.mono,
+				color: T.textMute,
+			}}
+		>
+			{text}
+		</div>
 	);
 }
 
