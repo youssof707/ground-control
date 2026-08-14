@@ -111,6 +111,14 @@ export type PermissionDecision = z.infer<typeof PermissionDecisionSchema>;
 export const ClaudeSessionSchema = z.object({
 	id: z.string(),
 	title: z.string(),
+	/** True when the user explicitly named this session — either by typing
+	 * a name in the draft header's name box before the first send, or via
+	 * `session:rename` at any point. Suppresses the derive-title-from-the-
+	 * first-user-message behaviour in `SessionManager.pushUserMessage`,
+	 * which would otherwise clobber a deliberately-chosen name on a session
+	 * that hadn't spoken yet. The Zod default backfills rows on disk that
+	 * predate this field. */
+	titleLocked: z.boolean().default(false),
 	prompt: z.string(),
 	cwd: z.string(),
 	status: SessionStatusSchema,
@@ -191,6 +199,11 @@ export type ClaudeSessionsFile = z.infer<typeof ClaudeSessionsFileSchema>;
 
 export const StartSessionInputSchema = z.object({
 	title: z.string(),
+	/** Set when `title` is a name the user typed themselves (draft header
+	 * name box), so the created session is born with its title locked and
+	 * the first message never re-derives it. Omitted/false means `title` is
+	 * just the provisional `Session N` placeholder. */
+	titleLocked: z.boolean().optional(),
 	prompt: z.string().optional(),
 	cwd: z.string(),
 	mode: SessionModeSchema.optional(),

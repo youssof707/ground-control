@@ -268,6 +268,22 @@ export class SessionManager {
 		return this.sessions.get(id)?.session;
 	}
 
+	/**
+	 * Apply a rename to the live runtime entry, if the session has one.
+	 * Persistence and the `session:patch` broadcast stay with the
+	 * `session:rename` IPC handler — this only stops the in-memory copy
+	 * going stale, which otherwise shows the pre-rename title in permission
+	 * notification subtitles (see `ipc/notifications.ts`). Also locks the
+	 * title, mirroring what the handler writes to disk. No-op when the
+	 * session isn't currently running.
+	 */
+	setTitle(sessionId: string, title: string): void {
+		const entry = this.sessions.get(sessionId);
+		if (!entry) return;
+		entry.session.title = title;
+		entry.session.titleLocked = true;
+	}
+
 	get activeCount(): number {
 		let n = 0;
 		for (const { session } of this.sessions.values()) {
@@ -302,7 +318,10 @@ export class SessionManager {
 			: "";
 		const session: ClaudeSession = {
 			id,
-			title: derivedTitle || input.title,
+			// A name the user typed themselves outranks the derivation, even
+			// when an initial prompt is present.
+			title: input.titleLocked ? input.title : derivedTitle || input.title,
+			titleLocked: input.titleLocked ?? false,
 			prompt: input.prompt ?? "",
 			// Persist the *baseDir* as `cwd` — the user-facing folder (folder
 			// button label, copy-path, reveal-in-Finder). The worktree link
@@ -479,6 +498,11 @@ export class SessionManager {
 		const newSessionFull: ClaudeSessionFull = {
 			id: newWrapperId,
 			title: newTitle,
+			// A fork of a deliberately-named session keeps that intent. Forks
+			// never hit the derive path anyway (their transcript always
+			// contains a user message), so this is purely about downstream
+			// renames and clarity.
+			titleLocked: parent.titleLocked,
 			prompt: "",
 			cwd: parent.cwd,
 			status: "idle",
@@ -530,6 +554,7 @@ export class SessionManager {
 		const newSession: ClaudeSession = {
 			id: newSessionFull.id,
 			title: newSessionFull.title,
+			titleLocked: newSessionFull.titleLocked,
 			prompt: newSessionFull.prompt,
 			cwd: newSessionFull.cwd,
 			status: newSessionFull.status,
@@ -597,6 +622,7 @@ export class SessionManager {
 		const session: ClaudeSession = {
 			id: persisted.id,
 			title: persisted.title,
+			titleLocked: persisted.titleLocked,
 			prompt: persisted.prompt,
 			cwd: persisted.cwd,
 			status: "idle",
@@ -965,7 +991,11 @@ export class SessionManager {
 			!!persisted && !persisted.messages.some((m) => m.role === "user");
 		const hasNoPriorPrompt =
 			!entry.session.prompt || entry.session.prompt.trim().length === 0;
-		if (hasNoPriorUserMessage && hasNoPriorPrompt) {
+		// A name the user chose themselves is never overwritten. Read the flag
+		// off the *persisted* row rather than `entry.session` so a rename that
+		// landed while this SDK loop was already live is still respected.
+		const titleLocked = persisted?.titleLocked === true;
+		if (hasNoPriorUserMessage && hasNoPriorPrompt && !titleLocked) {
 			const text = firstTextFromBlocks(blocks);
 			const title = deriveTitle(text);
 			if (title && title !== entry.session.title) {

@@ -205,7 +205,7 @@ export function SessionsList({
 		useSettingsStore.getState().setLastUsedWorkspace(cwd);
 		const d = useDraftSessionsStore.getState().createDraft({
 			cwd,
-			title: `Session ${order.length + 1}`,
+			defaultTitle: `Session ${order.length + 1}`,
 		});
 		// Make sure the new draft is actually visible. If the user has narrowed
 		// the workspace filter and the draft cwd isn't in it, the draft row
@@ -1484,7 +1484,12 @@ function DraftRowSidebar({
 								whiteSpace: "nowrap",
 							}}
 						>
-							{draft.title}
+							{/* An unnamed draft shows its `Session N` placeholder;
+							    once the user types a name in the draft header it
+							    appears here live. Styling is identical either way —
+							    the Draft pill already signals "provisional", and
+							    toggling italic mid-typing would make the row jitter. */}
+							{draft.title.trim() || draft.defaultTitle}
 						</span>
 						<DraftRowMenu onDiscard={onDiscard} />
 					</div>

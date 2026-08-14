@@ -62,6 +62,13 @@ const EMPTY_IMAGES: PendingImage[] = Object.freeze(
  * pre-draft `SessionsList.startWith()` flow.
  */
 function createSessionFromDraft(draft: DraftSession): Promise<string> {
+	// A blank name box means "auto-name me": send the provisional `Session N`
+	// placeholder (never an empty title — the sidebar row would render blank
+	// for the beat between `session:started` and the first message's patch)
+	// and leave `titleLocked` false so SessionManager.pushUserMessage still
+	// derives the real title from that first message. A name the user typed
+	// is sent locked and is never overwritten afterwards.
+	const typedTitle = draft.title.trim().slice(0, 200);
 	return new Promise((resolve, reject) => {
 		let off: (() => void) | null = window.claude.on(
 			"session:started",
@@ -74,7 +81,8 @@ function createSessionFromDraft(draft: DraftSession): Promise<string> {
 		);
 		window.claude
 			.startSession({
-				title: draft.title,
+				title: typedTitle || draft.defaultTitle,
+				titleLocked: typedTitle.length > 0,
 				cwd: draft.cwd,
 				mode: draft.mode,
 				// Carry the draft's worktree attachment forward. Main-side

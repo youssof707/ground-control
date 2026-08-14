@@ -22,7 +22,18 @@ import type { SessionMode } from "@shared/claude-sessions/types";
 export interface DraftSession {
 	id: string;
 	cwd: string;
+	/** Name the user typed into the draft header's name box. Empty string
+	 * means "not named" — the box shows its placeholder, the sidebar row
+	 * falls back to `defaultTitle`, and on first send the session is created
+	 * unlocked so SessionManager derives a title from that first message
+	 * (the long-standing default behaviour). A non-empty value is sent with
+	 * `titleLocked: true` and is never auto-changed afterwards. */
 	title: string;
+	/** Generated `Session N` placeholder, stamped once at draft creation.
+	 * Used as the sidebar display fallback and as the provisional title sent
+	 * to `startSession` when `title` is blank — so the row is never
+	 * titleless in the beat before the derived title arrives. */
+	defaultTitle: string;
 	mode: SessionMode;
 	createdAt: number;
 	/** App-owned worktree attached to this draft. Set to a Worktree.id
@@ -45,7 +56,7 @@ interface State {
 	draft: DraftSession | null;
 	createDraft: (input: {
 		cwd: string;
-		title: string;
+		defaultTitle: string;
 		mode?: SessionMode;
 	}) => DraftSession;
 	// The patch type intentionally allows `worktreeId: undefined` and
@@ -66,11 +77,12 @@ export function isDraftId(id: string | undefined | null): id is string {
 
 export const useDraftSessionsStore = create<State>((set) => ({
 	draft: null,
-	createDraft: ({ cwd, title, mode = "plan" }) => {
+	createDraft: ({ cwd, defaultTitle, mode = "plan" }) => {
 		const draft: DraftSession = {
 			id: `draft-${crypto.randomUUID()}`,
 			cwd,
-			title,
+			title: "",
+			defaultTitle,
 			mode,
 			createdAt: Date.now(),
 		};

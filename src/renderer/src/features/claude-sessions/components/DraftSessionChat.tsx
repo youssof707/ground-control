@@ -141,9 +141,12 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 			const current = useDraftSessionsStore.getState().draft;
 			if (!current || current.id !== draftId) return;
 			const textDraft = useDraftStore.getState().draftsBySession[draftId];
+			// A typed-but-unsent session name counts as intent too — discarding
+			// it silently on navigate-away would be surprising.
 			const empty =
-				!textDraft ||
-				(textDraft.text.trim() === "" && textDraft.images.length === 0);
+				current.title.trim() === "" &&
+				(!textDraft ||
+					(textDraft.text.trim() === "" && textDraft.images.length === 0));
 			if (empty) {
 				useDraftStore.getState().clearDraft(draftId);
 				useDraftSessionsStore.getState().discardDraft();
@@ -207,18 +210,83 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 							minWidth: 0,
 						}}
 					>
-						<span
-							title={draft.title}
-							style={{
-								overflow: "hidden",
-								textOverflow: "ellipsis",
-								whiteSpace: "nowrap",
-								fontStyle: "italic",
-								color: T.textDim,
+						{/* Always-editable name box (no click-to-edit step — naming
+						    the session is a first-class part of composing it).
+						    Leaving it blank keeps the old behaviour: the session
+						    is created with the provisional `Session N` title and
+						    the main process derives a real one from the first
+						    message. Typing a name locks it permanently.
+
+						    Writes to the store on every keystroke rather than on
+						    blur — `send()` in ImagePasteTextarea reads the draft
+						    synchronously, so an on-blur-only write would lose the
+						    name when the user types it and then hits Enter in the
+						    composer without ever leaving this field. */}
+						<input
+							value={draft.title}
+							onChange={(e) =>
+								useDraftSessionsStore
+									.getState()
+									.updateDraft({ title: e.target.value })
+							}
+							onKeyDown={(e) => {
+								// Neither key submits anything — sending is the
+								// composer's job. Both just release focus.
+								if (e.key === "Enter" || e.key === "Escape") {
+									e.preventDefault();
+									e.currentTarget.blur();
+								}
 							}}
-						>
-							{draft.title}
-						</span>
+							placeholder="Session name"
+							// Matches the `session:rename` IPC handler's cap, so
+							// both naming paths truncate identically.
+							maxLength={200}
+							spellCheck={false}
+							aria-label="Session name"
+							title={draft.title || draft.defaultTitle}
+							style={{
+								// Chromeless at rest so it reads as the title, not a
+								// form field; surface + border appear on hover/focus.
+								appearance: "none",
+								border: "0.5px solid transparent",
+								borderRadius: 6,
+								background: "transparent",
+								padding: "2px 6px",
+								margin: "-2px -6px",
+								outline: "none",
+								// Inputs can't hug their content; the parent caps at
+								// maxWidth 360 and the Draft pill sits alongside.
+								width: 210,
+								minWidth: 0,
+								fontFamily: "inherit",
+								fontSize: 14,
+								fontWeight: 600,
+								fontStyle: "italic",
+								// index.css sets a global `input { color: … }` that
+								// would otherwise beat the dim treatment.
+								color: T.textDim,
+								textOverflow: "ellipsis",
+								transition: "background 80ms ease, border-color 80ms ease",
+							}}
+							onFocus={(e) => {
+								e.currentTarget.style.background = T.surface;
+								e.currentTarget.style.borderColor = T.border;
+								e.currentTarget.style.color = T.text;
+							}}
+							onBlur={(e) => {
+								e.currentTarget.style.background = "transparent";
+								e.currentTarget.style.borderColor = "transparent";
+								e.currentTarget.style.color = T.textDim;
+							}}
+							onMouseEnter={(e) => {
+								if (document.activeElement !== e.currentTarget)
+									e.currentTarget.style.background = T.surfaceLow;
+							}}
+							onMouseLeave={(e) => {
+								if (document.activeElement !== e.currentTarget)
+									e.currentTarget.style.background = "transparent";
+							}}
+						/>
 						<DraftPill />
 					</div>
 					{/* Flex slot fills the row and clips the button to the

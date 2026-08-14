@@ -219,11 +219,23 @@ export function registerSessionsHandlers(): SessionManager {
 			if (!title) throw new Error("Title cannot be empty");
 			const updated = await sessionStore.updateSession(payload.sessionId, {
 				title,
+				// An explicit rename is by definition a user-chosen name, so
+				// lock it. Without this, renaming a session that hasn't sent
+				// its first message yet gets silently clobbered when that
+				// message arrives and SessionManager derives a title from it.
+				titleLocked: true,
 			});
 			if (!updated) throw new Error("Session not found");
+			// Keep the live runtime copy in sync (notification subtitles read
+			// from it); no-op when the session isn't currently running.
+			manager.setTitle(payload.sessionId, title);
 			// Existing incremental event so other windows update title without a
 			// full refetch.
-			broadcast("session:patch", { sessionId: payload.sessionId, title });
+			broadcast("session:patch", {
+				sessionId: payload.sessionId,
+				title,
+				titleLocked: true,
+			});
 			// Safety-net structural ping for any window that might have missed
 			// the patch (e.g. attached its listener after the patch fired).
 			broadcast("state:changed", undefined, e.sender.id);

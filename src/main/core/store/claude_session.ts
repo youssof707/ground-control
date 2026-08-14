@@ -113,6 +113,7 @@ export type SessionPatch = Partial<
 	Pick<
 		ClaudeSessionFull,
 		| "title"
+		| "titleLocked"
 		| "status"
 		| "finishedAt"
 		| "error"
