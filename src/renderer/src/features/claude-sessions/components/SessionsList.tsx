@@ -76,6 +76,19 @@ export function SessionsList({
 	// workspace filter). Resets to false on reload — mirrors how
 	// workspaceFilter behaves.
 	const [showArchived, setShowArchived] = useState(false);
+	// Collapsed cwd buckets (ungrouped section). Non-persistent view state —
+	// resets on reload, mirroring workspaceFilter / showArchived above.
+	const [collapsedCwds, setCollapsedCwds] = useState<Set<string>>(
+		() => new Set(),
+	);
+	const toggleCwdCollapsed = (cwd: string) => {
+		setCollapsedCwds((prev) => {
+			const next = new Set(prev);
+			if (next.has(cwd)) next.delete(cwd);
+			else next.add(cwd);
+			return next;
+		});
+	};
 
 	const sortedOrder = useMemo(() => {
 		return [...order].sort((a, b) => {
@@ -149,16 +162,18 @@ export function SessionsList({
 		});
 	}, [sortedOrder, sessions, workspaceFilter, showArchived]);
 
-	// Partition the visible rows into "ungrouped" (rendered first, flat)
-	// and per-group sections (rendered after, newest group first). Built
-	// from `visibleOrder`, so:
-	//   - intra-group ordering matches the flat list's comparator exactly;
+	// Partition the visible rows into "ungrouped" (rendered first, bucketed
+	// by cwd under subtle headers) and per-group sections (rendered after,
+	// newest group first). Built from `visibleOrder`, so:
+	//   - intra-bucket / intra-group ordering matches the flat list's
+	//     comparator exactly (newest first; archived sink within their
+	//     bucket — the per-bucket analogue of the global convention above);
 	//   - a group whose members are all filtered out (workspace filter,
 	//     archived-hidden) never materializes a section → hidden, per spec;
 	//   - a dangling groupId (group record missing — crash window, stale
 	//     cache) degrades to "ungrouped" instead of vanishing the row.
-	const { ungroupedIds, groupSections } = useMemo(() => {
-		const ungrouped: string[] = [];
+	const { ungroupedBuckets, groupSections } = useMemo(() => {
+		const byCwd = new Map<string, string[]>();
 		const byGroup = new Map<string, string[]>();
 		for (const id of visibleOrder) {
 			const gid = sessions[id]?.groupId;
@@ -167,9 +182,21 @@ export function SessionsList({
 				if (list) list.push(id);
 				else byGroup.set(gid, [id]);
 			} else {
-				ungrouped.push(id);
+				const cwd = sessions[id]?.cwd ?? "";
+				const list = byCwd.get(cwd);
+				if (list) list.push(id);
+				else byCwd.set(cwd, [id]);
 			}
 		}
+		const buckets = Array.from(byCwd.entries())
+			.map(([cwd, ids]) => ({ cwd, ids }))
+			// Alphabetical by folder name (matches the workspace dropdown);
+			// full-cwd tie-break keeps same-basename dirs deterministic.
+			.sort(
+				(a, b) =>
+					folderName(a.cwd).localeCompare(folderName(b.cwd)) ||
+					a.cwd.localeCompare(b.cwd),
+			);
 		const sections = Array.from(byGroup.entries())
 			.map(([gid, ids]) => ({ group: groups[gid], ids }))
 			// Newest group first; ulid tie-break keeps same-ms creates stable.
@@ -178,7 +205,7 @@ export function SessionsList({
 					b.group.createdAt - a.group.createdAt ||
 					b.group.id.localeCompare(a.group.id),
 			);
-		return { ungroupedIds: ungrouped, groupSections: sections };
+		return { ungroupedBuckets: buckets, groupSections: sections };
 	}, [visibleOrder, sessions, groups]);
 
 	// New-session target cwd: only use the filter when exactly one workspace is
@@ -503,22 +530,71 @@ export function SessionsList({
 		}
 	};
 
-	// Ungrouped rows render flat; each group renders into its own bordered
-	// wrapper (header + member rows share one framed block, colored on
-	// every side by the group's border token). Session rows inside a group
-	// live under a different DOM parent than ungrouped ones, so moving a
-	// row between the two remounts it — an acceptable cost for the framed
-	// look; session cards hold only trivial local state (menu open).
+	// Ungrouped rows render under subtle per-cwd headers; each group renders
+	// into its own bordered wrapper (header + member rows share one framed
+	// block, colored on every side by the group's border token). Session
+	// rows inside a group live under a different DOM parent than ungrouped
+	// ones, so moving a row between the two remounts it — an acceptable
+	// cost for the framed look; session cards hold only trivial local
+	// state (menu open).
 	const sidebarRows = useMemo<SidebarRow[]>(() => {
-		const rows: SidebarRow[] = ungroupedIds.map((id) => ({
-			kind: "session" as const,
-			id,
-		}));
+		const rows: SidebarRow[] = [];
+		// A lone cwd needs no sectioning — skip the boxes entirely and
+		// render the flat list (rows keep their own cwd footers instead).
+		const sectioned = ungroupedBuckets.length > 1;
+		for (const bucket of ungroupedBuckets) {
+			if (sectioned) {
+				rows.push({
+					kind: "cwdBucket",
+					cwd: bucket.cwd,
+					ids: bucket.ids,
+					collapsed: collapsedCwds.has(bucket.cwd),
+				});
+			} else {
+				bucket.ids.forEach((id, i) => {
+					rows.push({
+						kind: "session",
+						id,
+						lastInBucket: i === bucket.ids.length - 1,
+					});
+				});
+			}
+		}
 		for (const section of groupSections) {
 			rows.push({ kind: "group", section });
 		}
 		return rows;
-	}, [ungroupedIds, groupSections]);
+	}, [ungroupedBuckets, groupSections, collapsedCwds]);
+
+	// Shared renderer for ungrouped session rows — used both inside cwd
+	// bucket boxes (hideCwd: the header already names the folder) and in
+	// the flat single-cwd list (footer shown).
+	const renderSessionRow = (id: string, last: boolean, hideCwd: boolean) => {
+		const s = sessions[id];
+		const sessionPending = queue.filter((q) => q.sessionId === id);
+		return (
+			<SessionRowSidebar
+				key={id}
+				session={s}
+				last={last}
+				hideCwd={hideCwd}
+				pending={sessionPending}
+				active={id === activeSessionId}
+				onDelete={() => {
+					setPendingDeleteId(id);
+					setDeleteError(null);
+					setAlsoDeleteWorktree(false);
+				}}
+				onArchive={() => {
+					setPendingArchiveId(id);
+					setArchiveError(null);
+				}}
+				onUnarchive={() => void unarchive(id)}
+				onAddToGroup={() => setPendingGroupSessionId(id)}
+				onRemoveFromGroup={() => void removeFromGroup(id)}
+			/>
+		);
+	};
 
 	const toggleGroupCollapsed = (group: SessionGroup) => {
 		const next = { ...group, collapsed: !group.collapsed };
@@ -692,8 +768,48 @@ export function SessionsList({
 								onDiscard={() => discardDraft(draft.id)}
 							/>
 						) : null}
-						{sidebarRows.map((row, i) => {
-							const last = i === sidebarRows.length - 1;
+						{sidebarRows.map((row) => {
+							if (row.kind === "cwdBucket") {
+								return (
+									<div
+										key={`cwd:${row.cwd}`}
+										style={{
+											// Recessed dark box encapsulates the
+											// whole bucket (header + rows) — the
+											// neutral sibling of GroupSection's
+											// framed look. Rows render
+											// transparent, so T.bg shows through
+											// the full section.
+											margin: "8px 0",
+											background: T.bg,
+											// Top hairline only — same recipe as
+											// the header's under-rule. It sits
+											// flush on the dark fill (a section
+											// edge) rather than floating in the
+											// gap the way a bottom rule did.
+											borderTop: `1px solid ${T.borderSoft}`,
+											overflow: "hidden",
+										}}
+									>
+										<CwdHeaderRow
+											cwd={row.cwd}
+											collapsed={row.collapsed}
+											onToggle={() =>
+												toggleCwdCollapsed(row.cwd)
+											}
+										/>
+										{row.collapsed
+											? null
+											: row.ids.map((id, i) =>
+												renderSessionRow(
+													id,
+													i === row.ids.length - 1,
+													true,
+												),
+											)}
+									</div>
+								);
+							}
 							if (row.kind === "group") {
 								const { group, ids } = row.section;
 								return (
@@ -730,35 +846,10 @@ export function SessionsList({
 									/>
 								);
 							}
-							const id = row.id;
-							const s = sessions[id];
-							const sessionPending = queue.filter(
-								(q) => q.sessionId === id,
-							);
-							return (
-								<SessionRowSidebar
-									key={id}
-									session={s}
-									last={last}
-									pending={sessionPending}
-									active={id === activeSessionId}
-									onDelete={() => {
-										setPendingDeleteId(id);
-										setDeleteError(null);
-										setAlsoDeleteWorktree(false);
-									}}
-									onArchive={() => {
-										setPendingArchiveId(id);
-										setArchiveError(null);
-									}}
-									onUnarchive={() => void unarchive(id)}
-									onAddToGroup={() =>
-										setPendingGroupSessionId(id)
-									}
-									onRemoveFromGroup={() =>
-										void removeFromGroup(id)
-									}
-								/>
+							return renderSessionRow(
+								row.id,
+								row.lastInBucket,
+								false,
 							);
 						})}
 					</div>
@@ -781,7 +872,11 @@ export function SessionsList({
 
 /** One entry in the sidebar's top-level render sequence. */
 type SidebarRow =
-	| { kind: "session"; id: string }
+	/** One cwd's worth of ungrouped sessions, rendered as a recessed dark
+	 * box (header + member rows). Only used when 2+ cwds are present. */
+	| { kind: "cwdBucket"; cwd: string; ids: string[]; collapsed: boolean }
+	/** Flat ungrouped row — the single-cwd case, no sectioning. */
+	| { kind: "session"; id: string; lastInBucket: boolean }
 	| { kind: "group"; section: { group: SessionGroup; ids: string[] } };
 
 /**
@@ -812,6 +907,7 @@ function SessionRowSidebar({
 	active,
 	inGroup = false,
 	groupColor,
+	hideCwd = false,
 	onDelete,
 	onArchive,
 	onUnarchive,
@@ -822,6 +918,9 @@ function SessionRowSidebar({
 	last: boolean;
 	pending: PermissionRequest[];
 	active: boolean;
+	/** True when the row sits under a CwdHeaderRow — the header already
+	 * names the folder, so the per-row cwd footer would be redundant. */
+	hideCwd?: boolean;
 	/** True when the row renders inside a group's bordered section — the
 	 * container owns the color border, so the row itself just adopts the
 	 * raised surface + indent + grouped ⋯ menu options. Also the source of
@@ -1003,7 +1102,7 @@ function SessionRowSidebar({
 							/>
 						) : null}
 					</div>
-					{session.cwd ? (
+					{session.cwd && !hideCwd ? (
 						<div
 							title={session.cwd}
 							style={{
@@ -1127,6 +1226,91 @@ function GroupSection({
  * strip (chevron + colored uppercase name + count + optional aggregate
  * indicators when collapsed).
  */
+/**
+ * Collapsible header strip for a cwd bucket. The recessed dark box lives
+ * on the wrapping div in the sidebar's render map (T.bg background +
+ * hairline frame); this paints the clickable header inside it — same
+ * vocabulary as GroupHeaderRow but neutral (no group color) so it stays
+ * subordinate to real groups. Tooltip carries the full path, which
+ * disambiguates same-basename dirs.
+ */
+function CwdHeaderRow({
+	cwd,
+	collapsed,
+	onToggle,
+}: {
+	cwd: string;
+	collapsed: boolean;
+	onToggle: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			title={cwd}
+			onClick={onToggle}
+			aria-expanded={!collapsed}
+			style={{
+				appearance: "none",
+				width: "100%",
+				display: "flex",
+				alignItems: "center",
+				gap: 7,
+				padding: "9px 12px",
+				// The wrapping bucket box owns the dark fill; the header just
+				// splits itself from the first member row with a hairline
+				// when expanded (GroupHeaderRow's move).
+				background: "transparent",
+				border: "none",
+				borderBottom: collapsed
+					? "none"
+					: `0.5px solid ${T.borderSoft}`,
+				cursor: "pointer",
+				textAlign: "left",
+				outline: "none",
+			}}
+		>
+			<svg
+				width="8"
+				height="8"
+				viewBox="0 0 8 8"
+				fill="none"
+				aria-hidden
+				style={{
+					flexShrink: 0,
+					color: T.textFaint,
+					// Points right when collapsed, down when open — same
+					// vocabulary as GroupHeaderRow's chevron.
+					transform: collapsed ? "rotate(0deg)" : "rotate(90deg)",
+					transition: "transform 120ms ease",
+				}}
+			>
+				<path
+					d="M2.5 1.5L6 4L2.5 6.5"
+					stroke="currentColor"
+					strokeWidth="1.4"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+				/>
+			</svg>
+			<span
+				style={{
+					fontSize: 11,
+					fontWeight: 600,
+					letterSpacing: 0.5,
+					textTransform: "uppercase",
+					color: T.textMute,
+					overflow: "hidden",
+					textOverflow: "ellipsis",
+					whiteSpace: "nowrap",
+					minWidth: 0,
+				}}
+			>
+				{folderName(cwd) || cwd || "no folder"}
+			</span>
+		</button>
+	);
+}
+
 function GroupHeaderRow({
 	group,
 	count,
