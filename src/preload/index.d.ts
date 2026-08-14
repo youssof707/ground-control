@@ -62,6 +62,14 @@ declare global {
 			renameSession: (sessionId: string, title: string) => Promise<void>;
 			pickFolder: (opts?: { defaultPath?: string }) => Promise<string | null>;
 			revealPath: (path: string) => Promise<void>;
+			openImageInPreview: (payload: {
+				mediaType?: string;
+				data: string;
+			}) => Promise<void>;
+			copyImage: (payload: {
+				mediaType?: string;
+				data: string;
+			}) => Promise<void>;
 			setUnreadCount: (count: number) => void;
 			listReadState: () => Promise<ReadStateFile>;
 			markRead: (sessionId: string, ts?: number) => Promise<void>;

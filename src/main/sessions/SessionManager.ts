@@ -398,12 +398,37 @@ export class SessionManager {
 		if (targetMsg.role !== "assistant") {
 			throw new Error("Can only fork from an assistant message");
 		}
-		const sdkUuid = (targetMsg.content as { uuid?: unknown }).uuid;
+		const sdkMeta = targetMsg.content as {
+			uuid?: unknown;
+			session_id?: unknown;
+		};
+		const sdkUuid = sdkMeta.uuid;
 		if (typeof sdkUuid !== "string" || sdkUuid.length === 0) {
 			throw new Error(
 				"This message has no SDK uuid and can't be used as a fork point",
 			);
 		}
+
+		// A transcript uuid is only valid inside the SDK session that minted it:
+		// `forkSession` copies the transcript with *freshly remapped* uuids, while
+		// we copy inherited messages' `content` verbatim (see the message mapping
+		// below). So a message this wrapper inherited from an ancestor carries the
+		// ancestor's uuid, which does not exist in our own `sdkSessionId` — forking
+		// it against `parent.sdkSessionId` fails with "Message X not found in
+		// session Y". Fork from the session named by the message instead.
+		//
+		// This is correct at any depth: each wrapper's message list is a prefix-copy
+		// of its parent's, so the ancestor's transcript prefix up to this uuid is
+		// content-identical to ours.
+		//
+		// `content` is the raw SDKMessage, so `session_id` is stamped by the SDK
+		// itself (cf. extractSdkSessionId). Locally-synthesised messages have none;
+		// they're never fork targets, but fall back to the parent to be safe.
+		const messageSdkId = sdkMeta.session_id;
+		const sourceSdkId =
+			typeof messageSdkId === "string" && messageSdkId.length > 0
+				? messageSdkId
+				: parent.sdkSessionId;
 
 		// Include the turn-end `result` message that immediately follows the
 		// forked-from assistant, when present. The SDK emits exactly one
@@ -421,10 +446,25 @@ export class SessionManager {
 		const truncated = parent.messages.slice(0, endIndex);
 		const newTitle = `${parent.title} (fork)`;
 
-		const { sessionId: newSdkId } = await sdkForkSession(parent.sdkSessionId, {
-			upToMessageId: sdkUuid,
-			title: newTitle,
-		});
+		// No `dir` option on purpose: when omitted the SDK searches *all* project
+		// directories for the session file. That's load-bearing here — the ancestor
+		// may have run under a different project key than resolveEffectiveCwd()
+		// resolves to today (e.g. a worktree since removed from the registry).
+		let newSdkId: string;
+		try {
+			({ sessionId: newSdkId } = await sdkForkSession(sourceSdkId, {
+				upToMessageId: sdkUuid,
+				title: newTitle,
+			}));
+		} catch (err) {
+			// Don't retry against parent.sdkSessionId — that's the bug this routing
+			// fixes, and if it ever succeeded it would branch from an unrelated
+			// point in an unrelated conversation.
+			const detail = err instanceof Error ? err.message : String(err);
+			throw new Error(
+				`Couldn't fork from Claude session ${sourceSdkId} — its transcript in ~/.claude may have been deleted or cleared. (${detail})`,
+			);
+		}
 
 		// Refresh git context — the working tree may have moved on since the
 		// parent started. Reads the *worktree* checkout when the parent is

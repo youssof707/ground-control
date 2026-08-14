@@ -20,9 +20,11 @@ import {
 	type DraftSession,
 } from "../stores/useDraftSessionsStore";
 import type { PendingImage } from "../lib/pendingImage";
+import { openImageInPreview } from "../lib/imageActions";
 import { T } from "../../../design/tokens";
 import { Kbd, ModeToggle, isBranchStale } from "../../../design/Atoms";
 import { DictationButton, type DictationHandle } from "./DictationButton";
+import { CopyImageButton } from "./CopyImageButton";
 
 interface Props {
 	sessionId: string;
@@ -454,39 +456,12 @@ export function ImagePasteTextarea({
 						}}
 					>
 						{images.map((img, i) => (
-							<div key={i} style={{ position: "relative" }}>
-								<img
-									src={img.previewUrl}
-									alt=""
-									style={{
-										height: 64,
-										width: 64,
-										objectFit: "cover",
-										borderRadius: 6,
-										border: `0.5px solid ${T.border}`,
-									}}
-								/>
-								<button
-									onClick={() => removeImage(i)}
-									title="Remove"
-									style={{
-										position: "absolute",
-										top: -6,
-										right: -6,
-										width: 20,
-										height: 20,
-										borderRadius: "50%",
-										border: "none",
-										background: T.text,
-										color: T.bg,
-										fontSize: 12,
-										cursor: "pointer",
-										lineHeight: 1,
-									}}
-								>
-									×
-								</button>
-							</div>
+							<PendingImageThumb
+								key={i}
+								img={img}
+								onRemove={() => removeImage(i)}
+								onError={setError}
+							/>
 						))}
 					</div>
 				) : null}
@@ -624,6 +599,89 @@ export function ImagePasteTextarea({
 					</button>
 				</div>
 			</div>
+		</div>
+	);
+}
+
+/**
+ * One pending-paste thumbnail: the image, a hover-revealed copy button, and
+ * the always-visible "×" remove button.
+ *
+ * Extracted from the composer's `images.map` so each thumbnail owns its own
+ * hover state — a single `hoveredIndex` on the parent would re-render every
+ * thumbnail on each mouse move between them.
+ */
+function PendingImageThumb({
+	img,
+	onRemove,
+	onError,
+}: {
+	img: PendingImage;
+	onRemove: () => void;
+	onError: (message: string | null) => void;
+}) {
+	const [hovered, setHovered] = useState(false);
+	return (
+		<div
+			style={{ position: "relative" }}
+			onMouseEnter={() => setHovered(true)}
+			onMouseLeave={() => setHovered(false)}
+		>
+			<img
+				src={img.previewUrl}
+				alt=""
+				// `img.data` (raw base64) rather than `previewUrl` — the handler
+				// accepts either, but this skips shipping the redundant data-URL
+				// prefix over IPC.
+				onDoubleClick={() => {
+					void openImageInPreview(img.media_type, img.data).then(
+						// null on success, which also clears any stale error from
+						// a previous failed attempt.
+						onError,
+					);
+				}}
+				style={{
+					display: "block",
+					height: 64,
+					width: 64,
+					objectFit: "cover",
+					borderRadius: 6,
+					border: `0.5px solid ${T.border}`,
+					// Suppress the selection flash a double-click otherwise
+					// paints over the thumbnail.
+					userSelect: "none",
+				}}
+			/>
+			{/* Top-left: the "×" already owns the top-right corner. Sized down
+			    to 20px so it doesn't swamp a 64px thumbnail. */}
+			<CopyImageButton
+				mediaType={img.media_type}
+				data={img.data}
+				hovered={hovered}
+				corner="left"
+				size={20}
+				inset={4}
+			/>
+			<button
+				onClick={onRemove}
+				aria-label="Remove"
+				style={{
+					position: "absolute",
+					top: -6,
+					right: -6,
+					width: 20,
+					height: 20,
+					borderRadius: "50%",
+					border: "none",
+					background: T.text,
+					color: T.bg,
+					fontSize: 12,
+					cursor: "pointer",
+					lineHeight: 1,
+				}}
+			>
+				×
+			</button>
 		</div>
 	);
 }

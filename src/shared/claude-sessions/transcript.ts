@@ -54,9 +54,17 @@ const TOOL_LIKE_BLOCK_TYPES = new Set([
 ]);
 
 /** Block types that belong in the collapsed tool-run rows regardless of
- * which agent produced them. */
+ * which agent produced them. Suffix-matched rather than enumerated so
+ * server-side tool blocks (`server_tool_use`, `mcp_tool_use`) and their
+ * result variants (`web_search_tool_result`, `advisor_tool_result`, and
+ * whatever the API adds next) fold into runs without a code change. */
 export function isToolLikeBlockType(type: string | undefined): boolean {
-	return type !== undefined && TOOL_LIKE_BLOCK_TYPES.has(type);
+	if (type === undefined) return false;
+	return (
+		TOOL_LIKE_BLOCK_TYPES.has(type) ||
+		type.endsWith("_tool_use") ||
+		type.endsWith("_tool_result")
+	);
 }
 
 /** Subagent PROSE: a subagent message with no tool-like blocks — the Agent

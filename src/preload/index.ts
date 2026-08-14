@@ -52,6 +52,10 @@ const claude = {
 	pickFolder: (opts?: { defaultPath?: string }) =>
 		ipcRenderer.invoke("dialog:pickFolder", opts ?? {}),
 	revealPath: (path: string) => ipcRenderer.invoke("shell:revealPath", path),
+	openImageInPreview: (payload: { mediaType?: string; data: string }) =>
+		ipcRenderer.invoke("shell:openImage", payload),
+	copyImage: (payload: { mediaType?: string; data: string }) =>
+		ipcRenderer.invoke("shell:copyImage", payload),
 	setUnreadCount: (count: number) =>
 		ipcRenderer.send("notifications:setUnreadCount", count),
 	listReadState: () => ipcRenderer.invoke("read:list"),

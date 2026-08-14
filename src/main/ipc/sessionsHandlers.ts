@@ -26,6 +26,7 @@ import {
 } from "./groupsHandlers";
 import { registerUpdaterHandlers } from "./updaterHandlers";
 import { registerDictationHandlers } from "./dictationHandlers";
+import { registerImageHandlers } from "./imageHandlers";
 
 /**
  * Open the native macOS "choose a directory" dialog. Returns the absolute
@@ -86,6 +87,7 @@ export function registerSessionsHandlers(): SessionManager {
 	registerGroupsHandlers();
 	registerUpdaterHandlers();
 	registerDictationHandlers();
+	registerImageHandlers();
 
 	ipcMain.handle("session:start", async (e, input: StartSessionInput) => {
 		// Guard against stale `cwd` values (e.g. a `lastUsedWorkspace` whose

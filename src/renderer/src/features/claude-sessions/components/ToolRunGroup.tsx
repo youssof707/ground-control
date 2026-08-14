@@ -18,12 +18,18 @@ interface ToolRunEntry {
 // collapsed line — analogous to Claude Code's collapsed "thinking"
 // indicator. Click the line to expand and reveal each individual pill,
 // which themselves remain individually expandable (existing behavior).
+// tool_use and its server-side variants (server_tool_use, mcp_tool_use) —
+// all carry `name`/`input` and count as calls in the summary line.
+function isToolUseLike(type: string | undefined): boolean {
+	return type === "tool_use" || (type?.endsWith("_tool_use") ?? false);
+}
+
 export const ToolRunGroup = memo(function ToolRunGroup({
 	entries,
 }: {
 	entries: ToolRunEntry[];
 }) {
-	const callCount = entries.filter((e) => e.block.type === "tool_use").length;
+	const callCount = entries.filter((e) => isToolUseLike(e.block.type)).length;
 	const hasThinking = entries.some(
 		(e) => e.block.type === "thinking" || e.block.type === "redacted_thinking",
 	);
@@ -34,7 +40,7 @@ export const ToolRunGroup = memo(function ToolRunGroup({
 	const seen = new Set<string>();
 	const names: string[] = [];
 	for (const e of entries) {
-		if (e.block.type !== "tool_use") continue;
+		if (!isToolUseLike(e.block.type)) continue;
 		const n = e.block.name ?? "tool";
 		if (seen.has(n)) continue;
 		seen.add(n);
@@ -52,6 +58,10 @@ export const ToolRunGroup = memo(function ToolRunGroup({
 
 	const label =
 		callCount === 1 ? "1 tool call" : `${callCount} tool calls`;
+
+	// A run with no actual calls (thinking-only fragments) is pure noise —
+	// render nothing rather than a "0 tool calls" row.
+	if (callCount === 0) return null;
 
 	return (
 		<div
@@ -105,15 +115,16 @@ export const ToolRunGroup = memo(function ToolRunGroup({
 					<div style={{ marginTop: 8 }}>
 						{entries.map((e) => {
 							const key = `${e.messageId}:${e.blockIndex}`;
-							if (e.block.type === "tool_use") {
+							if (isToolUseLike(e.block.type)) {
 								return <ToolUsePill key={key} block={e.block} />;
 							}
 							if (e.block.type === "tool_result") {
 								return <ToolResultPill key={key} block={e.block} />;
 							}
-							// thinking / redacted_thinking — match the same visual
-							// treatment MessageView gives them (RawBlock) so users
-							// see the same expandable line they're used to.
+							// thinking / redacted_thinking / server tool results —
+							// match the same visual treatment MessageView gives
+							// them (RawBlock) so users see the same expandable
+							// line they're used to.
 							return <RawBlock key={key} block={e.block} />;
 						})}
 					</div>

@@ -13,6 +13,8 @@ import {
 	type ContentBlock,
 	type SdkLike,
 } from "../lib/messageContent";
+import { openImageInPreview } from "../lib/imageActions";
+import { CopyImageButton } from "./CopyImageButton";
 
 // Re-exported for existing consumers (ToolRunGroup, groupMessages) that
 // import the type from this module.
@@ -456,24 +458,63 @@ function UserMessage({ sdk }: { sdk: SdkLike }) {
 						);
 					}
 					if (b.type === "image" && b.source?.data) {
+						// Hoisted out of the JSX: inside the onDoubleClick closure
+						// TypeScript loses the `b.source?.data` narrowing above.
+						const data = b.source.data;
+						const mediaType = b.source.media_type;
 						return (
-							<img
-								key={i}
-								src={`data:${b.source.media_type ?? "image/png"};base64,${b.source.data}`}
-								alt=""
-								style={{
-									maxWidth: 280,
-									maxHeight: 280,
-									borderRadius: 8,
-									border: `0.5px solid ${T.border}`,
-									objectFit: "contain",
-								}}
-							/>
+							<TranscriptImage key={i} mediaType={mediaType} data={data} />
 						);
 					}
 					return <RawBlock key={i} block={b} />;
 				})}
 			</div>
+		</div>
+	);
+}
+
+/**
+ * An image block in the transcript, with a hover-revealed copy button in the
+ * top-right corner (same affordance as code blocks) and double-click to open
+ * full-size in Preview.
+ *
+ * The wrapper is `inline-block` so it shrink-wraps the image — a block-level
+ * div would stretch to the bubble's full width and float the copy button far
+ * from a narrow image.
+ */
+function TranscriptImage({
+	mediaType,
+	data,
+}: {
+	mediaType: string | undefined;
+	data: string;
+}) {
+	const [hovered, setHovered] = useState(false);
+	return (
+		<div
+			style={{ position: "relative", display: "inline-block" }}
+			onMouseEnter={() => setHovered(true)}
+			onMouseLeave={() => setHovered(false)}
+		>
+			<img
+				src={`data:${mediaType ?? "image/png"};base64,${data}`}
+				alt=""
+				onDoubleClick={() => {
+					// No error surface in the transcript; imageActions already
+					// console.errors, and a failed open is non-destructive.
+					void openImageInPreview(mediaType, data);
+				}}
+				style={{
+					display: "block",
+					maxWidth: 280,
+					maxHeight: 280,
+					borderRadius: 8,
+					border: `0.5px solid ${T.border}`,
+					objectFit: "contain",
+					userSelect: "none",
+				}}
+			/>
+			<CopyImageButton mediaType={mediaType} data={data} hovered={hovered} />
 		</div>
 	);
 }

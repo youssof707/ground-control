@@ -21,25 +21,16 @@ export type RenderUnit =
 		entries: { messageId: string; blockIndex: number; block: ContentBlock }[];
 	};
 
-// A message qualifies as a "tool turn" if every block is either tool_use
-// or thinking/redacted_thinking (assistant), or tool_result (user). Mixed
-// messages with text are rendered normally — once Claude says something to
-// the user, the run should break.
-const ASSISTANT_TOOL_LIKE_TYPES = new Set([
-	"tool_use",
-	"thinking",
-	"redacted_thinking",
-]);
-
+// A message qualifies as a "tool turn" if every block is tool-like per the
+// shared predicate — tool_use/tool_result (including server-side variants
+// like server_tool_use / advisor_tool_result) or thinking. Mixed messages
+// with text are rendered normally — once Claude says something to the user,
+// the run should break.
 function isToolOnlyMessage(m: SessionMessage): boolean {
 	if (m.role !== "assistant" && m.role !== "user") return false;
 	const blocks = blocksOf(m);
 	if (blocks.length === 0) return false;
-	if (m.role === "assistant") {
-		return blocks.every((b) => ASSISTANT_TOOL_LIKE_TYPES.has(b.type ?? ""));
-	}
-	// user
-	return blocks.every((b) => b.type === "tool_result");
+	return blocks.every((b) => isToolLikeBlockType(b.type));
 }
 
 // `system` and `result` messages render as `null` in MessageView (see
