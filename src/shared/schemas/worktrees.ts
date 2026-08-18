@@ -13,22 +13,60 @@ import { z } from "zod";
  * branch name. It's the only thing shown on the badge.
  *
  * `color` is the badge's tint. Chosen at creation, immutable, same
- * lifecycle as `displayName`. Scoped to a small palette that maps to
- * existing design tokens (info/ok/warn/danger). Defaults to "blue" so
- * pre-existing rows in `worktrees.json` (written before this field
- * existed) get backfilled by Zod on read.
+ * lifecycle as `displayName`. Scoped to a two-value palette that maps to
+ * existing design tokens (info/danger).
+ *
+ * Two schemas, deliberately: `WorktreeColorSchema` is the *selectable*
+ * palette (what the picker offers, what creation inputs accept), while
+ * `StoredWorktreeColorSchema` is the *read* schema for persisted records.
+ * The palette used to include "green" and "yellow"; the stored schema
+ * folds those onto "blue"/"red" on read, so `worktrees.json` files
+ * written by older builds keep parsing and get rewritten in the new
+ * vocabulary on the next persist. It's also total — a missing field or a
+ * hand-edited garbage value degrades to "blue" instead of throwing at
+ * store init, which would take app startup down.
  *
  * `sessionIds` is the reverse index: which sessions currently reference
  * this worktree. Used to enforce "no delete while attached" and to
  * cascade-detach on session delete.
  */
-export const WorktreeColorSchema = z.enum(["blue", "green", "yellow", "red"]);
+export const WorktreeColorSchema = z.enum(["blue", "red"]);
 export type WorktreeColor = z.infer<typeof WorktreeColorSchema>;
+
+/**
+ * Legacy palette → current palette. Keyed loosely (`string`) so retired
+ * values and unknown junk both flow through the same lookup; the `??`
+ * is the catch-all. Values map by semantics: green was "ok" (→ blue,
+ * the neutral/info tint), yellow was "warn" (→ red, the alert tint).
+ */
+const LEGACY_COLOR_ALIASES: Record<string, WorktreeColor | undefined> = {
+	blue: "blue",
+	red: "red",
+	green: "blue",
+	yellow: "red",
+};
+
+export function normalizeWorktreeColor(value: unknown): WorktreeColor {
+	return (
+		(typeof value === "string" ? LEGACY_COLOR_ALIASES[value] : undefined) ??
+		"blue"
+	);
+}
+
+/**
+ * Read schema for the persisted `color` field. Never throws: normalizes
+ * first, then validates against the live palette so a normalizer bug
+ * still surfaces as a parse error.
+ */
+export const StoredWorktreeColorSchema = z.preprocess(
+	normalizeWorktreeColor,
+	WorktreeColorSchema,
+);
 
 export const WorktreeSchema = z.object({
 	id: z.string(),
 	displayName: z.string(),
-	color: WorktreeColorSchema.default("blue"),
+	color: StoredWorktreeColorSchema,
 	baseDir: z.string(),
 	worktreePath: z.string(),
 	branch: z.string(),

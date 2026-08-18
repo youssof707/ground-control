@@ -259,6 +259,28 @@ export function SessionsList({
 		if (picked) createDraftAndNavigate(picked);
 	};
 
+	// Per-bucket New Session. Unlike `start`, the target folder is explicit,
+	// so there is no picker and no async path. When a draft already exists we
+	// RETARGET it rather than refusing or replacing it: the single-slot rule
+	// still holds and the user's typed text survives.
+	const startInCwd = (cwd: string) => {
+		setStartError(null);
+		if (!cwd) return; // synthetic "" bucket ("no folder") has no target
+		if (draft) {
+			if (draft.cwd !== cwd) {
+				// A worktree is bound to a baseDir, so retargeting invalidates
+				// the pairing — same rule as DraftSessionChat.changeFolder.
+				useDraftSessionsStore
+					.getState()
+					.updateDraft({ cwd, worktreeId: undefined });
+				useSettingsStore.getState().setLastUsedWorkspace(cwd);
+			}
+			navigate(`/sessions/${draft.id}`);
+			return;
+		}
+		createDraftAndNavigate(cwd);
+	};
+
 	const startInPickedFolder = async () => {
 		if (draft) {
 			navigate(`/sessions/${draft.id}`);
@@ -660,11 +682,6 @@ export function SessionsList({
 					<button
 						className="btn btn-primary"
 						onClick={start}
-						title={
-							targetCwd
-								? `Start a session in ${targetCwd}`
-								: "Pick a folder and start a session there"
-						}
 						style={{ flex: 1, justifyContent: "center", minWidth: 0 }}
 					>
 						<svg width="13" height="13" viewBox="0 0 14 14" fill="none">
@@ -796,6 +813,9 @@ export function SessionsList({
 											collapsed={row.collapsed}
 											onToggle={() =>
 												toggleCwdCollapsed(row.cwd)
+											}
+											onNewSession={() =>
+												startInCwd(row.cwd)
 											}
 										/>
 										{row.collapsed
@@ -1104,7 +1124,6 @@ function SessionRowSidebar({
 					</div>
 					{session.cwd && !hideCwd ? (
 						<div
-							title={session.cwd}
 							style={{
 								fontSize: 11,
 								color: T.textFaint,
@@ -1231,83 +1250,148 @@ function GroupSection({
  * on the wrapping div in the sidebar's render map (T.bg background +
  * hairline frame); this paints the clickable header inside it — same
  * vocabulary as GroupHeaderRow but neutral (no group color) so it stays
- * subordinate to real groups. Tooltip carries the full path, which
- * disambiguates same-basename dirs.
+ * subordinate to real groups.
  */
 function CwdHeaderRow({
 	cwd,
 	collapsed,
 	onToggle,
+	onNewSession,
 }: {
 	cwd: string;
 	collapsed: boolean;
 	onToggle: () => void;
+	onNewSession: () => void;
 }) {
+	const name = folderName(cwd) || cwd;
 	return (
-		<button
-			type="button"
-			title={cwd}
-			onClick={onToggle}
-			aria-expanded={!collapsed}
+		// A flex ROW, not a single button: the "+" must be a sibling of the
+		// toggle, never a descendant (nested <button> is invalid HTML, and a
+		// nested click target would need stopPropagation to avoid also
+		// collapsing the bucket). The wrapper owns the under-rule so it spans
+		// the full width, including behind the "+".
+		<div
 			style={{
-				appearance: "none",
-				width: "100%",
 				display: "flex",
 				alignItems: "center",
-				gap: 7,
-				padding: "9px 12px",
-				// The wrapping bucket box owns the dark fill; the header just
-				// splits itself from the first member row with a hairline
-				// when expanded (GroupHeaderRow's move).
-				background: "transparent",
-				border: "none",
 				borderBottom: collapsed
 					? "none"
 					: `0.5px solid ${T.borderSoft}`,
-				cursor: "pointer",
-				textAlign: "left",
-				outline: "none",
+				// 2px + the 24px button's 12px half-width puts the glyph's
+				// center 14px from the box edge — the same optical column as
+				// the rows' ⋯ button (row padding 14 + RowMenuButton's
+				// marginRight -12).
+				paddingRight: 2,
 			}}
 		>
-			<svg
-				width="8"
-				height="8"
-				viewBox="0 0 8 8"
-				fill="none"
-				aria-hidden
+			<button
+				type="button"
+				onClick={onToggle}
+				aria-expanded={!collapsed}
 				style={{
-					flexShrink: 0,
-					color: T.textFaint,
-					// Points right when collapsed, down when open — same
-					// vocabulary as GroupHeaderRow's chevron.
-					transform: collapsed ? "rotate(0deg)" : "rotate(90deg)",
-					transition: "transform 120ms ease",
-				}}
-			>
-				<path
-					d="M2.5 1.5L6 4L2.5 6.5"
-					stroke="currentColor"
-					strokeWidth="1.4"
-					strokeLinecap="round"
-					strokeLinejoin="round"
-				/>
-			</svg>
-			<span
-				style={{
-					fontSize: 11,
-					fontWeight: 600,
-					letterSpacing: 0.5,
-					textTransform: "uppercase",
-					color: T.textMute,
-					overflow: "hidden",
-					textOverflow: "ellipsis",
-					whiteSpace: "nowrap",
+					appearance: "none",
+					flex: 1,
 					minWidth: 0,
+					display: "flex",
+					alignItems: "center",
+					gap: 7,
+					padding: "9px 12px",
+					// The wrapping bucket box owns the dark fill; the header
+					// just splits itself from the first member row with a
+					// hairline when expanded (GroupHeaderRow's move).
+					background: "transparent",
+					border: "none",
+					cursor: "pointer",
+					textAlign: "left",
+					outline: "none",
 				}}
 			>
-				{folderName(cwd) || cwd || "no folder"}
-			</span>
-		</button>
+				<svg
+					width="8"
+					height="8"
+					viewBox="0 0 8 8"
+					fill="none"
+					aria-hidden
+					style={{
+						flexShrink: 0,
+						color: T.textFaint,
+						// Points right when collapsed, down when open — same
+						// vocabulary as GroupHeaderRow's chevron.
+						transform: collapsed ? "rotate(0deg)" : "rotate(90deg)",
+						transition: "transform 120ms ease",
+					}}
+				>
+					<path
+						d="M2.5 1.5L6 4L2.5 6.5"
+						stroke="currentColor"
+						strokeWidth="1.4"
+						strokeLinecap="round"
+						strokeLinejoin="round"
+					/>
+				</svg>
+				<span
+					style={{
+						fontSize: 11,
+						fontWeight: 600,
+						letterSpacing: 0.5,
+						textTransform: "uppercase",
+						color: T.textMute,
+						overflow: "hidden",
+						textOverflow: "ellipsis",
+						whiteSpace: "nowrap",
+						minWidth: 0,
+					}}
+				>
+					{folderName(cwd) || cwd || "no folder"}
+				</span>
+			</button>
+			{/* No "+" for the synthetic "" bucket (sessions with a null cwd):
+			    there is no folder to target. */}
+			{cwd ? (
+				<button
+					type="button"
+					onClick={onNewSession}
+					aria-label={`New session in ${name}`}
+					style={{
+						display: "inline-flex",
+						alignItems: "center",
+						justifyContent: "center",
+						flexShrink: 0,
+						width: 24,
+						height: 24,
+						padding: 0,
+						border: "none",
+						borderRadius: 4,
+						background: "transparent",
+						color: T.textFaint,
+						cursor: "pointer",
+					}}
+					onMouseEnter={(e) => {
+						e.currentTarget.style.background = T.surfaceHi;
+						e.currentTarget.style.color = T.text;
+					}}
+					onMouseLeave={(e) => {
+						e.currentTarget.style.background = "transparent";
+						e.currentTarget.style.color = T.textFaint;
+					}}
+				>
+					<svg
+						width="13"
+						height="13"
+						viewBox="0 0 14 14"
+						fill="none"
+						aria-hidden
+					>
+						<path
+							d="M7 3v8M3 7h8"
+							stroke="currentColor"
+							strokeWidth="1.6"
+							strokeLinecap="round"
+						/>
+					</svg>
+				</button>
+			) : null}
+		</div>
 	);
 }
 
@@ -1708,7 +1792,6 @@ function DraftRowSidebar({
 						</span>
 					</div>
 					<div
-						title={draft.cwd}
 						style={{
 							fontSize: 11,
 							color: T.textFaint,

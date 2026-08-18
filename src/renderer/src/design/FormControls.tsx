@@ -96,12 +96,16 @@ export function LabeledInput({
 }
 
 /**
- * Row of 4 dots for picking a chip color (worktrees + session groups share
+ * Row of dots for picking a chip color (worktrees + session groups share
  * the same palette). The selected dot renders a matching-color ring via
  * `boxShadow` so the picker reads at a glance without a separate checkmark
  * glyph.
+ *
+ * Single source of truth: `WORKTREE_COLOR_MAP` is `Record<WorktreeColor, …>`,
+ * so adding/removing a palette entry forces a map edit, which lands here
+ * for free instead of drifting out of sync with a second hardcoded list.
  */
-const COLOR_OPTIONS: WorktreeColor[] = ["blue", "green", "yellow", "red"];
+const COLOR_OPTIONS = Object.keys(WORKTREE_COLOR_MAP) as WorktreeColor[];
 
 export function ColorPicker({
 	value,

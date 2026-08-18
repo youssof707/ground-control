@@ -8,14 +8,19 @@ import { T } from "./tokens";
  * semantic palette — the flat token dictionary should stay flat.
  * Exported so the create-worktree modal's picker can reuse the same
  * mapping instead of redefining tuples.
+ *
+ * Used to also have "green" and "yellow" entries; both were retired
+ * because they collided with existing status colors elsewhere in the
+ * app (green = "running", yellow = "waiting for input"). Don't re-add
+ * them here without also widening `WorktreeColorSchema` in
+ * `shared/schemas/worktrees.ts` — `StoredWorktreeColorSchema` folds
+ * legacy green/yellow records onto blue/red on read.
  */
 export const WORKTREE_COLOR_MAP: Record<
 	WorktreeColor,
 	{ fg: string; bg: string; border: string }
 > = {
 	blue: { fg: T.info, bg: T.infoSoft, border: T.infoBorder },
-	green: { fg: T.ok, bg: T.okSoft, border: T.okBorder },
-	yellow: { fg: T.warn, bg: T.warnSoft, border: T.warnBorder },
 	red: { fg: T.danger, bg: T.dangerSoft, border: T.dangerBorder },
 };
 
@@ -32,7 +37,7 @@ export const WORKTREE_COLOR_MAP: Record<
  *   - "readonly" (session header + sidebar rows): no ✕, no click
  *     handler. Sessions are bound to their worktree forever.
  *
- * `color` picks the tint from the 4-value palette above. Defaults to
+ * `color` picks the tint from the 2-value palette above. Defaults to
  * "blue" (matches the previous hardcoded look) so an accidental drop
  * through still renders a valid chip.
  */

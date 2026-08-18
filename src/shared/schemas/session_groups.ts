@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { WorktreeColorSchema } from "./worktrees";
+import { StoredWorktreeColorSchema, WorktreeColorSchema } from "./worktrees";
 
 /**
  * Sidebar session group — a purely organizational bucket, Chrome-tab-group
@@ -10,7 +10,7 @@ import { WorktreeColorSchema } from "./worktrees";
  * archived, or deleted).
  *
  * `color` reuses the worktree palette so both features draw from the same
- * four design tokens (info/ok/warn/danger).
+ * two design tokens (info/danger).
  *
  * `collapsed` is persisted on the record (not per-window UI state) so a
  * collapse survives restarts and syncs across windows via `state:changed`.
@@ -18,7 +18,7 @@ import { WorktreeColorSchema } from "./worktrees";
 export const SessionGroupSchema = z.object({
 	id: z.string(),
 	name: z.string(),
-	color: WorktreeColorSchema,
+	color: StoredWorktreeColorSchema,
 	/** Drives sidebar ordering: newest group first, under ungrouped rows. */
 	createdAt: z.number(),
 	collapsed: z.boolean().default(false),
