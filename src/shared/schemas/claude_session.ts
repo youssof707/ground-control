@@ -157,8 +157,9 @@ export const ClaudeSessionSchema = z.object({
 	 * once at session creation (from the draft's `worktreeId`) and never
 	 * changed after — sessions are permanently bound to their worktree.
 	 * When unset, the SDK runs directly in `cwd`. See `SessionManager.
-	 * resolveEffectiveCwd`. Displayed to the user as a badge above the
-	 * session title (label = worktree's `displayName`). */
+	 * resolveEffectiveCwd`. In the sidebar, worktree sessions bucket into
+	 * their own section (labeled "folder: displayName"); the chat header
+	 * still shows the worktree as a chip. */
 	worktreeId: z.string().optional(),
 	/** Requested model override for the session's SDK query (e.g.
 	 * "claude-opus-4-6"). Passed to the SDK at query start and switchable

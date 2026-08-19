@@ -9,7 +9,7 @@ import { AttachWorktreeModal } from "./AttachWorktreeModal";
 import { ModelPickerModal } from "./ModelPickerModal";
 import { WorktreeChip } from "../../../design/WorktreeChip";
 import { T } from "../../../design/tokens";
-import { formatModelName } from "../lib/sessionModel";
+import { formatModelName } from "@shared/claude-sessions/sessionModel";
 
 /**
  * Right-pane view for a draft session — one that exists only in the renderer
@@ -437,7 +437,7 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 			<ModelPickerModal
 				open={modelPickerOpen}
 				sessionId={draftId}
-				currentModel={draft.model}
+				effectiveModel={draft.model}
 				onSelect={(value) =>
 					useDraftSessionsStore.getState().updateDraft({ model: value })
 				}

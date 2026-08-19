@@ -147,6 +147,11 @@ import {
 	isInjectedUserProse,
 	isSubagentProse,
 } from "../../shared/claude-sessions/transcript";
+import {
+	assistantStreamModel,
+	identityMatches,
+	parseModelIdentity,
+} from "../../shared/claude-sessions/sessionModel";
 import { PermissionBroker } from "./PermissionBroker";
 import {
 	getCurrentBranch,
@@ -731,11 +736,20 @@ export class SessionManager {
 			syncStatus();
 		};
 
+		// When the turn currently being served was handed to the SDK. Read by
+		// the model-sync check below: `setModel` only takes effect from the
+		// *next* turn, so assistant messages belonging to a turn that was
+		// already in flight when the user switched still carry the old model
+		// and must not be mistaken for evidence that the switch was ignored.
+		// Seeded to "now" because the spawn itself applied `session.model`.
+		let turnStartedAt = Date.now();
+
 		async function* userStream(): AsyncIterable<SDKUserMessage> {
 			while (true) {
 				while (turns.length > 0) {
 					const blocks = turns.shift();
 					if (!blocks) continue;
+					turnStartedAt = Date.now();
 					yield {
 						type: "user",
 						message: { role: "user", content: blocks },
@@ -928,6 +942,51 @@ export class SessionManager {
 					content: msg as unknown,
 					ts: Date.now(),
 				};
+
+				// Sync the stored override to what the CLI is *actually*
+				// running. Nothing else writes `session.model` after a
+				// switch, so a CLI-side flip (usage fallback, `/model` inside
+				// the session, a changed CLI default) would otherwise leave
+				// the stored value describing a model that stopped being used
+				// turns ago — and the picker highlighting a row you can no
+				// longer select your way back to.
+				if (sessionMessage.role === "assistant") {
+					const observed = assistantStreamModel(sessionMessage.content);
+					// Only trust turns that began *after* the user's last
+					// switch. Picking a model mid-response is exactly when a
+					// user reaches for the picker ("wait, this is Sonnet") —
+					// and the rest of that in-flight turn still streams the
+					// old model, which would otherwise instantly clobber the
+					// pick they just made.
+					if (
+						observed !== null &&
+						// Only correct an *explicit* override. A session on
+						// Default has no override to go stale, and writing the
+						// observed id here would quietly convert "follow the
+						// CLI default" into a hard pin that outlives the
+						// restart — losing the auto-upgrade that picking
+						// Default is for. The label and the picker already
+						// read the real model straight off the stream, so
+						// there is nothing to gain by pinning it.
+						session.model !== undefined &&
+						turnStartedAt >= (session.modelChangedAt ?? 0) &&
+						!identityMatches(
+							parseModelIdentity(observed),
+							parseModelIdentity(session.model),
+						)
+					) {
+						// Stored verbatim — the "[1m]" suffix included — so a
+						// 1M-context session isn't silently downgraded when it
+						// respawns (runLoop passes session.model straight to
+						// the SDK).
+						session.model = observed;
+						// `modelChangedAt` is deliberately left alone: it marks
+						// *user intent* and gates the pending-label window.
+						void sessionStore.updateSession(id, { model: observed });
+						this.send("session:patch", { sessionId: id, model: observed });
+					}
+				}
+
 				this.send("session:message", {
 					sessionId: id,
 					message: sessionMessage,
@@ -1164,12 +1223,20 @@ export class SessionManager {
 	 * Mirrors `setMode`: live-switches the active SDK query when one exists
 	 * (applies from the next turn), and always persists + broadcasts so
 	 * inactive sessions pick the model up on their next resume.
+	 *
+	 * Deliberately NOT short-circuited when the requested model equals the
+	 * stored one. `session.model` records what we last *observed or asked
+	 * for*, and the CLI can move the live query off it at any time (a
+	 * server-side fallback, `/model` typed inside the session). An
+	 * equality guard here made re-picking that exact model a silent no-op —
+	 * no SDK call, no broadcast — which is precisely the case where the user
+	 * most needs the re-assert to land. One redundant control request per
+	 * pick is a fair price for "clicking the model always works".
 	 */
 	async setModel(sessionId: string, model: string | undefined): Promise<void> {
 		const modelChangedAt = Date.now();
 		const entry = this.sessions.get(sessionId);
 		if (entry) {
-			if (entry.session.model === model) return;
 			entry.session.model = model;
 			entry.session.modelChangedAt = modelChangedAt;
 			try {

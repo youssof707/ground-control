@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { ModelInfo } from "@anthropic-ai/claude-agent-sdk";
 import { T } from "../../../design/tokens";
-import { normalizeModelId } from "../lib/sessionModel";
+import {
+	identityMatches,
+	parseModelIdentity,
+	parseOptionIdentity,
+} from "@shared/claude-sessions/sessionModel";
 
 interface ModelOption {
 	/** undefined = clear the override (CLI default model). */
@@ -60,16 +64,20 @@ const SYNTHETIC_DEFAULT: ModelOption = {
 export function ModelPickerModal({
 	open,
 	sessionId,
-	currentModel,
+	effectiveModel,
 	onSelect,
 	onClose,
 }: {
 	open: boolean;
 	sessionId: string;
-	/** The session's *requested* override (`session.model` or
-	 * `draft.model`), not the stream-derived label — highlighting reflects
-	 * what's been asked for. */
-	currentModel: string | undefined;
+	/** The model *actually in effect* — the same stream-derived value the
+	 * footer label shows (`deriveDisplayedModel(...).model`), not the
+	 * requested override. Highlighting must reflect reality: when the CLI
+	 * flips the model out from under us (server-side fallback, `/model`
+	 * inside the SDK), the picker has to show the model that's really
+	 * running, or the row you actually want reads as already-selected and
+	 * feels dead. Drafts have no stream, so they pass `draft.model`. */
+	effectiveModel: string | undefined;
 	/** Called with the chosen model id, or `undefined` to clear the
 	 * override. May be async; the modal disables its buttons while the
 	 * promise is pending and surfaces thrown errors in the error slot. */
@@ -142,10 +150,6 @@ export function ModelPickerModal({
 
 	if (!open) return null;
 
-	const normalizedCurrent = currentModel
-		? normalizeModelId(currentModel)
-		: undefined;
-
 	const pick = async (value: string | undefined) => {
 		if (saving) return;
 		setSaving(true);
@@ -171,10 +175,32 @@ export function ModelPickerModal({
 
 	const isDefaultRow = (o: ModelOption) =>
 		o.value === undefined || o.value === "default";
-	const isSelected = (o: ModelOption) =>
-		isDefaultRow(o)
-			? normalizedCurrent === undefined
-			: normalizedCurrent === normalizeModelId(o.value!);
+
+	// Resolve the highlight to a single row index rather than testing rows
+	// independently. The stream reports concrete ids ("claude-sonnet-4-5-…")
+	// while rows carry CLI aliases ("sonnet", "sonnet[1m]"), so matching is
+	// structural (family + version + 1M flag) and *can* hit more than one row
+	// — a versionless "sonnet" alias matches any Sonnet. When it does, prefer
+	// the row that names a specific version; it's the more informative claim.
+	const effectiveIdentity = parseModelIdentity(effectiveModel);
+	const rowIdentities = rowsToRender.map((o) =>
+		isDefaultRow(o) ? null : parseOptionIdentity(o.value, o.description),
+	);
+
+	let selectedIndex = -1;
+	if (effectiveIdentity === null) {
+		// No model in effect at all (no override, nothing in the stream yet)
+		// → the Default row is the honest answer.
+		selectedIndex = rowsToRender.findIndex(isDefaultRow);
+	} else {
+		const matches = rowIdentities.flatMap((id, i) =>
+			identityMatches(effectiveIdentity, id) ? [i] : [],
+		);
+		const versioned = matches.filter(
+			(i) => rowIdentities[i]?.major !== undefined,
+		);
+		selectedIndex = (versioned.length > 0 ? versioned : matches)[0] ?? -1;
+	}
 
 	return (
 		<div className="modal-backdrop" onClick={onClose} role="presentation">
@@ -222,8 +248,8 @@ export function ModelPickerModal({
 							margin: "12px 0 4px",
 						}}
 					>
-						{rowsToRender.map((o) => {
-							const selected = isSelected(o);
+						{rowsToRender.map((o, i) => {
+							const selected = i === selectedIndex;
 							// Default rows always dispatch `undefined` (no
 							// explicit override) even when the row came from
 							// the CLI with value === "default" — keeps the

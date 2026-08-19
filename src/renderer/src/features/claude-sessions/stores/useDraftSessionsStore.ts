@@ -37,7 +37,8 @@ export interface DraftSession {
 	mode: SessionMode;
 	createdAt: number;
 	/** App-owned worktree attached to this draft. Set to a Worktree.id
-	 * when the user picks / creates one via AttachWorktreeModal; cleared
+	 * when the user picks / creates one via AttachWorktreeModal, or
+	 * pre-seeded by the sidebar worktree group's "+" button; cleared
 	 * to `undefined` when the user changes cwd (worktree is bound to a
 	 * baseDir) or clicks ✕ on the chip. On send, this id is forwarded to
 	 * `startSession`, at which point the SessionManager persists the
@@ -58,6 +59,7 @@ interface State {
 		cwd: string;
 		defaultTitle: string;
 		mode?: SessionMode;
+		worktreeId?: string;
 	}) => DraftSession;
 	// The patch type intentionally allows `worktreeId: undefined` and
 	// `model: undefined` so the folder-change handler can clear the
@@ -77,7 +79,7 @@ export function isDraftId(id: string | undefined | null): id is string {
 
 export const useDraftSessionsStore = create<State>((set) => ({
 	draft: null,
-	createDraft: ({ cwd, defaultTitle, mode = "plan" }) => {
+	createDraft: ({ cwd, defaultTitle, mode = "plan", worktreeId }) => {
 		const draft: DraftSession = {
 			id: `draft-${crypto.randomUUID()}`,
 			cwd,
@@ -85,6 +87,7 @@ export const useDraftSessionsStore = create<State>((set) => ({
 			defaultTitle,
 			mode,
 			createdAt: Date.now(),
+			worktreeId,
 		};
 		set({ draft });
 		return draft;

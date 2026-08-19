@@ -27,6 +27,21 @@ import {
 	isConversationSkipped,
 } from "@shared/claude-sessions/transcript";
 import type { SessionGroup } from "@shared/schemas/session_groups";
+import type { Worktree } from "@shared/schemas/worktrees";
+
+/**
+ * Selected-row fill. Translucent rather than a fixed surface token so the row
+ * lifts by the same perceptual amount from whatever sits behind it — the
+ * sidebar pane (`T.win`) or a recessed cwd/worktree bucket (`T.bg`). A fixed
+ * `T.surfaceHi` over-shot inside the darker bucket and read lighter than the
+ * pane around it, so the selection escaped its own box.
+ * The tint itself is near-neutral text color with just a 1% hint of accent
+ * blue mixed in — not the accent swatch directly, which at any visible
+ * opacity reads as a saturated blue box instead of a grey highlight. That
+ * whisper-tinted grey is then laid down at 4% opacity for the lift.
+ */
+const ROW_SELECTED_TINT = `color-mix(in oklab, ${T.text} 99%, ${T.accent} 1%)`;
+const ROW_SELECTED_BG = `color-mix(in oklab, ${ROW_SELECTED_TINT} 4%, transparent)`;
 
 export function SessionsList({
 	activeSessionId,
@@ -76,8 +91,10 @@ export function SessionsList({
 	// workspace filter). Resets to false on reload — mirrors how
 	// workspaceFilter behaves.
 	const [showArchived, setShowArchived] = useState(false);
-	// Collapsed cwd buckets (ungrouped section). Non-persistent view state —
-	// resets on reload, mirroring workspaceFilter / showArchived above.
+	// Collapsed ungrouped buckets. Keys are cwd paths for cwd buckets and
+	// `wt:<worktreeId>` for worktree buckets (cwds are absolute paths or "",
+	// so the prefix can't collide). Non-persistent view state — resets on
+	// reload, mirroring workspaceFilter / showArchived above.
 	const [collapsedCwds, setCollapsedCwds] = useState<Set<string>>(
 		() => new Set(),
 	);
@@ -163,50 +180,96 @@ export function SessionsList({
 	}, [sortedOrder, sessions, workspaceFilter, showArchived]);
 
 	// Partition the visible rows into "ungrouped" (rendered first, bucketed
-	// by cwd under subtle headers) and per-group sections (rendered after,
-	// newest group first). Built from `visibleOrder`, so:
+	// by cwd — or by worktree for worktree-bound sessions — under subtle
+	// headers) and per-group sections (rendered after, newest group first).
+	// Precedence per session: manual group > worktree > cwd. Built from
+	// `visibleOrder`, so:
 	//   - intra-bucket / intra-group ordering matches the flat list's
 	//     comparator exactly (newest first; archived sink within their
 	//     bucket — the per-bucket analogue of the global convention above);
 	//   - a group whose members are all filtered out (workspace filter,
 	//     archived-hidden) never materializes a section → hidden, per spec;
 	//   - a dangling groupId (group record missing — crash window, stale
-	//     cache) degrades to "ungrouped" instead of vanishing the row.
-	const { ungroupedBuckets, groupSections } = useMemo(() => {
-		const byCwd = new Map<string, string[]>();
-		const byGroup = new Map<string, string[]>();
-		for (const id of visibleOrder) {
-			const gid = sessions[id]?.groupId;
-			if (gid && groups[gid]) {
-				const list = byGroup.get(gid);
-				if (list) list.push(id);
-				else byGroup.set(gid, [id]);
-			} else {
-				const cwd = sessions[id]?.cwd ?? "";
-				const list = byCwd.get(cwd);
-				if (list) list.push(id);
-				else byCwd.set(cwd, [id]);
+	//     cache) degrades to "ungrouped" instead of vanishing the row, and
+	//     a dangling worktreeId likewise degrades to the cwd bucket.
+	const { ungroupedBuckets, groupSections, cwdBucketCount, hideCwdPrefix } =
+		useMemo(() => {
+			const byCwd = new Map<string, string[]>();
+			const byWorktree = new Map<string, string[]>();
+			const byGroup = new Map<string, string[]>();
+			for (const id of visibleOrder) {
+				const s = sessions[id];
+				const gid = s?.groupId;
+				const wtId = s?.worktreeId;
+				if (gid && groups[gid]) {
+					const list = byGroup.get(gid);
+					if (list) list.push(id);
+					else byGroup.set(gid, [id]);
+				} else if (wtId && worktrees[wtId]) {
+					const list = byWorktree.get(wtId);
+					if (list) list.push(id);
+					else byWorktree.set(wtId, [id]);
+				} else {
+					const cwd = s?.cwd ?? "";
+					const list = byCwd.get(cwd);
+					if (list) list.push(id);
+					else byCwd.set(cwd, [id]);
+				}
 			}
-		}
-		const buckets = Array.from(byCwd.entries())
-			.map(([cwd, ids]) => ({ cwd, ids }))
-			// Alphabetical by folder name (matches the workspace dropdown);
-			// full-cwd tie-break keeps same-basename dirs deterministic.
-			.sort(
+			// "One cwd" for label purposes = distinct folders across ALL
+			// visible ungrouped buckets (cwd buckets ∪ worktree baseDirs).
+			// With a single folder, the worktree headers drop the redundant
+			// "folder: " prefix and show just the worktree name.
+			const distinctCwds = new Set<string>(byCwd.keys());
+			for (const wtId of byWorktree.keys()) {
+				const wt = worktrees[wtId];
+				if (wt) distinctCwds.add(wt.baseDir);
+			}
+			const hidePrefix = distinctCwds.size <= 1;
+			// Buckets sort alphabetically by FULL display label even when the
+			// rendered label hides the prefix — ordering stays stable, and
+			// "repo" < "repo: worktree" naturally clusters each worktree box
+			// right after its base repo's bucket. Tie-breaks: cwd buckets
+			// before worktree buckets, then full-path / worktree-id.
+			const sortKey = (b: UngroupedBucket) =>
+				b.kind === "cwd"
+					? folderName(b.cwd)
+					: `${folderName(b.worktree.baseDir)}: ${b.worktree.displayName}`;
+			const tieKey = (b: UngroupedBucket) =>
+				b.kind === "cwd" ? b.cwd : b.worktree.id;
+			const buckets: UngroupedBucket[] = [
+				...Array.from(byCwd.entries()).map(
+					([cwd, ids]) => ({ kind: "cwd", cwd, ids }) as const,
+				),
+				...Array.from(byWorktree.entries()).map(
+					([wtId, ids]) =>
+						({
+							kind: "worktree",
+							worktree: worktrees[wtId],
+							ids,
+						}) as const,
+				),
+			].sort(
 				(a, b) =>
-					folderName(a.cwd).localeCompare(folderName(b.cwd)) ||
-					a.cwd.localeCompare(b.cwd),
+					sortKey(a).localeCompare(sortKey(b)) ||
+					a.kind.localeCompare(b.kind) ||
+					tieKey(a).localeCompare(tieKey(b)),
 			);
-		const sections = Array.from(byGroup.entries())
-			.map(([gid, ids]) => ({ group: groups[gid], ids }))
-			// Newest group first; ulid tie-break keeps same-ms creates stable.
-			.sort(
-				(a, b) =>
-					b.group.createdAt - a.group.createdAt ||
-					b.group.id.localeCompare(a.group.id),
-			);
-		return { ungroupedBuckets: buckets, groupSections: sections };
-	}, [visibleOrder, sessions, groups]);
+			const sections = Array.from(byGroup.entries())
+				.map(([gid, ids]) => ({ group: groups[gid], ids }))
+				// Newest group first; ulid tie-break keeps same-ms creates stable.
+				.sort(
+					(a, b) =>
+						b.group.createdAt - a.group.createdAt ||
+						b.group.id.localeCompare(a.group.id),
+				);
+			return {
+				ungroupedBuckets: buckets,
+				groupSections: sections,
+				cwdBucketCount: byCwd.size,
+				hideCwdPrefix: hidePrefix,
+			};
+		}, [visibleOrder, sessions, groups, worktrees]);
 
 	// New-session target cwd: only use the filter when exactly one workspace is
 	// selected (ambiguous otherwise). Otherwise fall back to last-used cwd.
@@ -223,7 +286,7 @@ export function SessionsList({
 	// the `session:started` broadcast.
 	const draft = useDraftSessionsStore((s) => s.draft);
 
-	const createDraftAndNavigate = (cwd: string) => {
+	const createDraftAndNavigate = (cwd: string, worktreeId?: string) => {
 		// Remember the workspace immediately so the next New Session click
 		// pre-fills the same folder (parity with the old IPC-direct flow).
 		// If the main process later substitutes a different cwd at first send
@@ -233,6 +296,7 @@ export function SessionsList({
 		const d = useDraftSessionsStore.getState().createDraft({
 			cwd,
 			defaultTitle: `Session ${order.length + 1}`,
+			worktreeId,
 		});
 		// Make sure the new draft is actually visible. If the user has narrowed
 		// the workspace filter and the draft cwd isn't in it, the draft row
@@ -279,6 +343,24 @@ export function SessionsList({
 			return;
 		}
 		createDraftAndNavigate(cwd);
+	};
+
+	// Per-worktree-bucket New Session: same retarget semantics as startInCwd,
+	// but the draft is pre-seeded with BOTH the worktree's baseDir (the cwd a
+	// worktree session records) and the worktree binding itself.
+	const startInWorktree = (wt: Worktree) => {
+		setStartError(null);
+		if (draft) {
+			if (draft.cwd !== wt.baseDir || draft.worktreeId !== wt.id) {
+				useDraftSessionsStore
+					.getState()
+					.updateDraft({ cwd: wt.baseDir, worktreeId: wt.id });
+				useSettingsStore.getState().setLastUsedWorkspace(wt.baseDir);
+			}
+			navigate(`/sessions/${draft.id}`);
+			return;
+		}
+		createDraftAndNavigate(wt.baseDir, wt.id);
 	};
 
 	const startInPickedFolder = async () => {
@@ -552,9 +634,10 @@ export function SessionsList({
 		}
 	};
 
-	// Ungrouped rows render under subtle per-cwd headers; each group renders
-	// into its own bordered wrapper (header + member rows share one framed
-	// block, colored on every side by the group's border token). Session
+	// Ungrouped rows render under subtle per-cwd (or per-worktree) headers;
+	// each group renders into its own bordered wrapper (header + member rows
+	// share one framed block, colored on every side by the group's border
+	// token). Session
 	// rows inside a group live under a different DOM parent than ungrouped
 	// ones, so moving a row between the two remounts it — an acceptable
 	// cost for the framed look; session cards hold only trivial local
@@ -563,16 +646,15 @@ export function SessionsList({
 		const rows: SidebarRow[] = [];
 		// A lone cwd needs no sectioning — skip the boxes entirely and
 		// render the flat list (rows keep their own cwd footers instead).
-		const sectioned = ungroupedBuckets.length > 1;
-		for (const bucket of ungroupedBuckets) {
-			if (sectioned) {
-				rows.push({
-					kind: "cwdBucket",
-					cwd: bucket.cwd,
-					ids: bucket.ids,
-					collapsed: collapsedCwds.has(bucket.cwd),
-				});
-			} else {
+		// Only CWD buckets count toward this: worktree buckets always render
+		// as boxes and must not force the lone cwd's sessions into one.
+		const sectioned = cwdBucketCount > 1;
+		if (!sectioned) {
+			// Flat cwd rows first (there is at most one cwd bucket), then the
+			// worktree boxes after — even if a worktree's label would sort
+			// ahead of the lone cwd.
+			for (const bucket of ungroupedBuckets) {
+				if (bucket.kind !== "cwd") continue;
 				bucket.ids.forEach((id, i) => {
 					rows.push({
 						kind: "session",
@@ -582,11 +664,36 @@ export function SessionsList({
 				});
 			}
 		}
+		for (const bucket of ungroupedBuckets) {
+			if (bucket.kind === "cwd") {
+				if (!sectioned) continue; // already emitted flat above
+				rows.push({
+					kind: "cwdBucket",
+					cwd: bucket.cwd,
+					ids: bucket.ids,
+					collapsed: collapsedCwds.has(bucket.cwd),
+				});
+			} else {
+				rows.push({
+					kind: "worktreeBucket",
+					worktree: bucket.worktree,
+					ids: bucket.ids,
+					collapsed: collapsedCwds.has(`wt:${bucket.worktree.id}`),
+					label: worktreeBucketLabel(bucket.worktree, hideCwdPrefix),
+				});
+			}
+		}
 		for (const section of groupSections) {
 			rows.push({ kind: "group", section });
 		}
 		return rows;
-	}, [ungroupedBuckets, groupSections, collapsedCwds]);
+	}, [
+		ungroupedBuckets,
+		groupSections,
+		collapsedCwds,
+		cwdBucketCount,
+		hideCwdPrefix,
+	]);
 
 	// Shared renderer for ungrouped session rows — used both inside cwd
 	// bucket boxes (hideCwd: the header already names the folder) and in
@@ -830,6 +937,46 @@ export function SessionsList({
 									</div>
 								);
 							}
+							if (row.kind === "worktreeBucket") {
+								return (
+									<div
+										key={`wt:${row.worktree.id}`}
+										style={{
+											// Same recessed dark box as the cwd
+											// buckets — worktrees are the neutral
+											// sibling of GroupSection too, just
+											// keyed by worktree instead of folder.
+											margin: "8px 0",
+											background: T.bg,
+											borderTop: `1px solid ${T.borderSoft}`,
+											overflow: "hidden",
+										}}
+									>
+										<CwdHeaderRow
+											cwd={row.worktree.baseDir}
+											label={row.label}
+											collapsed={row.collapsed}
+											onToggle={() =>
+												toggleCwdCollapsed(
+													`wt:${row.worktree.id}`,
+												)
+											}
+											onNewSession={() =>
+												startInWorktree(row.worktree)
+											}
+										/>
+										{row.collapsed
+											? null
+											: row.ids.map((id, i) =>
+												renderSessionRow(
+													id,
+													i === row.ids.length - 1,
+													true,
+												),
+											)}
+									</div>
+								);
+							}
 							if (row.kind === "group") {
 								const { group, ids } = row.section;
 								return (
@@ -890,11 +1037,28 @@ export function SessionsList({
 	);
 }
 
+/** One ungrouped bucket before it becomes sidebar rows: either a cwd's
+ * plain sessions or a worktree's bound sessions. Sorted as one list by
+ * full display label — see the grouping memo. */
+type UngroupedBucket =
+	| { kind: "cwd"; cwd: string; ids: string[] }
+	| { kind: "worktree"; worktree: Worktree; ids: string[] };
+
 /** One entry in the sidebar's top-level render sequence. */
 type SidebarRow =
 	/** One cwd's worth of ungrouped sessions, rendered as a recessed dark
 	 * box (header + member rows). Only used when 2+ cwds are present. */
 	| { kind: "cwdBucket"; cwd: string; ids: string[]; collapsed: boolean }
+	/** One worktree's worth of sessions — same recessed box as cwdBucket,
+	 * labeled "folder: worktree" (bare worktree name when only one folder
+	 * is visible). Always boxed, even in the single-cwd flat layout. */
+	| {
+		kind: "worktreeBucket";
+		worktree: Worktree;
+		ids: string[];
+		collapsed: boolean;
+		label: string;
+	}
 	/** Flat ungrouped row — the single-cwd case, no sectioning. */
 	| { kind: "session"; id: string; lastInBucket: boolean }
 	| { kind: "group"; section: { group: SessionGroup; ids: string[] } };
@@ -961,11 +1125,6 @@ function SessionRowSidebar({
 	const { hasPending, summary, unread } = useRowDerived(session, pending);
 	const markUnread = useReadStore((s) => s.markUnread);
 	const archived = session.archivedAt != null;
-	// Attached worktree (if any). Selector keyed by id so a rename in another
-	// window flows through without a full row re-render pipeline.
-	const worktree = useWorktreesStore((s) =>
-		session.worktreeId ? s.worktrees[session.worktreeId] : undefined,
-	);
 	return (
 		<div
 			style={{
@@ -975,13 +1134,19 @@ function SessionRowSidebar({
 				// Grouped members render transparent so the parent group
 				// section's subtle color wash shows through the whole width
 				// — one continuous tint instead of just a header strip.
-				// When active inside a group, tint the highlight to the group's
-				// hue so the selection stays part of the color family instead of
-				// dropping a neutral grey block on top of the group's wash.
+				// Both highlight fills are translucent color-mixes, never a
+				// fixed surface token: a row can sit on the pane (T.win), on a
+				// recessed cwd/worktree bucket (T.bg), or on a group's wash, and
+				// the selection has to lift *relative* to whichever is behind it.
+				// A flat T.surfaceHi over-shot inside the dark bucket and came
+				// out lighter than the pane framing it, so the highlight read as
+				// a foreign grey block floating out of its own box.
+				// Inside a group the mix uses the group's own hue so the
+				// selection stays part of that color family.
 				background: active
 					? groupColor
 						? `color-mix(in oklab, ${groupColor.fg} 7%, transparent)`
-						: T.surfaceHi
+						: ROW_SELECTED_BG
 					: "transparent",
 				position: "relative",
 				// Archived rows dim heavily so they read as "set aside"
@@ -1019,26 +1184,9 @@ function SessionRowSidebar({
 						minWidth: 0,
 					}}
 				>
-					{/* Worktree row — sits ABOVE the title so it reads as a
-					    scope marker for the whole session card, matching the
-					    session-header treatment. Only rendered when attached. */}
-					{worktree ? (
-						<div
-							style={{
-								display: "flex",
-								alignItems: "center",
-								minWidth: 0,
-							}}
-						>
-							<WorktreeChip
-								displayName={worktree.displayName}
-								color={worktree.color}
-								variant="readonly"
-								small
-							/>
-						</div>
-					) : null}
-					{/* Title row */}
+					{/* Title row. (No per-row worktree chip: worktree sessions
+					    render inside their own sidebar bucket, whose header
+					    already names the worktree.) */}
 					<div
 						style={{
 							display: "flex",
@@ -1099,8 +1247,7 @@ function SessionRowSidebar({
 					>
 						{summary}
 					</div>
-					{/* Chips row — worktree moved to the row above the title,
-					    so this is just the status + branch pair now. */}
+					{/* Chips row — status + branch pair. */}
 					<div
 						style={{
 							display: "flex",
@@ -1254,16 +1401,20 @@ function GroupSection({
  */
 function CwdHeaderRow({
 	cwd,
+	label,
 	collapsed,
 	onToggle,
 	onNewSession,
 }: {
 	cwd: string;
+	/** Display override — worktree buckets pass "folder: worktree" (or the
+	 * bare worktree name) here; cwd buckets omit it and derive from `cwd`. */
+	label?: string;
 	collapsed: boolean;
 	onToggle: () => void;
 	onNewSession: () => void;
 }) {
-	const name = folderName(cwd) || cwd;
+	const name = label ?? (folderName(cwd) || cwd);
 	return (
 		// A flex ROW, not a single button: the "+" must be a sibling of the
 		// toggle, never a descendant (nested <button> is invalid HTML, and a
@@ -1342,7 +1493,7 @@ function CwdHeaderRow({
 						minWidth: 0,
 					}}
 				>
-					{folderName(cwd) || cwd || "no folder"}
+					{label ?? (folderName(cwd) || cwd || "no folder")}
 				</span>
 			</button>
 			{/* No "+" for the synthetic "" bucket (sessions with a null cwd):
@@ -1366,8 +1517,11 @@ function CwdHeaderRow({
 						color: T.textFaint,
 						cursor: "pointer",
 					}}
+					// Relative lift, not T.surfaceHi: this button sits directly
+					// on the bucket's recessed T.bg, where a fixed surface token
+					// would flare brighter than the pane around the box.
 					onMouseEnter={(e) => {
-						e.currentTarget.style.background = T.surfaceHi;
+						e.currentTarget.style.background = ROW_SELECTED_BG;
 						e.currentTarget.style.color = T.text;
 					}}
 					onMouseLeave={(e) => {
@@ -1682,7 +1836,9 @@ function DraftRowSidebar({
 		<div
 			style={{
 				borderBottom: last ? "none" : `0.5px solid ${T.borderSoft}`,
-				background: active ? T.surfaceHi : "transparent",
+				// Same relative lift as SessionRowSidebar — a draft row can land
+				// inside a recessed bucket too.
+				background: active ? ROW_SELECTED_BG : "transparent",
 				position: "relative",
 			}}
 		>
@@ -1854,14 +2010,17 @@ function DraftRowMenu({ onDiscard }: { onDiscard: () => void }) {
 					width: 24,
 					height: 24,
 					border: "none",
-					background: open ? T.surfaceHi : "transparent",
+					// Relative lift, not T.surfaceHi — the row under this button
+					// may be a recessed bucket's T.bg, where a fixed surface
+					// token flares brighter than the row it sits on.
+					background: open ? ROW_SELECTED_BG : "transparent",
 					color: open ? T.text : T.textFaint,
 					cursor: "pointer",
 					borderRadius: 4,
 					padding: 0,
 				}}
 				onMouseEnter={(e) => {
-					e.currentTarget.style.background = T.surfaceHi;
+					e.currentTarget.style.background = ROW_SELECTED_BG;
 					e.currentTarget.style.color = T.text;
 				}}
 				onMouseLeave={(e) => {
@@ -2518,6 +2677,15 @@ function folderName(path: string): string {
 	const trimmed = path.replace(/\/+$/, "");
 	const idx = trimmed.lastIndexOf("/");
 	return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
+/** Header label for a worktree bucket: "folder: worktree", or the bare
+ * worktree name when only one distinct folder is visible in the sidebar
+ * (the prefix would be pure noise). */
+function worktreeBucketLabel(wt: Worktree, hidePrefix: boolean): string {
+	return hidePrefix
+		? wt.displayName
+		: `${folderName(wt.baseDir)}: ${wt.displayName}`;
 }
 
 /**

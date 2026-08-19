@@ -4,7 +4,10 @@ import type {
 	SessionMessage,
 } from "@shared/schemas/claude_session";
 import { T } from "../../../design/tokens";
-import { deriveDisplayedModel, formatModelName } from "../lib/sessionModel";
+import {
+	deriveDisplayedModel,
+	formatModelName,
+} from "@shared/claude-sessions/sessionModel";
 import { ModelPickerModal } from "./ModelPickerModal";
 
 // ─── Shapes pulled from the Claude Agent SDK message stream ──────────────────
@@ -140,7 +143,7 @@ export function SessionTokenBar({
 			<ModelPickerModal
 				open={pickerOpen}
 				sessionId={session.id}
-				currentModel={session.model}
+				effectiveModel={displayed.model}
 				onSelect={(value) =>
 					window.claude.setSessionModel(session.id, value)
 				}
