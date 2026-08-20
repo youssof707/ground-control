@@ -10,6 +10,7 @@ import { useNotificationRouter } from "./features/claude-sessions/hooks/useNotif
 import { useDockUnreadBadge } from "./features/claude-sessions/hooks/useDockUnreadBadge";
 import { useUpdater } from "./features/updater/hooks/useUpdater";
 import { UpdateModal } from "./features/updater/components/UpdateModal";
+import { BackgroundTasksIndicator } from "./features/background-tasks/components/BackgroundTasksIndicator";
 import { SessionsList } from "./features/claude-sessions/components/SessionsList";
 import { SessionChat } from "./features/claude-sessions/components/SessionChat";
 import { InboxSidebar } from "./features/claude-sessions/components/InboxSidebar";
@@ -52,6 +53,9 @@ export default function MainApp() {
 			<AppNav rightPanel={rightPanel} setRightPanel={setRightPanel} />
 			<MainBody rightPanel={rightPanel} setRightPanel={setRightPanel} />
 			<UpdateModal />
+			{/* Ambient bottom-right chip for fire-and-forget work (worktree
+			    deletion today). Self-hides when nothing is running. */}
+			<BackgroundTasksIndicator />
 		</div>
 	);
 }

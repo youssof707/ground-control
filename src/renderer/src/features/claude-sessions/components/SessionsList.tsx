@@ -12,6 +12,7 @@ import { useDraftStore } from "../stores/useDraftStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { useSessionGroupsStore } from "../stores/useSessionGroupsStore";
 import { ConfirmModal } from "../../../components/ConfirmModal";
+import { runBackgroundTask } from "../../background-tasks/stores/useBackgroundTasksStore";
 import { AddToGroupModal } from "./AddToGroupModal";
 import { RenameGroupModal } from "./RenameGroupModal";
 import { T } from "../../../design/tokens";
@@ -103,6 +104,16 @@ export function SessionsList({
 			const next = new Set(prev);
 			if (next.has(cwd)) next.delete(cwd);
 			else next.add(cwd);
+			return next;
+		});
+	};
+	// Force a bucket open — used when a draft is spawned into it so the new
+	// row is never hidden inside a collapsed box.
+	const expandCwd = (key: string) => {
+		setCollapsedCwds((prev) => {
+			if (!prev.has(key)) return prev;
+			const next = new Set(prev);
+			next.delete(key);
 			return next;
 		});
 	};
@@ -330,6 +341,7 @@ export function SessionsList({
 	const startInCwd = (cwd: string) => {
 		setStartError(null);
 		if (!cwd) return; // synthetic "" bucket ("no folder") has no target
+		expandCwd(cwd);
 		if (draft) {
 			if (draft.cwd !== cwd) {
 				// A worktree is bound to a baseDir, so retargeting invalidates
@@ -350,6 +362,7 @@ export function SessionsList({
 	// worktree session records) and the worktree binding itself.
 	const startInWorktree = (wt: Worktree) => {
 		setStartError(null);
+		expandCwd(`wt:${wt.id}`);
 		if (draft) {
 			if (draft.cwd !== wt.baseDir || draft.worktreeId !== wt.id) {
 				useDraftSessionsStore
@@ -429,6 +442,10 @@ export function SessionsList({
 			alsoDeleteWorktree && isLastOnWorktree
 				? pendingDeleteWorktree?.id
 				: undefined;
+		// Same reason as above — read the display name for the background
+		// task label before `removeSession` invalidates the deref.
+		const cascadeWorktreeName =
+			pendingDeleteWorktree?.displayName ?? "worktree";
 		setDeleting(true);
 		setDeleteError(null);
 		try {
@@ -437,14 +454,27 @@ export function SessionsList({
 			usePermissionsStore.getState().removeBySessionId(pendingDeleteId);
 			// Cascade AFTER session delete: `session:delete` detaches the
 			// session from `worktree.sessionIds` before returning, so by
-			// the time we reach this call `sessionIds` is empty and the
+			// the time this runs `sessionIds` is empty and the
 			// `worktrees:delete` handler's "no delete while attached"
 			// guard passes. Reuses the same IPC AttachWorktreeModal
 			// calls, so on-disk cleanup + registry removal + skip-self
 			// broadcast all behave identically.
+			//
+			// Handed to the background-task store rather than awaited:
+			// `worktreeRemove` (main/sessions/worktrees.ts) escalates
+			// through up to four git subprocesses plus a recursive rm,
+			// which held this modal open for seconds. The ordering above
+			// is unaffected — we're already past the session delete.
 			if (cascadeWorktreeId) {
-				await window.claude.deleteWorktree(cascadeWorktreeId);
-				useWorktreesStore.getState().remove(cascadeWorktreeId);
+				runBackgroundTask({
+					label: `Deleting worktree ${cascadeWorktreeName}`,
+					run: () => window.claude.deleteWorktree(cascadeWorktreeId),
+					// Only prune the local cache on success: main KEEPS the
+					// registry entry when on-disk cleanup fails so the user
+					// can retry from AttachWorktreeModal.
+					onSuccess: () =>
+						useWorktreesStore.getState().remove(cascadeWorktreeId),
+				});
 			}
 			setPendingDeleteId(null);
 			setAlsoDeleteWorktree(false);
@@ -453,12 +483,9 @@ export function SessionsList({
 			// SessionChat would render its "Session not found." state.
 			if (wasActive) navigate("/");
 		} catch (err) {
-			// If the session delete succeeded but the worktree delete
-			// failed, the modal stays open with the error visible; the
-			// row is already gone from the sidebar (removeSession ran).
-			// User can dismiss and clean the worktree up later via
-			// AttachWorktreeModal — mirrors how that flow surfaces the
-			// same class of failure.
+			// Only the session delete can land here now — the worktree
+			// cascade reports its own failures through the background-task
+			// indicator. The modal stays open with this error visible.
 			setDeleteError(err instanceof Error ? err.message : String(err));
 		} finally {
 			setDeleting(false);
@@ -695,6 +722,49 @@ export function SessionsList({
 		hideCwdPrefix,
 	]);
 
+	// Where the draft row renders. A draft spawned from a bucket's "+" (or
+	// retargeted into one) lands as the FIRST row inside that bucket — next
+	// to the affordance the user just clicked, and matching newest-first
+	// ordering. Worktree binding wins over cwd (same precedence as real
+	// sessions). Falls back to the top of the list when no matching bucket
+	// exists (flat single-cwd list, or a folder with no sessions yet).
+	const draftHost = useMemo<
+		| { kind: "top" }
+		| { kind: "cwd"; cwd: string }
+		| { kind: "worktree"; id: string }
+	>(() => {
+		if (!draft) return { kind: "top" };
+		if (
+			draft.worktreeId &&
+			sidebarRows.some(
+				(r) =>
+					r.kind === "worktreeBucket" &&
+					r.worktree.id === draft.worktreeId,
+			)
+		) {
+			return { kind: "worktree", id: draft.worktreeId };
+		}
+		if (
+			sidebarRows.some(
+				(r) => r.kind === "cwdBucket" && r.cwd === draft.cwd,
+			)
+		) {
+			return { kind: "cwd", cwd: draft.cwd };
+		}
+		return { kind: "top" };
+	}, [draft, sidebarRows]);
+
+	const renderDraftRow = (last: boolean) =>
+		draft ? (
+			<DraftRowSidebar
+				key={draft.id}
+				draft={draft}
+				active={draft.id === activeSessionId}
+				last={last}
+				onDiscard={() => discardDraft(draft.id)}
+			/>
+		) : null;
+
 	// Shared renderer for ungrouped session rows — used both inside cwd
 	// bucket boxes (hideCwd: the header already names the folder) and in
 	// the flat single-cwd list (footer shown).
@@ -884,14 +954,9 @@ export function SessionsList({
 					</div>
 				) : (
 					<div>
-						{draft ? (
-							<DraftRowSidebar
-								draft={draft}
-								active={draft.id === activeSessionId}
-								last={sidebarRows.length === 0}
-								onDiscard={() => discardDraft(draft.id)}
-							/>
-						) : null}
+						{draftHost.kind === "top"
+							? renderDraftRow(sidebarRows.length === 0)
+							: null}
 						{sidebarRows.map((row) => {
 							if (row.kind === "cwdBucket") {
 								return (
@@ -925,6 +990,11 @@ export function SessionsList({
 												startInCwd(row.cwd)
 											}
 										/>
+										{!row.collapsed &&
+										draftHost.kind === "cwd" &&
+										draftHost.cwd === row.cwd
+											? renderDraftRow(row.ids.length === 0)
+											: null}
 										{row.collapsed
 											? null
 											: row.ids.map((id, i) =>
@@ -965,6 +1035,11 @@ export function SessionsList({
 												startInWorktree(row.worktree)
 											}
 										/>
+										{!row.collapsed &&
+										draftHost.kind === "worktree" &&
+										draftHost.id === row.worktree.id
+											? renderDraftRow(row.ids.length === 0)
+											: null}
 										{row.collapsed
 											? null
 											: row.ids.map((id, i) =>

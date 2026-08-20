@@ -235,11 +235,47 @@ function sdkPermissionModeFor(mode: SessionMode): "plan" | "acceptEdits" {
 	return mode === "plan" ? "plan" : "acceptEdits";
 }
 
+// Pasted links are near-useless as names — a single URL can eat the whole 60-char
+// budget and truncate away the part the user actually wrote. Strip them before
+// truncating so the prose survives. Only scheme-bearing URLs (`something://…`)
+// count: bare hosts like `foo.io` are too easy to confuse with filenames.
+function stripUrls(text: string): string {
+	return (
+		text
+			// `[label](https://…)` keeps its label — that text is the human part.
+			.replace(/\[([^\]]+)\]\([a-z][a-z0-9+.-]*:\/\/[^)\s]*\)/gi, "$1")
+			// Stop at closing wrappers/quotes rather than running to the next
+			// space, so `(https://x.com)` doesn't leave a widowed `(` behind.
+			.replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s)\]>"'`]*/gi, " ")
+			// The now-empty wrapper itself: `see (<>)` → `see`, `quote "" ` → `quote`.
+			.replace(/[([<]\s*[)\]>]/g, " ")
+			.replace(/(["'`])\s*\1/g, " ")
+	);
+}
+
 function deriveTitle(text: string, maxLen = 60): string {
 	const cleaned = text.replace(/\s+/g, " ").trim();
 	if (!cleaned) return "";
-	if (cleaned.length <= maxLen) return cleaned;
-	return cleaned.slice(0, maxLen - 1) + "…";
+	let title = cleaned;
+	const stripped = stripUrls(cleaned);
+	// Only tidy when a URL was actually removed, so URL-free messages derive
+	// byte-for-byte the same name they always have.
+	if (stripped !== cleaned) {
+		const tidied = stripped
+			.replace(/\s+/g, " ")
+			// Punctuation the URL used to sit in front of: `did you see ?`.
+			.replace(/\s+([?!.,;:])/g, "$1")
+			// Separators the URL was sitting between: `check out , then run`.
+			// Leaves `?`/`!`/`.` alone so a question keeps reading like one.
+			.replace(/^[\s,;:·|/\\–—-]+|[\s,;:·|/\\–—-]+$/g, "")
+			.trim();
+		// A message that was *only* a link strips down to nothing. Keep the raw
+		// text in that case so those sessions get the name they'd have had
+		// before this stripping existed, rather than going blank.
+		if (/[\p{Letter}\p{Number}]/u.test(tidied)) title = tidied;
+	}
+	if (title.length <= maxLen) return title;
+	return title.slice(0, maxLen - 1) + "…";
 }
 
 function firstTextFromBlocks(blocks: UserContentBlock[]): string {

@@ -332,6 +332,16 @@ input::placeholder {
 	}
 }
 
+/* ─── Background tasks indicator ─────────────────────────────────────────── */
+
+/* Size modifier on .asyncy-btn-spinner — the base 14x14 is a touch heavy for
+   the ambient corner chip. Reuses the asyncy-spin keyframes above. */
+.bg-task-spinner {
+	width: 11px;
+	height: 11px;
+	border-width: 1.5px;
+}
+
 /* ─── Dictation ──────────────────────────────────────────────────────────── */
 
 .dictation-recording,
