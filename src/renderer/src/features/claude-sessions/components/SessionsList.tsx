@@ -2200,11 +2200,6 @@ function WorkspaceFilter({
 				type="button"
 				className="btn"
 				onClick={() => setOpen((o) => !o)}
-				title={
-					value.length === 0
-						? "Show sessions from all workspaces"
-						: value.join("\n")
-				}
 				style={{
 					display: fullWidth ? "flex" : "inline-flex",
 					width: fullWidth ? "100%" : undefined,
@@ -2285,7 +2280,6 @@ function WorkspaceFilter({
 							key={w}
 							active={value.includes(w)}
 							label={folderName(w)}
-							hint={w}
 							mono
 							checkbox
 							onClick={() => {
@@ -2308,7 +2302,6 @@ function WorkspaceFilter({
 function MenuItem({
 	active,
 	label,
-	hint,
 	mono,
 	danger,
 	checkbox,
@@ -2316,7 +2309,6 @@ function MenuItem({
 }: {
 	active: boolean;
 	label: string;
-	hint?: string;
 	mono?: boolean;
 	danger?: boolean;
 	checkbox?: boolean;
@@ -2330,7 +2322,6 @@ function MenuItem({
 			type="button"
 			role="menuitem"
 			onClick={onClick}
-			title={hint}
 			style={{
 				display: "flex",
 				alignItems: "center",
@@ -2450,7 +2441,7 @@ function ViewOptionsButton({
 				onClick={() => setOpen((o) => !o)}
 				aria-haspopup="menu"
 				aria-expanded={open}
-				title="View options"
+				aria-label="View options"
 				style={{ width: 32, padding: 0, color: T.textDim }}
 			>
 				{/* Eye icon — the only option today controls visibility. */}
@@ -2511,7 +2502,7 @@ function FolderButton({ onClick }: { onClick: () => void }) {
 			type="button"
 			className="btn"
 			onClick={onClick}
-			title="Open a different folder and start a session there"
+			aria-label="Open a different folder"
 			style={{ width: 32, padding: 0, color: T.textDim }}
 		>
 			<svg width="14" height="14" viewBox="0 0 14 14" fill="none">

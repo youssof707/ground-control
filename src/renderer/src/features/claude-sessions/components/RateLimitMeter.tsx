@@ -6,7 +6,8 @@ import { useRateLimitStore } from "../stores/useRateLimitStore";
  * Inline rate-limit chip rendered inside `SidebarFooter` — stacks above the
  * version chip with matching typography (10px mono, `textFaint`) so the
  * footer reads as one coherent meta-bar. Reflects the user's Claude.ai
- * 5-hour-window state from `SDKRateLimitEvent` messages.
+ * 5-hour-window state from `SDKRateLimitEvent` messages. Clicking it opens
+ * claude.ai/settings/usage in the OS default browser for the full picture.
  *
  * Visibility:
  *   - Shows the reset countdown whenever the SDK has reported a future
@@ -74,10 +75,32 @@ export function RateLimitMeter() {
 					}}
 				/>
 			) : null}
-			<span>
+			{/*
+			  Clicking the meter opens the full claude.ai usage page in the OS
+			  default browser. `target="_blank"` routes through Electron's
+			  window-open path, intercepted in main/index.ts
+			  (setWindowOpenHandler) and handed to shell.openExternal — same
+			  trick as the markdown anchor override in MarkdownText.tsx.
+			*/}
+			<a
+				href="https://claude.ai/settings/usage"
+				target="_blank"
+				rel="noreferrer noopener"
+				style={{
+					color: "inherit",
+					textDecoration: "none",
+					cursor: "pointer",
+				}}
+				onMouseEnter={(e) => {
+					e.currentTarget.style.color = T.textMute;
+				}}
+				onMouseLeave={(e) => {
+					e.currentTarget.style.color = "inherit";
+				}}
+			>
 				Usage resets in {resetsIn}
 				{hasNumeric ? ` - ${pct}% used` : ""}
-			</span>
+			</a>
 		</div>
 	);
 }
