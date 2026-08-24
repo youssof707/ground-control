@@ -11,6 +11,7 @@ import { useReadStore } from "../stores/useReadStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { useSessionGroupsStore } from "../stores/useSessionGroupsStore";
+import { useShortcutsStore } from "../stores/useShortcutsStore";
 import {
 	useRateLimitStore,
 	type RateLimitSnapshot,
@@ -44,6 +45,7 @@ export function useSessionsBootstrap() {
 			rateLimit: 0,
 			worktrees: 0,
 			groups: 0,
+			shortcuts: 0,
 		};
 
 		async function refetchSessions(): Promise<void> {
@@ -96,6 +98,13 @@ export function useSessionsBootstrap() {
 			useSessionGroupsStore.getState().hydrate(list);
 		}
 
+		async function refetchShortcuts(): Promise<void> {
+			const my = ++seq.shortcuts;
+			const list = await window.claude.listShortcuts();
+			if (my !== seq.shortcuts) return;
+			useShortcutsStore.getState().hydrate(list);
+		}
+
 		function refetchAll(): void {
 			void refetchSessions();
 			void refetchReadState();
@@ -104,6 +113,7 @@ export function useSessionsBootstrap() {
 			void refetchRateLimit();
 			void refetchWorktrees();
 			void refetchGroups();
+			void refetchShortcuts();
 		}
 
 		// CRITICAL ORDERING: register the per-event listeners FIRST so that

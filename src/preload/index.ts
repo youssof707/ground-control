@@ -8,6 +8,7 @@ import type {
 } from "../shared/schemas/claude_session";
 import type { CreateWorktreeInput } from "../shared/schemas/worktrees";
 import type { CreateSessionGroupInput } from "../shared/schemas/session_groups";
+import type { CreateShortcutInput } from "../shared/schemas/shortcuts";
 
 const api = {};
 
@@ -99,6 +100,10 @@ const claude = {
 		ipcRenderer.invoke("groups:setCollapsed", { groupId, collapsed }),
 	renameGroup: (groupId: string, name: string) =>
 		ipcRenderer.invoke("groups:rename", { groupId, name }),
+	listShortcuts: () => ipcRenderer.invoke("shortcuts:list"),
+	createShortcut: (input: CreateShortcutInput) =>
+		ipcRenderer.invoke("shortcuts:create", input),
+	deleteShortcut: (id: string) => ipcRenderer.invoke("shortcuts:delete", id),
 	getAppInfo: () => ipcRenderer.invoke("appInfo:get"),
 	toggleDevTools: () => ipcRenderer.invoke("devtools:toggle"),
 	checkForUpdate: () => ipcRenderer.invoke("updater:check"),

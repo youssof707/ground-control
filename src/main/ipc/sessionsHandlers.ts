@@ -24,6 +24,7 @@ import {
 	registerGroupsHandlers,
 	pruneGroupIfEmpty,
 } from "./groupsHandlers";
+import { registerShortcutsHandlers } from "./shortcutsHandlers";
 import { registerUpdaterHandlers } from "./updaterHandlers";
 import { registerDictationHandlers } from "./dictationHandlers";
 import { registerImageHandlers } from "./imageHandlers";
@@ -85,6 +86,7 @@ export function registerSessionsHandlers(): SessionManager {
 	registerRateLimitHandlers();
 	registerWorktreesHandlers();
 	registerGroupsHandlers();
+	registerShortcutsHandlers();
 	registerUpdaterHandlers();
 	registerDictationHandlers();
 	registerImageHandlers();

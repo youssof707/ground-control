@@ -20,6 +20,10 @@ import type {
 	SessionGroup,
 } from "../shared/schemas/session_groups";
 import type {
+	CreateShortcutInput,
+	Shortcut,
+} from "../shared/schemas/shortcuts";
+import type {
 	ModelInfo,
 	SDKRateLimitInfo,
 } from "@anthropic-ai/claude-agent-sdk";
@@ -102,6 +106,9 @@ declare global {
 				collapsed: boolean,
 			) => Promise<void>;
 			renameGroup: (groupId: string, name: string) => Promise<void>;
+			listShortcuts: () => Promise<Shortcut[]>;
+			createShortcut: (input: CreateShortcutInput) => Promise<Shortcut>;
+			deleteShortcut: (id: string) => Promise<void>;
 			getAppInfo: () => Promise<{
 				env: "dev" | "prod";
 				storeFolder: string;
