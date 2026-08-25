@@ -17,6 +17,8 @@ import { runBackgroundTask } from "../../background-tasks/stores/useBackgroundTa
 import { AddToGroupModal } from "./AddToGroupModal";
 import { RenameGroupModal } from "./RenameGroupModal";
 import { CreateShortcutModal } from "./CreateShortcutModal";
+import { EditShortcutsModal } from "./EditShortcutsModal";
+import { shortcutLabel } from "./ShortcutForm";
 import { T } from "../../../design/tokens";
 import { BranchChipWithDelta, StatusPill } from "../../../design/Atoms";
 import { WorktreeChip, WORKTREE_COLOR_MAP } from "../../../design/WorktreeChip";
@@ -2529,11 +2531,6 @@ function ViewOptionsButton({
 	);
 }
 
-/** Menu label for a shortcut: its title, or the cwd's folder name. */
-function shortcutLabel(sc: Shortcut): string {
-	return sc.title.trim() || sc.cwd.split("/").filter(Boolean).pop() || sc.cwd;
-}
-
 /**
  * Sidebar shortcuts dropdown. The right-edge control of the first header
  * row, sharing that row with the New Session button and stacking above
@@ -2550,6 +2547,7 @@ function shortcutLabel(sc: Shortcut): string {
 function ShortcutsButton({ onRun }: { onRun: (sc: Shortcut) => void }) {
 	const [open, setOpen] = useState(false);
 	const [creating, setCreating] = useState(false);
+	const [editing, setEditing] = useState(false);
 	const shortcutsById = useShortcutsStore((s) => s.shortcuts);
 	const shortcuts = useMemo(
 		() =>
@@ -2647,12 +2645,23 @@ function ShortcutsButton({ onRun }: { onRun: (sc: Shortcut) => void }) {
 							setCreating(true);
 						}}
 					/>
+					{shortcuts.length > 0 ? (
+						<MenuItem
+							active={false}
+							label="Edit shortcuts"
+							onClick={() => {
+								setOpen(false);
+								setEditing(true);
+							}}
+						/>
+					) : null}
 				</div>
 			) : null}
 			<CreateShortcutModal
 				open={creating}
 				onClose={() => setCreating(false)}
 			/>
+			<EditShortcutsModal open={editing} onClose={() => setEditing(false)} />
 		</div>
 	);
 }

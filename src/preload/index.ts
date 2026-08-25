@@ -8,7 +8,10 @@ import type {
 } from "../shared/schemas/claude_session";
 import type { CreateWorktreeInput } from "../shared/schemas/worktrees";
 import type { CreateSessionGroupInput } from "../shared/schemas/session_groups";
-import type { CreateShortcutInput } from "../shared/schemas/shortcuts";
+import type {
+	CreateShortcutInput,
+	UpdateShortcutInput,
+} from "../shared/schemas/shortcuts";
 
 const api = {};
 
@@ -103,6 +106,8 @@ const claude = {
 	listShortcuts: () => ipcRenderer.invoke("shortcuts:list"),
 	createShortcut: (input: CreateShortcutInput) =>
 		ipcRenderer.invoke("shortcuts:create", input),
+	updateShortcut: (input: UpdateShortcutInput) =>
+		ipcRenderer.invoke("shortcuts:update", input),
 	deleteShortcut: (id: string) => ipcRenderer.invoke("shortcuts:delete", id),
 	getAppInfo: () => ipcRenderer.invoke("appInfo:get"),
 	toggleDevTools: () => ipcRenderer.invoke("devtools:toggle"),

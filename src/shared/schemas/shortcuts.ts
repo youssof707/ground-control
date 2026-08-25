@@ -36,3 +36,13 @@ export const CreateShortcutInputSchema = z.object({
 	mode: SessionModeSchema,
 });
 export type CreateShortcutInput = z.infer<typeof CreateShortcutInputSchema>;
+
+/** Full replacement of the user-editable fields of an existing shortcut. */
+export const UpdateShortcutInputSchema = z.object({
+	id: z.string(),
+	title: z.string(),
+	cwd: z.string(),
+	prompt: z.string(),
+	mode: SessionModeSchema,
+});
+export type UpdateShortcutInput = z.infer<typeof UpdateShortcutInputSchema>;

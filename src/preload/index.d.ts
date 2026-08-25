@@ -22,6 +22,7 @@ import type {
 import type {
 	CreateShortcutInput,
 	Shortcut,
+	UpdateShortcutInput,
 } from "../shared/schemas/shortcuts";
 import type {
 	ModelInfo,
@@ -108,6 +109,7 @@ declare global {
 			renameGroup: (groupId: string, name: string) => Promise<void>;
 			listShortcuts: () => Promise<Shortcut[]>;
 			createShortcut: (input: CreateShortcutInput) => Promise<Shortcut>;
+			updateShortcut: (input: UpdateShortcutInput) => Promise<Shortcut>;
 			deleteShortcut: (id: string) => Promise<void>;
 			getAppInfo: () => Promise<{
 				env: "dev" | "prod";

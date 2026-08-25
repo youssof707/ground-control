@@ -5,6 +5,8 @@ import { broadcast } from "../windows";
 import {
 	CreateShortcutInputSchema,
 	type CreateShortcutInput,
+	UpdateShortcutInputSchema,
+	type UpdateShortcutInput,
 } from "../../shared/schemas/shortcuts";
 
 /**
@@ -36,6 +38,26 @@ export function registerShortcutsHandlers(): void {
 			});
 			broadcast("state:changed", undefined, e.sender.id);
 			return shortcut;
+		},
+	);
+
+	ipcMain.handle(
+		"shortcuts:update",
+		async (e, rawInput: UpdateShortcutInput) => {
+			const input = UpdateShortcutInputSchema.parse(rawInput);
+			const cwd = input.cwd.trim();
+			const prompt = input.prompt.trim();
+			if (!cwd) throw new Error("Shortcut folder is required");
+			if (!prompt) throw new Error("Shortcut prompt is required");
+			const updated = await shortcutsStore.update(input.id, {
+				title: input.title.trim(),
+				cwd,
+				prompt,
+				mode: input.mode,
+			});
+			if (!updated) throw new Error("Shortcut not found");
+			broadcast("state:changed", undefined, e.sender.id);
+			return updated;
 		},
 	);
 

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import type { SessionMode } from "@shared/claude-sessions/types";
-import { T } from "../../../design/tokens";
-import { ModeToggle } from "../../../design/Atoms";
-import { LabeledInput } from "../../../design/FormControls";
-import { useSettingsStore } from "../stores/useSettingsStore";
 import { useShortcutsStore } from "../stores/useShortcutsStore";
+import {
+	EMPTY_SHORTCUT_FORM,
+	ShortcutFormFields,
+	type ShortcutFormValue,
+} from "./ShortcutForm";
 
 /**
  * Modal for creating a saved session shortcut (title + folder + prompt +
@@ -14,9 +14,8 @@ import { useShortcutsStore } from "../stores/useShortcutsStore";
  * upsert-from-invoke-response pattern (main's `state:changed` broadcast
  * is skip-self).
  *
- * The folder is chosen via the native picker (window.claude.pickFolder),
- * so it renders as a button showing the picked path — visible text, not
- * a hover label.
+ * The Title/Folder/Prompt/Mode fields live in ShortcutFormFields, shared
+ * with EditShortcutsModal's edit view so the two forms can't diverge.
  */
 export function CreateShortcutModal({
 	open,
@@ -26,25 +25,16 @@ export function CreateShortcutModal({
 	onClose: () => void;
 }) {
 	const upsert = useShortcutsStore((s) => s.upsert);
-	const lastUsedCwd = useSettingsStore((s) => s.lastUsedWorkspace);
 
-	const [title, setTitle] = useState("");
-	const [cwd, setCwd] = useState<string | null>(null);
-	const [prompt, setPrompt] = useState("");
-	const [mode, setMode] = useState<SessionMode>("plan");
+	const [form, setForm] = useState<ShortcutFormValue>(EMPTY_SHORTCUT_FORM);
 	const [busy, setBusy] = useState(false);
-	const [picking, setPicking] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
 	// Blank slate on every open (mirrors RenameGroupModal's reset effect).
 	useEffect(() => {
 		if (!open) return;
-		setTitle("");
-		setCwd(null);
-		setPrompt("");
-		setMode("plan");
+		setForm(EMPTY_SHORTCUT_FORM);
 		setBusy(false);
-		setPicking(false);
 		setError(null);
 	}, [open]);
 
@@ -61,31 +51,18 @@ export function CreateShortcutModal({
 		return () => window.removeEventListener("keydown", handler);
 	}, [open, onClose]);
 
-	const pickCwd = useCallback(async () => {
-		if (picking) return;
-		setPicking(true);
-		try {
-			const picked = await window.claude.pickFolder({
-				defaultPath: cwd ?? lastUsedCwd,
-			});
-			if (picked) setCwd(picked);
-		} finally {
-			setPicking(false);
-		}
-	}, [picking, cwd, lastUsedCwd]);
-
-	const canSave = !busy && !!cwd && prompt.trim().length > 0;
+	const canSave = !busy && !!form.cwd && form.prompt.trim().length > 0;
 
 	const handleSave = useCallback(async () => {
-		if (!canSave || !cwd) return;
+		if (!canSave || !form.cwd) return;
 		setBusy(true);
 		setError(null);
 		try {
 			const created = await window.claude.createShortcut({
-				title: title.trim(),
-				cwd,
-				prompt: prompt.trim(),
-				mode,
+				title: form.title.trim(),
+				cwd: form.cwd,
+				prompt: form.prompt.trim(),
+				mode: form.mode,
 			});
 			// Hydrate the local cache immediately: main's `state:changed`
 			// is skip-self, so without this upsert the originating window
@@ -96,15 +73,9 @@ export function CreateShortcutModal({
 			setError((err as Error).message || "Failed to create shortcut");
 			setBusy(false);
 		}
-	}, [canSave, cwd, title, prompt, mode, upsert, onClose]);
+	}, [canSave, form, upsert, onClose]);
 
 	if (!open) return null;
-
-	const fieldLabelStyle: React.CSSProperties = {
-		fontSize: 11,
-		color: T.textDim,
-		letterSpacing: 0.2,
-	};
 
 	return (
 		<div className="modal-backdrop" onClick={onClose} role="presentation">
@@ -120,101 +91,12 @@ export function CreateShortcutModal({
 					Create shortcut
 				</h2>
 
-				<div
-					style={{
-						display: "flex",
-						flexDirection: "column",
-						gap: 12,
-						marginBottom: 16,
-					}}
-				>
-					<LabeledInput
-						label="Title"
-						value={title}
-						onChange={setTitle}
-						placeholder="Optional — becomes the session name"
-						autoFocus
-						disabled={busy}
-						maxLength={200}
-						mono={false}
-					/>
-
-					<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-						<span style={fieldLabelStyle}>Folder</span>
-						<button
-							type="button"
-							onClick={() => void pickCwd()}
-							disabled={busy || picking}
-							style={{
-								display: "flex",
-								alignItems: "center",
-								background: T.surfaceLow,
-								color: cwd ? T.text : T.textDim,
-								border: `0.5px solid ${T.border}`,
-								borderRadius: 6,
-								padding: "7px 9px",
-								fontSize: 12.5,
-								fontFamily: T.mono,
-								cursor: "pointer",
-								textAlign: "left",
-								minWidth: 0,
-							}}
-						>
-							<span
-								style={{
-									minWidth: 0,
-									flex: 1,
-									overflow: "hidden",
-									textOverflow: "ellipsis",
-									whiteSpace: "nowrap",
-									// Keep the folder name (path tail) visible on overflow.
-									direction: "rtl",
-								}}
-							>
-								{cwd ?? "Choose folder…"}
-							</span>
-						</button>
-					</div>
-
-					<label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-						<span style={fieldLabelStyle}>Prompt</span>
-						<textarea
-							value={prompt}
-							onChange={(e) => setPrompt(e.target.value)}
-							placeholder="Message pre-filled when the shortcut runs"
-							disabled={busy}
-							rows={4}
-							style={{
-								appearance: "none",
-								background: T.surfaceLow,
-								color: T.text,
-								border: `0.5px solid ${T.border}`,
-								borderRadius: 6,
-								padding: "7px 9px",
-								fontSize: 13,
-								fontFamily: T.sans,
-								lineHeight: 1.45,
-								outline: "none",
-								resize: "vertical",
-								minHeight: 72,
-								transition: "border-color 80ms ease",
-							}}
-							onFocus={(e) => {
-								e.currentTarget.style.borderColor = T.accentBorder;
-							}}
-							onBlur={(e) => {
-								e.currentTarget.style.borderColor = T.border;
-							}}
-						/>
-					</label>
-
-					<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-						<span style={fieldLabelStyle}>Mode</span>
-						<div>
-							<ModeToggle mode={mode} onChange={setMode} disabled={busy} />
-						</div>
-					</div>
-				</div>
+				<ShortcutFormFields
+					value={form}
+					onChange={setForm}
+					disabled={busy}
+					autoFocus
+				/>
 
 				{error ? <div className="modal-error">{error}</div> : null}
 
