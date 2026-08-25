@@ -25,6 +25,11 @@ import type {
 	UpdateShortcutInput,
 } from "../shared/schemas/shortcuts";
 import type {
+	CreatePromptShortcutInput,
+	PromptShortcut,
+	UpdatePromptShortcutInput,
+} from "../shared/schemas/promptShortcuts";
+import type {
 	ModelInfo,
 	SDKRateLimitInfo,
 } from "@anthropic-ai/claude-agent-sdk";
@@ -111,6 +116,14 @@ declare global {
 			createShortcut: (input: CreateShortcutInput) => Promise<Shortcut>;
 			updateShortcut: (input: UpdateShortcutInput) => Promise<Shortcut>;
 			deleteShortcut: (id: string) => Promise<void>;
+			listPromptShortcuts: () => Promise<PromptShortcut[]>;
+			createPromptShortcut: (
+				input: CreatePromptShortcutInput,
+			) => Promise<PromptShortcut>;
+			updatePromptShortcut: (
+				input: UpdatePromptShortcutInput,
+			) => Promise<PromptShortcut>;
+			deletePromptShortcut: (id: string) => Promise<void>;
 			getAppInfo: () => Promise<{
 				env: "dev" | "prod";
 				storeFolder: string;

@@ -25,6 +25,7 @@ import {
 	pruneGroupIfEmpty,
 } from "./groupsHandlers";
 import { registerShortcutsHandlers } from "./shortcutsHandlers";
+import { registerPromptShortcutsHandlers } from "./promptShortcutsHandlers";
 import { registerUpdaterHandlers } from "./updaterHandlers";
 import { registerDictationHandlers } from "./dictationHandlers";
 import { registerImageHandlers } from "./imageHandlers";
@@ -87,6 +88,7 @@ export function registerSessionsHandlers(): SessionManager {
 	registerWorktreesHandlers();
 	registerGroupsHandlers();
 	registerShortcutsHandlers();
+	registerPromptShortcutsHandlers();
 	registerUpdaterHandlers();
 	registerDictationHandlers();
 	registerImageHandlers();

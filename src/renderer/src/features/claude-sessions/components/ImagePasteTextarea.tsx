@@ -22,9 +22,14 @@ import {
 import type { PendingImage } from "../lib/pendingImage";
 import { openImageInPreview } from "../lib/imageActions";
 import { T } from "../../../design/tokens";
-import { Kbd, ModeToggle, isBranchStale } from "../../../design/Atoms";
+import { ModeToggle, isBranchStale } from "../../../design/Atoms";
 import { DictationButton, type DictationHandle } from "./DictationButton";
 import { CopyImageButton } from "./CopyImageButton";
+import type { PromptShortcut } from "@shared/schemas/promptShortcuts";
+import { usePromptShortcutsStore } from "../stores/usePromptShortcutsStore";
+import { promptShortcutLabel } from "./PromptShortcutForm";
+import { CreatePromptShortcutModal } from "./CreatePromptShortcutModal";
+import { EditPromptShortcutsModal } from "./EditPromptShortcutsModal";
 
 interface Props {
 	sessionId: string;
@@ -220,6 +225,30 @@ export function ImagePasteTextarea({
 		} finally {
 			setModeSwitching(false);
 		}
+	};
+
+	/**
+	 * Run an in-session prompt shortcut: append its text to whatever is
+	 * already in the composer (non-destructive — you can stack a shortcut on
+	 * top of a half-typed thought) and flip the session's mode to match.
+	 *
+	 * `changeMode` already handles both branches (draft store vs. setMode
+	 * IPC) and no-ops when the mode already matches, so there's no extra
+	 * plumbing here. The rAF refocus mirrors `insertDictation` and lets the
+	 * auto-grow layout effect re-measure before we move the caret.
+	 */
+	const runPromptShortcut = (sc: PromptShortcut) => {
+		const next = text.trim()
+			? `${text.replace(/\s+$/, "")}\n${sc.prompt}`
+			: sc.prompt;
+		setText(next);
+		void changeMode(sc.mode);
+		requestAnimationFrame(() => {
+			const ta = textareaRef.current;
+			if (!ta) return;
+			ta.focus();
+			ta.selectionStart = ta.selectionEnd = next.length;
+		});
 	};
 
 	const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -523,27 +552,15 @@ export function ImagePasteTextarea({
 						borderTop: `0.5px solid ${T.borderSoft}`,
 					}}
 				>
-					<span
-						style={{
-							fontSize: 11.5,
-							color: T.textFaint,
-							display: "inline-flex",
-							alignItems: "center",
-							gap: 6,
-						}}
-					>
-						<Kbd>↵</Kbd>
-						{dictating ? (
-							<span>to finish dictating</span>
-						) : (
-							<>
-								<span>to send ·</span>
-								<Kbd>⇧</Kbd>
-								<Kbd>↵</Kbd>
-								<span>for newline · paste images directly</span>
-							</>
-						)}
-					</span>
+					<PromptShortcutsButton
+						onRun={runPromptShortcut}
+						disabled={disabled || sending}
+					/>
+					{dictating ? (
+						<span style={{ fontSize: 11.5, color: T.textFaint }}>
+							↵ to finish dictating
+						</span>
+					) : null}
 					<div style={{ flex: 1 }} />
 					<DictationButton
 						ref={dictationRef}
@@ -608,6 +625,197 @@ export function ImagePasteTextarea({
 				</div>
 			</div>
 		</div>
+	);
+}
+
+/**
+ * In-session prompt shortcuts menu, living in the composer footer where the
+ * keyboard hint used to be.
+ *
+ * Distinct from the sidebar's ShortcutsButton: that one lists cwd-carrying
+ * shortcuts and spawns a *new* draft session. This one appends a saved
+ * prompt to the session you're already in. Separate store, separate menu,
+ * separate modals.
+ *
+ * The menu opens UPWARD (`bottom` rather than `top`) because the composer is
+ * pinned to the bottom of the window — a downward menu would be clipped.
+ */
+function PromptShortcutsButton({
+	onRun,
+	disabled,
+}: {
+	onRun: (sc: PromptShortcut) => void;
+	disabled?: boolean;
+}) {
+	const [open, setOpen] = useState(false);
+	const [creating, setCreating] = useState(false);
+	const [editing, setEditing] = useState(false);
+	const shortcutsById = usePromptShortcutsStore((s) => s.promptShortcuts);
+	const shortcuts = Object.values(shortcutsById).sort((a, b) =>
+		promptShortcutLabel(a).localeCompare(promptShortcutLabel(b), undefined, {
+			sensitivity: "base",
+		}),
+	);
+	const ref = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		if (!open) return;
+		const onDocClick = (e: MouseEvent) => {
+			if (ref.current && !ref.current.contains(e.target as Node)) {
+				setOpen(false);
+			}
+		};
+		const onKey = (e: globalThis.KeyboardEvent) => {
+			if (e.key === "Escape") setOpen(false);
+		};
+		document.addEventListener("mousedown", onDocClick);
+		document.addEventListener("keydown", onKey);
+		return () => {
+			document.removeEventListener("mousedown", onDocClick);
+			document.removeEventListener("keydown", onKey);
+		};
+	}, [open]);
+
+	return (
+		<div ref={ref} style={{ position: "relative" }}>
+			<button
+				type="button"
+				className="btn btn-icon"
+				onClick={() => setOpen((o) => !o)}
+				disabled={disabled}
+				aria-haspopup="menu"
+				aria-expanded={open}
+				aria-label="Prompt shortcuts"
+				style={{ color: open ? T.text : T.textDim }}
+			>
+				{/* Lightning bolt — the conventional shortcut glyph. */}
+				<svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+					<path
+						d="M7.8 1.5L3.5 7.8h3.1l-.4 4.7 4.3-6.3H7.4l.4-4.7z"
+						stroke="currentColor"
+						strokeWidth="1.2"
+						strokeLinejoin="round"
+						fill="none"
+					/>
+				</svg>
+			</button>
+			{open ? (
+				<div
+					role="menu"
+					style={{
+						position: "absolute",
+						bottom: "calc(100% + 4px)",
+						left: 0,
+						minWidth: 220,
+						maxHeight: 280,
+						overflowY: "auto",
+						background: T.surfaceHi,
+						border: `0.5px solid ${T.border}`,
+						borderRadius: 8,
+						padding: 4,
+						zIndex: 50,
+						boxShadow: "0 -8px 24px rgba(0,0,0,0.18)",
+					}}
+				>
+					{shortcuts.map((sc) => (
+						<PromptMenuItem
+							key={sc.id}
+							label={promptShortcutLabel(sc)}
+							onClick={() => {
+								setOpen(false);
+								onRun(sc);
+							}}
+						/>
+					))}
+					{shortcuts.length > 0 ? (
+						<div
+							role="separator"
+							style={{
+								height: 0,
+								borderTop: `0.5px solid ${T.borderSoft}`,
+								margin: "4px 2px",
+							}}
+						/>
+					) : null}
+					<PromptMenuItem
+						label="Create prompt shortcut"
+						onClick={() => {
+							setOpen(false);
+							setCreating(true);
+						}}
+					/>
+					{shortcuts.length > 0 ? (
+						<PromptMenuItem
+							label="Edit prompt shortcuts"
+							onClick={() => {
+								setOpen(false);
+								setEditing(true);
+							}}
+						/>
+					) : null}
+				</div>
+			) : null}
+			<CreatePromptShortcutModal
+				open={creating}
+				onClose={() => setCreating(false)}
+			/>
+			<EditPromptShortcutsModal
+				open={editing}
+				onClose={() => setEditing(false)}
+			/>
+		</div>
+	);
+}
+
+/**
+ * Menu row for the prompt-shortcuts dropdown. A trimmed re-implementation of
+ * SessionsList's private `MenuItem` — that one is buried in a ~2700-line file
+ * with sidebar-only affordances (active/danger/checkbox) this menu doesn't
+ * need, and extracting it would churn five unrelated call sites.
+ */
+function PromptMenuItem({
+	label,
+	onClick,
+}: {
+	label: string;
+	onClick: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			role="menuitem"
+			onClick={onClick}
+			style={{
+				display: "flex",
+				alignItems: "center",
+				width: "100%",
+				textAlign: "left",
+				padding: "6px 10px",
+				borderRadius: 6,
+				border: "none",
+				background: "transparent",
+				color: T.text,
+				fontSize: 13,
+				cursor: "pointer",
+			}}
+			onMouseEnter={(e) => {
+				e.currentTarget.style.background = T.surface;
+			}}
+			onMouseLeave={(e) => {
+				e.currentTarget.style.background = "transparent";
+			}}
+		>
+			<span
+				style={{
+					overflow: "hidden",
+					textOverflow: "ellipsis",
+					whiteSpace: "nowrap",
+					minWidth: 0,
+				}}
+			>
+				{label}
+			</span>
+		</button>
 	);
 }
 

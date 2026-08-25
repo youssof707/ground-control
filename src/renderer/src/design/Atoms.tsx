@@ -509,7 +509,6 @@ export function ModeToggle({
 				active={mode === "plan"}
 				disabled={disabled}
 				onClick={() => mode !== "plan" && onChange("plan")}
-				title="Plan mode: Claude won't make edits, just researches and plans."
 			>
 				Plan
 			</ModeToggleButton>
@@ -517,7 +516,6 @@ export function ModeToggle({
 				active={mode === "acceptEdits"}
 				disabled={disabled}
 				onClick={() => mode !== "acceptEdits" && onChange("acceptEdits")}
-				title="Auto-edit mode: file edits run without asking. Other tools still prompt."
 			>
 				Auto-edit
 			</ModeToggleButton>
@@ -529,13 +527,11 @@ function ModeToggleButton({
 	active,
 	disabled,
 	onClick,
-	title,
 	children,
 }: {
 	active: boolean;
 	disabled?: boolean;
 	onClick: () => void;
-	title: string;
 	children: ReactNode;
 }) {
 	return (
@@ -543,7 +539,6 @@ function ModeToggleButton({
 			type="button"
 			onClick={onClick}
 			disabled={disabled}
-			title={title}
 			style={{
 				height: 20,
 				padding: "0 8px",
