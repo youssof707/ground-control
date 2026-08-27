@@ -11,16 +11,14 @@ import {
 import { useDraftStore } from "../stores/useDraftStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { useSessionGroupsStore } from "../stores/useSessionGroupsStore";
-import { useShortcutsStore } from "../stores/useShortcutsStore";
 import { ConfirmModal } from "../../../components/ConfirmModal";
 import { runBackgroundTask } from "../../background-tasks/stores/useBackgroundTasksStore";
+import { appendPromptBlock } from "../lib/composerActions";
 import { AddToGroupModal } from "./AddToGroupModal";
 import { RenameGroupModal } from "./RenameGroupModal";
-import { CreateShortcutModal } from "./CreateShortcutModal";
-import { EditShortcutsModal } from "./EditShortcutsModal";
-import { shortcutLabel } from "./ShortcutForm";
+import { ShortcutsMenuButton } from "./ShortcutsMenu";
 import { T } from "../../../design/tokens";
-import { BranchChipWithDelta, StatusPill } from "../../../design/Atoms";
+import { BranchChipWithDelta, ModeLabel, StatusPill } from "../../../design/Atoms";
 import { WorktreeChip, WORKTREE_COLOR_MAP } from "../../../design/WorktreeChip";
 import type {
 	ClaudeSessionFull,
@@ -348,12 +346,27 @@ export function SessionsList({
 		if (!cwd) return; // synthetic "" bucket ("no folder") has no target
 		expandCwd(cwd);
 		if (draft) {
+			// This repurposes the shared draft slot for a plain "new session
+			// here" intent, distinct from whatever it was doing before —
+			// clear the model override and any pending handoff-delete so
+			// neither rides along onto an unrelated session. (See
+			// DraftSession.handoffDeleteSessionId doc: every retarget site
+			// must disown it explicitly or an abandoned "Handoff & delete"
+			// can later delete the wrong session.)
+			const patch: {
+				cwd?: string;
+				worktreeId?: string;
+				model?: string;
+				handoffDeleteSessionId?: string;
+			} = { model: undefined, handoffDeleteSessionId: undefined };
 			if (draft.cwd !== cwd) {
 				// A worktree is bound to a baseDir, so retargeting invalidates
 				// the pairing — same rule as DraftSessionChat.changeFolder.
-				useDraftSessionsStore
-					.getState()
-					.updateDraft({ cwd, worktreeId: undefined });
+				patch.cwd = cwd;
+				patch.worktreeId = undefined;
+			}
+			useDraftSessionsStore.getState().updateDraft(patch);
+			if (draft.cwd !== cwd) {
 				useSettingsStore.getState().setLastUsedWorkspace(cwd);
 			}
 			navigate(`/sessions/${draft.id}`);
@@ -369,10 +382,22 @@ export function SessionsList({
 		setStartError(null);
 		expandCwd(`wt:${wt.id}`);
 		if (draft) {
+			// Same disowning rule as startInCwd: this is a fresh "new session
+			// on this worktree" intent, so any leftover model override or
+			// pending handoff-delete from whatever the draft was doing before
+			// must not carry forward.
+			const patch: {
+				cwd?: string;
+				worktreeId?: string;
+				model?: string;
+				handoffDeleteSessionId?: string;
+			} = { model: undefined, handoffDeleteSessionId: undefined };
 			if (draft.cwd !== wt.baseDir || draft.worktreeId !== wt.id) {
-				useDraftSessionsStore
-					.getState()
-					.updateDraft({ cwd: wt.baseDir, worktreeId: wt.id });
+				patch.cwd = wt.baseDir;
+				patch.worktreeId = wt.id;
+			}
+			useDraftSessionsStore.getState().updateDraft(patch);
+			if (draft.cwd !== wt.baseDir || draft.worktreeId !== wt.id) {
 				useSettingsStore.getState().setLastUsedWorkspace(wt.baseDir);
 			}
 			navigate(`/sessions/${draft.id}`);
@@ -381,44 +406,51 @@ export function SessionsList({
 		createDraftAndNavigate(wt.baseDir, wt.id);
 	};
 
-	// One-click shortcut launch: draft pre-filled with the shortcut's cwd,
-	// mode, title, and prompt text, then navigate. The composer textarea
-	// autofocuses on navigation (ImagePasteTextarea's sessionId-keyed focus
-	// effect), so a single Enter sends the pre-filled prompt. Same
-	// single-slot rule as startInCwd: an existing draft is RETARGETED, not
-	// replaced.
-	const startFromShortcut = (sc: Shortcut) => {
+	// One-click shortcut launch. A shortcut carries no cwd, so this behaves
+	// like `start()`: reuse the existing draft in place if there is one
+	// (same single-slot rule as startInCwd — an existing draft is RETARGETED,
+	// not replaced, and since it already has a cwd there's nothing to
+	// resolve), otherwise resolve a folder exactly like `start()` does
+	// (targetCwd, else the native picker) before creating one. The prompt is
+	// appended to the composer rather than overwriting it, and the composer
+	// textarea autofocuses on navigation (ImagePasteTextarea's
+	// sessionId-keyed focus effect).
+	const startFromShortcut = async (sc: Shortcut) => {
 		setStartError(null);
 		const drafts = useDraftSessionsStore.getState();
 		let id: string;
+		let cwd: string;
 		if (draft) {
+			// Same disowning rule as startInCwd/startInWorktree — a shortcut
+			// launch is a fresh intent for the shared draft slot.
 			drafts.updateDraft({
-				cwd: sc.cwd,
-				worktreeId: undefined,
 				mode: sc.mode,
 				title: sc.title,
+				model: undefined,
+				handoffDeleteSessionId: undefined,
 			});
-			useSettingsStore.getState().setLastUsedWorkspace(sc.cwd);
 			id = draft.id;
+			cwd = draft.cwd;
 		} else {
+			const resolved = targetCwd ?? (await window.claude.pickFolder());
+			if (!resolved) return;
+			useSettingsStore.getState().setLastUsedWorkspace(resolved);
 			const d = drafts.createDraft({
-				cwd: sc.cwd,
+				cwd: resolved,
 				defaultTitle: `Session ${order.length + 1}`,
 				mode: sc.mode,
 			});
 			// createDraft always starts untitled; the shortcut title is an
-			// updateDraft patch ("" keeps the Session N placeholder).
-			if (sc.title) drafts.updateDraft({ title: sc.title });
-			useSettingsStore.getState().setLastUsedWorkspace(sc.cwd);
+			// updateDraft patch.
+			drafts.updateDraft({ title: sc.title });
 			id = d.id;
+			cwd = resolved;
 		}
-		// Pre-fill the composer. Deliberately overwrites any leftover draft
-		// text — running a shortcut is an explicit "start this" action.
-		useDraftStore.getState().setDraftText(id, sc.prompt);
+		appendPromptBlock(id, sc.prompt);
 		// Keep the new draft visible if the workspace filter is narrowed
 		// (same reasoning as createDraftAndNavigate).
 		setWorkspaceFilter((prev) =>
-			prev.length === 0 || prev.includes(sc.cwd) ? prev : [...prev, sc.cwd],
+			prev.length === 0 || prev.includes(cwd) ? prev : [...prev, cwd],
 		);
 		navigate(`/sessions/${id}`);
 	};
@@ -906,7 +938,12 @@ export function SessionsList({
 						</svg>
 						<span style={{ flexShrink: 0 }}>New Session</span>
 					</button>
-					<ShortcutsButton onRun={startFromShortcut} />
+					<ShortcutsMenuButton
+						placement="down"
+						buttonClassName="btn"
+						buttonStyle={{ width: 32, padding: 0 }}
+						onRun={(sc) => void startFromShortcut(sc)}
+					/>
 				</div>
 				{workspaces.length > 0 || archivedCount > 0 ? (
 					<div
@@ -1378,6 +1415,10 @@ function SessionRowSidebar({
 								suppressStale
 							/>
 						) : null}
+						{session.mode === "plan" &&
+						(hasPending || session.status === "running") ? (
+								<ModeLabel mode="plan" />
+							) : null}
 					</div>
 					{session.cwd && !hideCwd ? (
 						<div
@@ -2523,141 +2564,6 @@ function ViewOptionsButton({
 					/>
 				</div>
 			) : null}
-		</div>
-	);
-}
-
-/**
- * Sidebar shortcuts dropdown. The right-edge control of the first header
- * row, sharing that row with the New Session button and stacking above
- * ViewOptionsButton.
- *
- * This slot used to hold a folder-picker button that created a draft in a
- * chosen folder. The draft session page now owns folder selection, so the
- * button was redundant and the slot was repurposed. Saved shortcuts render
- * alphabetically at the top; a click hands off to `onRun`
- * (SessionsList.startFromShortcut) which pre-fills and opens a draft.
- * "Create shortcut" opens the creation modal, mounted here since the
- * backdrop is fixed-position and doesn't care where it renders.
- */
-function ShortcutsButton({ onRun }: { onRun: (sc: Shortcut) => void }) {
-	const [open, setOpen] = useState(false);
-	const [creating, setCreating] = useState(false);
-	const [editing, setEditing] = useState(false);
-	const shortcutsById = useShortcutsStore((s) => s.shortcuts);
-	const shortcuts = useMemo(
-		() =>
-			Object.values(shortcutsById).sort((a, b) =>
-				shortcutLabel(a).localeCompare(shortcutLabel(b), undefined, {
-					sensitivity: "base",
-				}),
-			),
-		[shortcutsById],
-	);
-	const ref = useRef<HTMLDivElement>(null);
-
-	useEffect(() => {
-		if (!open) return;
-		const onDocClick = (e: MouseEvent) => {
-			if (ref.current && !ref.current.contains(e.target as Node)) {
-				setOpen(false);
-			}
-		};
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") setOpen(false);
-		};
-		document.addEventListener("mousedown", onDocClick);
-		document.addEventListener("keydown", onKey);
-		return () => {
-			document.removeEventListener("mousedown", onDocClick);
-			document.removeEventListener("keydown", onKey);
-		};
-	}, [open]);
-
-	return (
-		<div ref={ref} style={{ position: "relative" }}>
-			<button
-				type="button"
-				className="btn"
-				onClick={() => setOpen((o) => !o)}
-				aria-haspopup="menu"
-				aria-expanded={open}
-				aria-label="Shortcuts"
-				style={{ width: 32, padding: 0, color: T.textDim }}
-			>
-				{/* Lightning bolt — the conventional shortcut glyph. */}
-				<svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-					<path
-						d="M7.8 1.5L3.5 7.8h3.1l-.4 4.7 4.3-6.3H7.4l.4-4.7z"
-						stroke="currentColor"
-						strokeWidth="1.2"
-						strokeLinejoin="round"
-						fill="none"
-					/>
-				</svg>
-			</button>
-			{open ? (
-				<div
-					role="menu"
-					style={{
-						position: "absolute",
-						top: "calc(100% + 4px)",
-						right: 0,
-						minWidth: 200,
-						background: T.surfaceHi,
-						border: `0.5px solid ${T.border}`,
-						borderRadius: 8,
-						padding: 4,
-						zIndex: 50,
-						boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
-					}}
-				>
-					{shortcuts.map((sc) => (
-						<MenuItem
-							key={sc.id}
-							active={false}
-							label={shortcutLabel(sc)}
-							onClick={() => {
-								setOpen(false);
-								onRun(sc);
-							}}
-						/>
-					))}
-					{shortcuts.length > 0 ? (
-						<div
-							role="separator"
-							style={{
-								height: 0,
-								borderTop: `0.5px solid ${T.borderSoft}`,
-								margin: "4px 2px",
-							}}
-						/>
-					) : null}
-					<MenuItem
-						active={false}
-						label="Create shortcut"
-						onClick={() => {
-							setOpen(false);
-							setCreating(true);
-						}}
-					/>
-					{shortcuts.length > 0 ? (
-						<MenuItem
-							active={false}
-							label="Edit shortcuts"
-							onClick={() => {
-								setOpen(false);
-								setEditing(true);
-							}}
-						/>
-					) : null}
-				</div>
-			) : null}
-			<CreateShortcutModal
-				open={creating}
-				onClose={() => setCreating(false)}
-			/>
-			<EditShortcutsModal open={editing} onClose={() => setEditing(false)} />
 		</div>
 	);
 }

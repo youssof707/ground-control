@@ -10,11 +10,10 @@ import {
 import { enqueue } from "./write_queue";
 
 /**
- * File-backed store for saved session shortcuts. Mirrors the
- * session_groups store structure exactly: module-level singleton,
- * whole-file JSON persisted atomically, every mutation an entire
- * read-modify-write inside a single write-queue task, every read
- * returning a structuredClone.
+ * File-backed store for saved shortcuts. Mirrors the session_groups store
+ * structure exactly: module-level singleton, whole-file JSON persisted
+ * atomically, every mutation an entire read-modify-write inside a single
+ * write-queue task, every read returning a structuredClone.
  */
 
 let initialized = false;
@@ -86,7 +85,7 @@ export async function create(entry: Shortcut): Promise<Shortcut> {
 
 export async function update(
 	id: string,
-	patch: Partial<Pick<Shortcut, "title" | "cwd" | "prompt" | "mode">>,
+	patch: Partial<Pick<Shortcut, "title" | "prompt" | "mode">>,
 ): Promise<Shortcut | null> {
 	assertInitialized();
 	return enqueue(async () => {

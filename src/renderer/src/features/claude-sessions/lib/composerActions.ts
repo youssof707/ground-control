@@ -35,3 +35,20 @@ export function appendQuotedInline(sessionId: string, text: string): void {
 export function focusComposer(): void {
 	useDraftStore.getState().bumpComposerFocus();
 }
+
+/**
+ * Append a saved shortcut's prompt to a session's composer draft, as its
+ * own block.
+ *
+ * Appends rather than replaces, same rationale as `appendQuotedInline`.
+ * Joined with a newline (not a space) since a shortcut's prompt is its own
+ * paragraph, not an inline quotation.
+ */
+export function appendPromptBlock(sessionId: string, prompt: string): void {
+	const { draftsBySession, setDraftText } = useDraftStore.getState();
+	const trimmed = (draftsBySession[sessionId]?.text ?? "").replace(
+		/\s+$/,
+		"",
+	);
+	setDraftText(sessionId, trimmed ? `${trimmed}\n${prompt}` : prompt);
+}

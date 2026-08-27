@@ -12,10 +12,6 @@ import type {
 	CreateShortcutInput,
 	UpdateShortcutInput,
 } from "../shared/schemas/shortcuts";
-import type {
-	CreatePromptShortcutInput,
-	UpdatePromptShortcutInput,
-} from "../shared/schemas/promptShortcuts";
 
 const api = {};
 
@@ -122,13 +118,6 @@ const claude = {
 	updateShortcut: (input: UpdateShortcutInput) =>
 		ipcRenderer.invoke("shortcuts:update", input),
 	deleteShortcut: (id: string) => ipcRenderer.invoke("shortcuts:delete", id),
-	listPromptShortcuts: () => ipcRenderer.invoke("promptShortcuts:list"),
-	createPromptShortcut: (input: CreatePromptShortcutInput) =>
-		ipcRenderer.invoke("promptShortcuts:create", input),
-	updatePromptShortcut: (input: UpdatePromptShortcutInput) =>
-		ipcRenderer.invoke("promptShortcuts:update", input),
-	deletePromptShortcut: (id: string) =>
-		ipcRenderer.invoke("promptShortcuts:delete", id),
 	getAppInfo: () => ipcRenderer.invoke("appInfo:get"),
 	toggleDevTools: () => ipcRenderer.invoke("devtools:toggle"),
 	checkForUpdate: () => ipcRenderer.invoke("updater:check"),

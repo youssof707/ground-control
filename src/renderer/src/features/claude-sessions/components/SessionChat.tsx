@@ -2,9 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { useNavigate } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
+import { useQueuedMessagesStore } from "../stores/useQueuedMessagesStore";
 import { useReadStore } from "../stores/useReadStore";
-import { isDraftId } from "../stores/useDraftSessionsStore";
+import { isDraftId, useDraftSessionsStore } from "../stores/useDraftSessionsStore";
+import { useDraftStore } from "../stores/useDraftStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
+import { focusComposer } from "../lib/composerActions";
+import { startHandoff } from "../lib/handoffActions";
 import { PermissionCard } from "./PermissionCard";
 import { ImagePasteTextarea } from "./ImagePasteTextarea";
 import { MessageView } from "./MessageView";
@@ -40,6 +44,13 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	const [pendingForkMessageId, setPendingForkMessageId] = useState<
 		string | null
 	>(null);
+	// Object, not a bare string — "" is a legal handoff text (shouldn't
+	// happen given the canHandoff gate, but falsy-collision with `null`
+	// would silently misbehave `open={!!pendingHandoff}`).
+	const [pendingHandoff, setPendingHandoff] = useState<{
+		text: string;
+		hasDirtyDraft: boolean;
+	} | null>(null);
 	const [editingTitle, setEditingTitle] = useState(false);
 	const [titleDraft, setTitleDraft] = useState("");
 	const [openFolderModal, setOpenFolderModal] = useState(false);
@@ -166,6 +177,10 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	const stop = async () => {
 		if (interrupting) return;
 		setInterrupting(true);
+		// Interrupting drives status to `idle` too, but that's the user saying
+		// "wait", not "the turn finished" — latch any queued pre-move shut so
+		// useQueuedMessageFlusher doesn't mistake this idle edge for one.
+		useQueuedMessagesStore.getState().hold(sessionId);
 		try {
 			await window.claude.interruptSession(sessionId);
 		} finally {
@@ -234,6 +249,34 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 		if (forkingId) return;
 		setPendingForkMessageId(null);
 		setForkError(null);
+	};
+
+	// useCallback with an empty dep array so MessageView's React.memo keeps
+	// short-circuiting re-renders — the session and draft state are read
+	// fresh from the stores at click time instead of being captured in
+	// closure deps.
+	const handoff = useCallback((text: string) => {
+		const draft = useDraftSessionsStore.getState().draft;
+		const draftText = draft
+			? useDraftStore.getState().draftsBySession[draft.id]?.text
+			: undefined;
+		setPendingHandoff({ text, hasDirtyDraft: !!draftText });
+	}, []);
+
+	// Stages a new session (draft, not yet created) pre-filled with the
+	// handoff text and, for "Handoff & delete", remembers to remove this
+	// session once the new one actually receives its first message —
+	// ImagePasteTextarea.send() is what fires that deferred delete.
+	const runHandoff = (deleteOld: boolean) => {
+		if (!pendingHandoff || !session) return;
+		setPendingHandoff(null);
+		const id = startHandoff({
+			session,
+			text: pendingHandoff.text,
+			deleteOld,
+		});
+		navigate(`/sessions/${id}`);
+		focusComposer();
 	};
 
 	// Pre-pass over messages to collapse contiguous tool_use + tool_result
@@ -501,6 +544,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 											m={u.message}
 											onFork={fork}
 											forkPending={forkingId === u.message.id}
+											onHandoff={handoff}
 										/>
 									</div>
 								);
@@ -610,6 +654,29 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 				error={forkError}
 				onConfirm={confirmFork}
 				onCancel={cancelFork}
+			/>
+
+			<ConfirmModal
+				open={!!pendingHandoff}
+				title="Hand off to a new session?"
+				message={
+					<>
+						Start a new session in the same folder
+						{session.groupId ? ", group," : ""} and mode, with this message
+						pre-filled in the composer. Nothing is sent until you press
+						Enter.
+						{pendingHandoff?.hasDirtyDraft
+							? " Your current unsent draft will be replaced."
+							: ""}
+					</>
+				}
+				confirmLabel="Handoff & delete"
+				secondaryAction={{
+					label: "Handoff",
+					onClick: () => runHandoff(false),
+				}}
+				onConfirm={() => runHandoff(true)}
+				onCancel={() => setPendingHandoff(null)}
 			/>
 
 			<ConfirmModal

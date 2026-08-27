@@ -13,6 +13,7 @@ import * as sessionStore from "../core/store/claude_session";
 import * as notesStore from "../core/store/session_notes";
 import * as readStore from "../core/store/read_state";
 import * as worktreesStore from "../core/store/worktrees";
+import * as groupsStore from "../core/store/session_groups";
 import { broadcast } from "../windows";
 import { registerReadHandlers } from "./readHandlers";
 import { registerSettingsHandlers } from "./settingsHandlers";
@@ -25,7 +26,6 @@ import {
 	pruneGroupIfEmpty,
 } from "./groupsHandlers";
 import { registerShortcutsHandlers } from "./shortcutsHandlers";
-import { registerPromptShortcutsHandlers } from "./promptShortcutsHandlers";
 import { registerUpdaterHandlers } from "./updaterHandlers";
 import { registerDictationHandlers } from "./dictationHandlers";
 import { registerImageHandlers } from "./imageHandlers";
@@ -88,7 +88,6 @@ export function registerSessionsHandlers(): SessionManager {
 	registerWorktreesHandlers();
 	registerGroupsHandlers();
 	registerShortcutsHandlers();
-	registerPromptShortcutsHandlers();
 	registerUpdaterHandlers();
 	registerDictationHandlers();
 	registerImageHandlers();
@@ -130,7 +129,17 @@ export function registerSessionsHandlers(): SessionManager {
 				worktreeId = undefined;
 			}
 		}
-		return manager.run({ ...input, cwd, worktreeId });
+		// Guard against a stale group reference (e.g. the group auto-deleted
+		// via pruneGroupIfEmpty between a handoff draft capturing its id and
+		// this send). Soft-drop rather than throw — an auto-pruned group
+		// shouldn't block session creation, it should just leave the new
+		// session ungrouped, mirroring the worktree baseDir-mismatch branch
+		// above.
+		let groupId = input.groupId;
+		if (groupId && !groupsStore.get(groupId)) {
+			groupId = undefined;
+		}
+		return manager.run({ ...input, cwd, worktreeId, groupId });
 	});
 	ipcMain.handle("session:cancel", (_e, sessionId: string) => {
 		manager.cancel(sessionId);

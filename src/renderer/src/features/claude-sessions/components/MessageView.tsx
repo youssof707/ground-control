@@ -30,10 +30,16 @@ export const MessageView = memo(function MessageView({
 	m,
 	onFork,
 	forkPending,
+	onHandoff,
 }: {
 	m: SessionMessage;
 	onFork?: (messageId: string) => void;
 	forkPending?: boolean;
+	/** Stage a handoff to a new session, seeded with this message's text.
+	 * Unlike Fork this needs no SDK uuid — any assistant message with text
+	 * qualifies. Omitted (e.g. inside a sidequest panel) simply hides the
+	 * menu item. */
+	onHandoff?: (text: string) => void;
 }) {
 	const sdk = m.content as SdkLike;
 	// Subagent traffic never renders as a message — tool blocks reach the
@@ -48,6 +54,7 @@ export const MessageView = memo(function MessageView({
 				messageId={m.id}
 				onFork={onFork}
 				forkPending={forkPending}
+				onHandoff={onHandoff}
 			/>
 		);
 	}
@@ -72,21 +79,27 @@ function AssistantMessage({
 	messageId,
 	onFork,
 	forkPending,
+	onHandoff,
 }: {
 	sdk: SdkLike;
 	messageId: string;
 	onFork?: (messageId: string) => void;
 	forkPending?: boolean;
+	onHandoff?: (text: string) => void;
 }) {
 	const [hovered, setHovered] = useState(false);
 	const blocks = blocksOfSdk(sdk);
 	if (blocks.length === 0) return null;
+	const messageText = messageBlocksToText(blocks);
 	// Fork is only available for assistant messages with an SDK uuid (which
 	// the SDK requires for `upToMessageId`). Skip the button otherwise so
 	// users don't click into a guaranteed-error path.
 	const sdkUuid = (sdk as { uuid?: unknown }).uuid;
 	const canFork =
 		!!onFork && typeof sdkUuid === "string" && sdkUuid.length > 0;
+	// Handoff needs no uuid — just something worth handing off. A tool-only
+	// reply (all blocks tool_use, no text) has nothing to quote.
+	const canHandoff = !!onHandoff && messageText.length > 0;
 	return (
 		<div
 			onMouseEnter={() => setHovered(true)}
@@ -121,35 +134,44 @@ function AssistantMessage({
 					return <RawBlock key={i} block={b} />;
 				})}
 			</div>
-			{canFork ? (
+			{canFork || canHandoff ? (
 				<MessageActionsMenu
 					rowHovered={hovered}
 					pending={!!forkPending}
+					showFork={canFork}
 					onFork={() => onFork?.(messageId)}
-					blocks={blocks}
+					showHandoff={canHandoff}
+					onHandoff={() => onHandoff?.(messageText)}
+					messageText={messageText}
 				/>
 			) : null}
 		</div>
 	);
 }
 
-// Rough on-screen height of the open menu panel (2 items × ~26 px + 8 px
+// Rough on-screen height of the open menu panel (3 items × ~26 px + 8 px
 // padding + 1 px border). Used only to decide whether to flip the panel
 // upward when there isn't enough room below the trigger.
-const MENU_ESTIMATED_HEIGHT = 72;
+const MENU_ESTIMATED_HEIGHT = 100;
 const MENU_VIEWPORT_MARGIN = 8;
 const MENU_TRIGGER_GAP = 4;
 
 function MessageActionsMenu({
 	rowHovered,
 	pending,
+	showFork,
 	onFork,
-	blocks,
+	showHandoff,
+	onHandoff,
+	messageText,
 }: {
 	rowHovered: boolean;
 	pending: boolean;
+	showFork: boolean;
 	onFork: () => void;
-	blocks: ContentBlock[];
+	showHandoff: boolean;
+	onHandoff: () => void;
+	messageText: string;
 }) {
 	const [open, setOpen] = useState(false);
 	const [copied, setCopied] = useState(false);
@@ -220,11 +242,16 @@ function MessageActionsMenu({
 		onFork();
 	};
 
+	const handleHandoff = (e: React.MouseEvent) => {
+		e.stopPropagation();
+		setOpen(false);
+		onHandoff();
+	};
+
 	const handleCopy = async (e: React.MouseEvent) => {
 		e.stopPropagation();
-		const text = messageBlocksToText(blocks);
 		try {
-			await navigator.clipboard.writeText(text);
+			await navigator.clipboard.writeText(messageText);
 		} catch {
 			// noop — clipboard write can fail in some contexts
 		}
@@ -301,11 +328,16 @@ function MessageActionsMenu({
 							flexDirection: "column",
 						}}
 					>
-						<MenuItem
-							label={pending ? "Forking…" : "Fork"}
-							disabled={pending}
-							onClick={handleFork}
-						/>
+						{showFork ? (
+							<MenuItem
+								label={pending ? "Forking…" : "Fork"}
+								disabled={pending}
+								onClick={handleFork}
+							/>
+						) : null}
+						{showHandoff ? (
+							<MenuItem label="Handoff" onClick={handleHandoff} />
+						) : null}
 						<MenuItem
 							label={copied ? "Copied!" : "Copy message"}
 							onClick={handleCopy}

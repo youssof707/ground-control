@@ -51,6 +51,20 @@ export interface DraftSession {
 	 * like `sonnet`, `fable`, or full SDK ids like `claude-sonnet-4-5-…`),
 	 * validated for real by the SDK on the first turn. */
 	model?: string;
+	/** Sidebar group inherited from a handoff's source session. Forwarded to
+	 * `startSession` on first send; SessionManager stamps it onto the
+	 * created record so the replacement is born inside the group — no
+	 * post-hoc regroup, and no window in which `pruneGroupIfEmpty` could
+	 * delete the group during a "Handoff & delete". */
+	groupId?: string;
+	/** Deferred half of "Handoff & delete": the session to delete once —
+	 * and only once — this draft is promoted AND its first turn lands. If
+	 * the user never sends, the source session survives. Every retarget
+	 * site that repurposes the shared draft slot for a different intent
+	 * (New Session, shortcuts) must explicitly clear this to `undefined` —
+	 * otherwise an abandoned handoff's delete can ride along onto an
+	 * unrelated later draft. */
+	handoffDeleteSessionId?: string;
 }
 
 interface State {
@@ -61,13 +75,23 @@ interface State {
 		mode?: SessionMode;
 		worktreeId?: string;
 	}) => DraftSession;
-	// The patch type intentionally allows `worktreeId: undefined` and
-	// `model: undefined` so the folder-change handler can clear the
-	// worktree binding, and the model picker can clear the override back
-	// to the CLI default, in the same call shape.
+	// The patch type intentionally allows `worktreeId: undefined`,
+	// `model: undefined`, `groupId: undefined`, and
+	// `handoffDeleteSessionId: undefined` so callers can clear a prior
+	// binding (folder change, model picker reset, or a retarget site
+	// disowning a stale handoff-delete) in the same call shape.
 	updateDraft: (
 		patch: Partial<
-			Pick<DraftSession, "cwd" | "title" | "mode" | "worktreeId" | "model">
+			Pick<
+				DraftSession,
+				| "cwd"
+				| "title"
+				| "mode"
+				| "worktreeId"
+				| "model"
+				| "groupId"
+				| "handoffDeleteSessionId"
+			>
 		>,
 	) => void;
 	discardDraft: () => void;

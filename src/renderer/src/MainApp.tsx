@@ -8,6 +8,7 @@ import { Route, Routes, useMatch, useParams } from "react-router-dom";
 import { useSessionsBootstrap } from "./features/claude-sessions/hooks/useSessionsBootstrap";
 import { useNotificationRouter } from "./features/claude-sessions/hooks/useNotificationRouter";
 import { useDockUnreadBadge } from "./features/claude-sessions/hooks/useDockUnreadBadge";
+import { useQueuedMessageFlusher } from "./features/claude-sessions/hooks/useQueuedMessageFlusher";
 import { useUpdater } from "./features/updater/hooks/useUpdater";
 import { UpdateModal } from "./features/updater/components/UpdateModal";
 import { BackgroundTasksIndicator } from "./features/background-tasks/components/BackgroundTasksIndicator";
@@ -40,6 +41,10 @@ export default function MainApp() {
 	useNotificationRouter();
 	useDockUnreadBadge();
 	useUpdater();
+	// Fires a session's queued pre-move the instant its turn is completely
+	// done. Mounted app-level (not inside the composer) so a queue still
+	// fires after navigating away from the session that queued it.
+	useQueuedMessageFlusher();
 	// Global ⌘S — opens/creates the sidequest panel. Mounted once, here.
 	useSidequestHotkey();
 	// Global ⌘R — focuses the main composer, quoting any highlighted

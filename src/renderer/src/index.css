@@ -250,6 +250,10 @@ input::placeholder {
 }
 
 .modal-card {
+	/* Positioning root for the optional corner close button (rendered when
+	   ConfirmModal gets a `secondaryAction`) — without this it would anchor
+	   against the viewport instead of the card. */
+	position: relative;
 	background: oklch(0.215 0.007 60);
 	border: 0.5px solid oklch(0.30 0.008 60);
 	border-radius: 14px;

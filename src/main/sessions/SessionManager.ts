@@ -410,6 +410,11 @@ export class SessionManager {
 			mode: input.mode ?? "plan",
 			worktreeId: input.worktreeId,
 			model: input.model,
+			// Sidebar group. Membership lives only on this field (no reverse
+			// index, nothing to attach), so this single assignment is the
+			// whole bookkeeping — same move `fork()` makes below. The
+			// `session:started` broadcast carries it to the renderer.
+			groupId: input.groupId,
 		};
 
 		const fullForPersist: ClaudeSessionFull = { ...session, messages: [] };

@@ -14,7 +14,6 @@ import { initialize as initializeSessionNotesStore } from "./core/store/session_
 import { initialize as initializeWorktreesStore } from "./core/store/worktrees";
 import { initialize as initializeSessionGroupsStore } from "./core/store/session_groups";
 import { initialize as initializeShortcutsStore } from "./core/store/shortcuts";
-import { initialize as initializePromptShortcutsStore } from "./core/store/prompt_shortcuts";
 import {
 	initialize as initializeAppSettingsStore,
 	get as getAppSettings,
@@ -228,7 +227,6 @@ app.whenReady().then(async () => {
 		await initializeWorktreesStore(dataDir);
 		await initializeSessionGroupsStore(dataDir);
 		await initializeShortcutsStore(dataDir);
-		await initializePromptShortcutsStore(dataDir);
 	} catch (err) {
 		console.error(`[ccw] failed to initialize store at ${dataDir}:`, err);
 		app.exit(1);

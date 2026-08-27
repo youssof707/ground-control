@@ -472,6 +472,25 @@ export function ModeChip({ mode }: { mode: SessionMode }) {
 	);
 }
 
+/**
+ * Text-only mode marker. Deliberately NOT a pill — it sits beside the status
+ * and branch chips as a quiet annotation, not a third piece of status chrome.
+ */
+export function ModeLabel({ mode }: { mode: SessionMode }) {
+	return (
+		<span
+			style={{
+				fontSize: 11,
+				fontWeight: 500,
+				color: T.textMute,
+				whiteSpace: "nowrap",
+			}}
+		>
+			{MODE_LABEL[mode]}
+		</span>
+	);
+}
+
 // ─── ModeToggle ──────────────────────────────────────────────────────────────
 
 /**

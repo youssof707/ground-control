@@ -10,7 +10,7 @@ import { T } from "../../../design/tokens";
 import { useShortcutsStore } from "../stores/useShortcutsStore";
 import {
 	EMPTY_SHORTCUT_FORM,
-	folderName,
+	promptPreview,
 	ShortcutFormFields,
 	shortcutLabel,
 	type ShortcutFormValue,
@@ -59,7 +59,6 @@ export function EditShortcutsModal({
 			current
 				? {
 					title: current.title,
-					cwd: current.cwd,
 					prompt: current.prompt,
 					mode: current.mode,
 				}
@@ -93,20 +92,22 @@ export function EditShortcutsModal({
 	const unchanged =
 		!!original &&
 		form.title.trim() === original.title &&
-		form.cwd === original.cwd &&
 		form.prompt.trim() === original.prompt &&
 		form.mode === original.mode;
-	const canSave = !busy && !!form.cwd && form.prompt.trim().length > 0 && !unchanged;
+	const canSave =
+		!busy &&
+		form.title.trim().length > 0 &&
+		form.prompt.trim().length > 0 &&
+		!unchanged;
 
 	const handleSave = useCallback(async () => {
-		if (view.kind !== "edit" || !canSave || !form.cwd) return;
+		if (view.kind !== "edit" || !canSave) return;
 		setBusy(true);
 		setError(null);
 		try {
 			const updated = await window.claude.updateShortcut({
 				id: view.id,
 				title: form.title.trim(),
-				cwd: form.cwd,
 				prompt: form.prompt.trim(),
 				mode: form.mode,
 			});
@@ -313,7 +314,8 @@ function ShortcutRow({
 					textOverflow: "ellipsis",
 					whiteSpace: "nowrap",
 					minWidth: 0,
-					flex: 1,
+					flexShrink: 0,
+					maxWidth: 160,
 					color: T.text,
 				}}
 			>
@@ -321,17 +323,16 @@ function ShortcutRow({
 			</span>
 			<span
 				style={{
-					fontFamily: T.mono,
 					fontSize: 11,
 					color: T.textDim,
 					overflow: "hidden",
 					textOverflow: "ellipsis",
 					whiteSpace: "nowrap",
-					maxWidth: 160,
-					flexShrink: 1,
+					minWidth: 0,
+					flex: 1,
 				}}
 			>
-				{folderName(shortcut.cwd)}
+				{promptPreview(shortcut.prompt, 60)}
 			</span>
 			<span
 				style={{

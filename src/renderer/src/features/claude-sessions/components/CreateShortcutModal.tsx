@@ -7,15 +7,14 @@ import {
 } from "./ShortcutForm";
 
 /**
- * Modal for creating a saved session shortcut (title + folder + prompt +
- * mode). Mirrors RenameGroupModal's shell: same `modal-backdrop` /
- * `modal-card` / `modal-title` / `modal-actions` / `modal-error` classes,
- * Escape-to-close, reset-on-open, busy/error state, and the
- * upsert-from-invoke-response pattern (main's `state:changed` broadcast
- * is skip-self).
+ * Modal for creating a saved shortcut (name + prompt + mode). Mirrors
+ * RenameGroupModal's shell: same `modal-backdrop` / `modal-card` /
+ * `modal-title` / `modal-actions` / `modal-error` classes, Escape-to-close,
+ * reset-on-open, busy/error state, and the upsert-from-invoke-response
+ * pattern (main's `state:changed` broadcast is skip-self).
  *
- * The Title/Folder/Prompt/Mode fields live in ShortcutFormFields, shared
- * with EditShortcutsModal's edit view so the two forms can't diverge.
+ * The Name/Prompt/Mode fields live in ShortcutFormFields, shared with
+ * EditShortcutsModal's edit view so the two forms can't diverge.
  */
 export function CreateShortcutModal({
 	open,
@@ -51,16 +50,16 @@ export function CreateShortcutModal({
 		return () => window.removeEventListener("keydown", handler);
 	}, [open, onClose]);
 
-	const canSave = !busy && !!form.cwd && form.prompt.trim().length > 0;
+	const canSave =
+		!busy && form.title.trim().length > 0 && form.prompt.trim().length > 0;
 
 	const handleSave = useCallback(async () => {
-		if (!canSave || !form.cwd) return;
+		if (!canSave) return;
 		setBusy(true);
 		setError(null);
 		try {
 			const created = await window.claude.createShortcut({
 				title: form.title.trim(),
-				cwd: form.cwd,
 				prompt: form.prompt.trim(),
 				mode: form.mode,
 			});

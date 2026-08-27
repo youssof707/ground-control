@@ -210,5 +210,11 @@ export const StartSessionInputSchema = z.object({
 	mode: SessionModeSchema.optional(),
 	worktreeId: z.string().optional(),
 	model: z.string().optional(),
+	/** Sidebar group the new session is born into. Set by the handoff flow
+	 * so the replacement lands in — and keeps alive — the group its
+	 * predecessor belonged to. Membership lives only on `session.groupId`
+	 * (no reverse index), so `SessionManager.run` just stamps it. Validated
+	 * in the `session:start` handler; a vanished group is soft-dropped. */
+	groupId: z.string().optional(),
 });
 export type StartSessionInput = z.infer<typeof StartSessionInputSchema>;
