@@ -21,6 +21,12 @@ interface State {
 	setDraftText: (sessionId: string, text: string) => void;
 	setDraftImages: (sessionId: string, images: PendingImage[]) => void;
 	clearDraft: (sessionId: string) => void;
+	// Monotonic counter the main composer watches to (re-)focus itself and
+	// place the caret at the end. Bumped by the Cmd+R composer-focus hotkey
+	// (see composerActions.focusComposer) — mirrors useSidequestsStore's
+	// focusNonce for the sidequest panel.
+	composerFocusNonce: number;
+	bumpComposerFocus: () => void;
 }
 
 function isEmpty(d: Draft | undefined): boolean {
@@ -29,6 +35,7 @@ function isEmpty(d: Draft | undefined): boolean {
 
 export const useDraftStore = create<State>((set) => ({
 	draftsBySession: {},
+	composerFocusNonce: 0,
 
 	setDraftText: (sessionId, text) =>
 		set((s) => {
@@ -69,4 +76,7 @@ export const useDraftStore = create<State>((set) => ({
 			delete rest[sessionId];
 			return { draftsBySession: rest };
 		}),
+
+	bumpComposerFocus: () =>
+		set((s) => ({ composerFocusNonce: s.composerFocusNonce + 1 })),
 }));

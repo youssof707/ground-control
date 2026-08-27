@@ -185,6 +185,22 @@ export function ImagePasteTextarea({
 		return () => window.clearTimeout(id);
 	}, [sessionId]);
 
+	// Focus + caret to end whenever the Cmd+R composer-focus hotkey fires.
+	// rAF so it runs after the draft-text write (and resulting re-render)
+	// that composerActions.appendQuotedInline just triggered. Skipped on the
+	// initial nonce (0) — session-entry focus is already handled above.
+	const composerFocusNonce = useDraftStore((s) => s.composerFocusNonce);
+	useEffect(() => {
+		if (composerFocusNonce === 0) return;
+		const raf = requestAnimationFrame(() => {
+			const ta = textareaRef.current;
+			if (!ta) return;
+			ta.focus();
+			ta.selectionStart = ta.selectionEnd = ta.value.length;
+		});
+		return () => cancelAnimationFrame(raf);
+	}, [composerFocusNonce]);
+
 	// Auto-grow the textarea to fit its content. We toggle height to "auto"
 	// just long enough to read scrollHeight (the natural content height),
 	// then restore the previous height so React's controlled style prop wins

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, Menu, shell } from "electron";
 import { join } from "path";
-import { electronApp, optimizer, is } from "@electron-toolkit/utils";
+import { electronApp, is } from "@electron-toolkit/utils";
 import type { FastifyInstance } from "fastify";
 import { startServer, FASTIFY_PORT } from "./server";
 import { flush as flushStore } from "./core/store/write_queue";
@@ -139,6 +139,22 @@ function buildMenu(): Electron.Menu {
 			{ role: "quit" },
 		],
 	};
+	// Custom View menu (instead of `{ role: "viewMenu" }`) so we can drop plain
+	// Reload and free up Cmd+R for the composer-focus/quote-selection hotkey
+	// (see useComposerFocusHotkey). Force Reload stays on Shift+Cmd+R.
+	const viewMenu: Electron.MenuItemConstructorOptions = {
+		label: "View",
+		submenu: [
+			{ role: "forceReload" },
+			{ role: "toggleDevTools" },
+			{ type: "separator" },
+			{ role: "resetZoom" },
+			{ role: "zoomIn" },
+			{ role: "zoomOut" },
+			{ type: "separator" },
+			{ role: "togglefullscreen" },
+		],
+	};
 	const template: Electron.MenuItemConstructorOptions[] = [
 		...(isMac ? [appMenu] : []),
 		{
@@ -146,7 +162,7 @@ function buildMenu(): Electron.Menu {
 			submenu: [isMac ? { role: "close" } : { role: "quit" }],
 		},
 		{ role: "editMenu" },
-		{ role: "viewMenu" },
+		viewMenu,
 		{ role: "windowMenu" },
 	];
 	return Menu.buildFromTemplate(template);
@@ -155,8 +171,30 @@ function buildMenu(): Electron.Menu {
 app.whenReady().then(async () => {
 	electronApp.setAppUserModelId("com.anthropic.ground-control");
 
+	// Hand-rolled replacement for `optimizer.watchWindowShortcuts`: same
+	// DevTools handling, but deliberately never touches KeyR. The stock
+	// helper's production branch calls `preventDefault()` on any Cmd/Ctrl+R
+	// before-input-event, which — unlike a renderer keydown listener — also
+	// suppresses the menu accelerator, silently eating Cmd+R in packaged
+	// builds. We want that key free for the composer-focus hotkey instead.
 	app.on("browser-window-created", (_, window) => {
-		optimizer.watchWindowShortcuts(window);
+		window.webContents.on("before-input-event", (event, input) => {
+			if (input.type !== "keyDown") return;
+			if (!is.dev) {
+				if (
+					(input.code === "KeyI" && input.alt && input.meta)
+					|| (input.code === "KeyI" && input.control && input.shift)
+				) {
+					event.preventDefault();
+				}
+			} else if (input.code === "F12") {
+				if (window.webContents.isDevToolsOpened()) {
+					window.webContents.closeDevTools();
+				} else {
+					window.webContents.openDevTools({ mode: "undocked" });
+				}
+			}
+		});
 	});
 
 	Menu.setApplicationMenu(buildMenu());

@@ -24,6 +24,7 @@ import {
 	type RightPanel,
 } from "./features/claude-sessions/stores/useRightPanelStore";
 import { useSidequestHotkey } from "./features/claude-sessions/hooks/useSidequestHotkey";
+import { useComposerFocusHotkey } from "./features/claude-sessions/hooks/useComposerFocusHotkey";
 import { T } from "./design/tokens";
 
 // Re-exported for the components that already import the type from here.
@@ -41,6 +42,9 @@ export default function MainApp() {
 	useUpdater();
 	// Global ⌘S — opens/creates the sidequest panel. Mounted once, here.
 	useSidequestHotkey();
+	// Global ⌘R — focuses the main composer, quoting any highlighted
+	// selection inline. Mounted once, here.
+	useComposerFocusHotkey();
 	const rightPanel = useRightPanelStore((s) => s.rightPanel);
 	const setRightPanel = useRightPanelStore((s) => s.setRightPanel);
 	return (
