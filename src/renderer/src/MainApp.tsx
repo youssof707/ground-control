@@ -15,17 +15,21 @@ import { SessionsList } from "./features/claude-sessions/components/SessionsList
 import { SessionChat } from "./features/claude-sessions/components/SessionChat";
 import { InboxSidebar } from "./features/claude-sessions/components/InboxSidebar";
 import { NotesSidebarShell } from "./features/claude-sessions/components/notes/NotesSidebarShell";
+import { SidequestSidebarShell } from "./features/claude-sessions/components/sidequest/SidequestSidebarShell";
 import { AppNav } from "./features/claude-sessions/components/AppNav";
 import { SidebarFooter } from "./features/claude-sessions/components/SidebarFooter";
 import { useSettingsStore } from "./features/claude-sessions/stores/useSettingsStore";
+import {
+	useRightPanelStore,
+	type RightPanel,
+} from "./features/claude-sessions/stores/useRightPanelStore";
+import { useSidequestHotkey } from "./features/claude-sessions/hooks/useSidequestHotkey";
 import { T } from "./design/tokens";
 
-/**
- * Discriminated state for the right-hand panel. Inbox and Notes share
- * one slot and are mutually exclusive — opening one closes the other.
- * `null` means no right panel is open.
- */
-export type RightPanel = "inbox" | "notes" | null;
+// Re-exported for the components that already import the type from here.
+// The state itself now lives in `useRightPanelStore` so the global Cmd+S
+// handler can open the sidequest panel from outside the component tree.
+export type { RightPanel };
 
 const SIDEBAR_DEFAULT_WIDTH = 320;
 const SIDEBAR_MIN_WIDTH = 260;
@@ -35,7 +39,10 @@ export default function MainApp() {
 	useNotificationRouter();
 	useDockUnreadBadge();
 	useUpdater();
-	const [rightPanel, setRightPanel] = useState<RightPanel>(null);
+	// Global ⌘S — opens/creates the sidequest panel. Mounted once, here.
+	useSidequestHotkey();
+	const rightPanel = useRightPanelStore((s) => s.rightPanel);
+	const setRightPanel = useRightPanelStore((s) => s.setRightPanel);
 	return (
 		<div
 			style={{
@@ -73,10 +80,17 @@ function MainBody({
 	const sessionMatch = useMatch("/sessions/:id/*");
 	const activeSessionId = sessionMatch?.params.id;
 
-	// Auto-close Notes when navigating away from a session route — the panel
-	// is session-scoped, so rendering it for an undefined session is wrong.
+	// Auto-close the session-scoped panels when navigating away from a session
+	// route — rendering them for an undefined session is wrong. (The sidequest
+	// itself survives: it's keyed by parent session id in useSidequestsStore,
+	// so returning to the session brings its transcript back.)
 	useEffect(() => {
-		if (rightPanel === "notes" && !activeSessionId) setRightPanel(null);
+		if (
+			(rightPanel === "notes" || rightPanel === "sidequest") &&
+			!activeSessionId
+		) {
+			setRightPanel(null);
+		}
 	}, [rightPanel, activeSessionId, setRightPanel]);
 
 	return (
@@ -93,6 +107,12 @@ function MainBody({
 			) : null}
 			{rightPanel === "notes" && activeSessionId ? (
 				<NotesSidebarShell
+					sessionId={activeSessionId}
+					onClose={() => setRightPanel(null)}
+				/>
+			) : null}
+			{rightPanel === "sidequest" && activeSessionId ? (
+				<SidequestSidebarShell
 					sessionId={activeSessionId}
 					onClose={() => setRightPanel(null)}
 				/>

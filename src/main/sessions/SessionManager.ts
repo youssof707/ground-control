@@ -9,7 +9,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { app } from "electron";
 import { randomUUID } from "node:crypto";
-import { accessSync, constants as fsConstants } from "node:fs";
+import { accessSync, existsSync, constants as fsConstants } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -152,6 +152,7 @@ import {
 	identityMatches,
 	parseModelIdentity,
 } from "../../shared/claude-sessions/sessionModel";
+import { isSidequestId } from "../../shared/claude-sessions/sidequest";
 import { PermissionBroker } from "./PermissionBroker";
 import {
 	getCurrentBranch,
@@ -175,14 +176,27 @@ import * as windows from "../windows";
  *
  * Called from every git-op path in SessionManager and from `runLoop`
  * where we pass `cwd:` to the SDK options.
+ *
+ * Final guard: if the resolved directory no longer exists on disk (project
+ * folder deleted, renamed, or on an unmounted volume), fall back to
+ * `homedir()`. `child_process.spawn` fails with **ENOENT when its `cwd` is
+ * missing**, and the SDK reports that as "Claude Code native binary not found
+ * at <path>" — pointing at a binary that is perfectly fine and sending anyone
+ * debugging it down the wrong path entirely. Same reason `probeSupportedModels`
+ * uses `homedir()`: it's the one directory guaranteed to exist.
  */
 function resolveEffectiveCwd(session: {
 	cwd: string;
 	worktreeId?: string;
 }): string {
-	if (!session.worktreeId) return session.cwd;
-	const wt = worktreesStore.get(session.worktreeId);
-	return wt?.worktreePath ?? session.cwd;
+	const preferred = session.worktreeId
+		? (worktreesStore.get(session.worktreeId)?.worktreePath ?? session.cwd)
+		: session.cwd;
+	if (preferred && existsSync(preferred)) return preferred;
+	console.warn(
+		`[ccw] session cwd does not exist: ${preferred || "(empty)"} — falling back to ${homedir()}`,
+	);
+	return homedir();
 }
 
 interface RunningEntry {
@@ -192,6 +206,12 @@ interface RunningEntry {
 	finish: () => void;
 	setIdle: () => Promise<void>;
 	queryRef: { current: Query | null };
+	// Sidequest sessions: live only in this map, never in the session store,
+	// and broadcast on `sidequest:*` channels. Every persistence call site in
+	// runLoop and the mutators below is guarded on this flag, because the
+	// renderer's `upsertSession` lazy-creates rows from any `session:*`
+	// payload — a single leaked broadcast would mint a ghost sidebar entry.
+	ephemeral?: boolean;
 	// Resolves once runLoop's finally block has run and the entry has been
 	// removed from `sessions`. Lets callers (e.g. session:delete) await
 	// complete SDK teardown before continuing.
@@ -293,6 +313,9 @@ export class SessionManager {
 	// (which lazy-creates entries from upsert payloads). UUIDs are random,
 	// so we don't need to evict — one entry per delete per process lifetime.
 	private deletedIds = new Set<string>();
+	// parentSessionId -> sidequestId. At most one sidequest per main session;
+	// purely in-memory, so sidequests die with the process by design.
+	private sidequests = new Map<string, string>();
 
 	constructor(private broker: PermissionBroker) {}
 
@@ -425,6 +448,60 @@ export class SessionManager {
 	}
 
 	/**
+	 * Resolve the SDK-side coordinates of a fork point: which transcript uuid
+	 * to branch at, and which SDK session actually contains that uuid.
+	 *
+	 * A transcript uuid is only valid inside the SDK session that minted it:
+	 * `forkSession` copies the transcript with *freshly remapped* uuids, while
+	 * we copy inherited messages' `content` verbatim. So a message a wrapper
+	 * inherited from an ancestor carries the ancestor's uuid, which does not
+	 * exist in the wrapper's own `sdkSessionId` — branching it against
+	 * `parent.sdkSessionId` fails with "Message X not found in session Y".
+	 * Use the session named by the message instead.
+	 *
+	 * This is correct at any depth: each wrapper's message list is a
+	 * prefix-copy of its parent's, so the ancestor's transcript prefix up to
+	 * this uuid is content-identical to ours.
+	 *
+	 * `content` is the raw SDKMessage, so `session_id` is stamped by the SDK
+	 * itself (cf. extractSdkSessionId). Locally-synthesised messages have
+	 * none; they're never fork targets, but fall back to the parent to be safe.
+	 *
+	 * Shared by `fork()` (persisted fork) and `startSidequest()` (ephemeral).
+	 */
+	private resolveForkSource(
+		parent: ClaudeSessionFull,
+		wrapperMessageId: string,
+	): { sdkUuid: string; sourceSdkId: string } {
+		if (!parent.sdkSessionId) {
+			throw new Error(
+				"This session has no SDK session id yet — wait for Claude's first response before forking.",
+			);
+		}
+		const targetMsg = parent.messages.find((m) => m.id === wrapperMessageId);
+		if (!targetMsg) throw new Error("Message not found in this session");
+		if (targetMsg.role !== "assistant") {
+			throw new Error("Can only fork from an assistant message");
+		}
+		const sdkMeta = targetMsg.content as {
+			uuid?: unknown;
+			session_id?: unknown;
+		};
+		const sdkUuid = sdkMeta.uuid;
+		if (typeof sdkUuid !== "string" || sdkUuid.length === 0) {
+			throw new Error(
+				"This message has no SDK uuid and can't be used as a fork point",
+			);
+		}
+		const messageSdkId = sdkMeta.session_id;
+		const sourceSdkId =
+			typeof messageSdkId === "string" && messageSdkId.length > 0
+				? messageSdkId
+				: parent.sdkSessionId;
+		return { sdkUuid, sourceSdkId };
+	}
+
+	/**
 	 * Fork a session from a specific assistant message. Creates a new wrapper
 	 * session whose transcript is the parent's history truncated to (and
 	 * including) the target message, backed by a brand-new Claude Agent SDK
@@ -454,41 +531,10 @@ export class SessionManager {
 			(m) => m.id === wrapperMessageId,
 		);
 		if (msgIndex < 0) throw new Error("Message not found in this session");
-		const targetMsg = parent.messages[msgIndex];
-		if (targetMsg.role !== "assistant") {
-			throw new Error("Can only fork from an assistant message");
-		}
-		const sdkMeta = targetMsg.content as {
-			uuid?: unknown;
-			session_id?: unknown;
-		};
-		const sdkUuid = sdkMeta.uuid;
-		if (typeof sdkUuid !== "string" || sdkUuid.length === 0) {
-			throw new Error(
-				"This message has no SDK uuid and can't be used as a fork point",
-			);
-		}
-
-		// A transcript uuid is only valid inside the SDK session that minted it:
-		// `forkSession` copies the transcript with *freshly remapped* uuids, while
-		// we copy inherited messages' `content` verbatim (see the message mapping
-		// below). So a message this wrapper inherited from an ancestor carries the
-		// ancestor's uuid, which does not exist in our own `sdkSessionId` — forking
-		// it against `parent.sdkSessionId` fails with "Message X not found in
-		// session Y". Fork from the session named by the message instead.
-		//
-		// This is correct at any depth: each wrapper's message list is a prefix-copy
-		// of its parent's, so the ancestor's transcript prefix up to this uuid is
-		// content-identical to ours.
-		//
-		// `content` is the raw SDKMessage, so `session_id` is stamped by the SDK
-		// itself (cf. extractSdkSessionId). Locally-synthesised messages have none;
-		// they're never fork targets, but fall back to the parent to be safe.
-		const messageSdkId = sdkMeta.session_id;
-		const sourceSdkId =
-			typeof messageSdkId === "string" && messageSdkId.length > 0
-				? messageSdkId
-				: parent.sdkSessionId;
+		const { sdkUuid, sourceSdkId } = this.resolveForkSource(
+			parent,
+			wrapperMessageId,
+		);
 
 		// Include the turn-end `result` message that immediately follows the
 		// forked-from assistant, when present. The SDK emits exactly one
@@ -640,6 +686,107 @@ export class SessionManager {
 		return newSession;
 	}
 
+	/**
+	 * Start a **sidequest**: an ephemeral fork of a main session, branched at
+	 * one of its assistant messages, for asking throw-away questions without
+	 * polluting the main thread's context.
+	 *
+	 * Nothing is persisted — not in `claude_sessions.json` (no
+	 * `sessionStore.createSession`, and `runLoop` runs with `ephemeral: true`)
+	 * and not in `~/.claude/projects` (the SDK runs with
+	 * `persistSession: false`). The only state is the `RunningEntry` in
+	 * `this.sessions` plus the parent→sidequest link in `this.sidequests`,
+	 * both of which vanish on quit.
+	 *
+	 * Because the entry lives in the same map as normal sessions,
+	 * `pushUserMessage`, `interrupt`, `setModel` and `supportedModels` all
+	 * work on a sidequest id for free.
+	 *
+	 * Idempotent w.r.t. an existing sidequest: any current one for this parent
+	 * is discarded first, which is exactly the "re-fork at a new highlight"
+	 * behaviour the renderer wants.
+	 */
+	async startSidequest(input: {
+		sidequestId: string;
+		parentSessionId: string;
+		forkMessageId: string;
+	}): Promise<ClaudeSession> {
+		const { sidequestId, parentSessionId, forkMessageId } = input;
+
+		const parent = sessionStore.getSession(parentSessionId);
+		if (!parent) throw new Error("Parent session not found");
+		// Throws with a user-facing message when the parent has no SDK session
+		// id yet or the target message isn't a forkable assistant message.
+		const { sdkUuid, sourceSdkId } = this.resolveForkSource(
+			parent,
+			forkMessageId,
+		);
+
+		await this.discardSidequest(parentSessionId);
+
+		const session: ClaudeSession = {
+			id: sidequestId,
+			title: `Sidequest: ${parent.title}`,
+			titleLocked: true,
+			prompt: "",
+			cwd: parent.cwd,
+			status: "idle",
+			createdAt: Date.now(),
+			branch: parent.branch,
+			startCommit: parent.startCommit,
+			// Permission handling is inherited from the parent: same mode, same
+			// broker, and the renderer routes the resulting permission cards
+			// into the sidequest panel by session id.
+			mode: parent.mode,
+			model: parent.model,
+			// Same on-disk checkout as the parent, so tools see the same tree.
+			worktreeId: parent.worktreeId,
+		};
+
+		this.sidequests.set(parentSessionId, sidequestId);
+
+		// Don't await — runLoop runs the SDK loop until it ends. Its
+		// synchronous prologue registers the entry and emits
+		// `sidequest:started` before the first await.
+		void this.runLoop({
+			session,
+			cwd: resolveEffectiveCwd(parent),
+			initialTurns: [],
+			resumeSdkSessionId: sourceSdkId,
+			resumeSessionAt: sdkUuid,
+			ephemeral: true,
+			parentSessionId,
+		});
+
+		return session;
+	}
+
+	/**
+	 * Discard a parent's sidequest: abort its SDK loop, cancel any permission
+	 * prompts it left hanging, and tombstone its id so late SDK events can't
+	 * repopulate the renderer's panel after the user cleared it. No-op when
+	 * the parent has no sidequest.
+	 */
+	async discardSidequest(parentSessionId: string): Promise<void> {
+		const sidequestId = this.sidequests.get(parentSessionId);
+		if (!sidequestId) return;
+		this.sidequests.delete(parentSessionId);
+
+		// Broadcast before tombstoning: this payload carries no `sessionId`/`id`
+		// key, so `send()` lets it through either way, but ordering keeps the
+		// renderer's clear instantaneous.
+		this.send("sidequest:discarded", { parentSessionId, sidequestId });
+		this.broker.cancelAllForSession(sidequestId, "Sidequest discarded");
+		this.markDeleted(sidequestId);
+		// Teardown can take seconds if the CLI is mid-tool; don't make the
+		// caller (and the user's next keystroke) wait on it.
+		void this.cancelAndWait(sidequestId);
+	}
+
+	getSidequestId(parentSessionId: string): string | undefined {
+		return this.sidequests.get(parentSessionId);
+	}
+
 	async resume(wrapperId: string): Promise<void> {
 		if (this.sessions.has(wrapperId)) {
 			throw new Error("Session is already active");
@@ -704,9 +851,23 @@ export class SessionManager {
 		cwd: string;
 		initialTurns: UserContentBlock[][];
 		resumeSdkSessionId: string | undefined;
+		/** Branch the resumed transcript at this SDK message uuid. Sidequests only. */
+		resumeSessionAt?: string;
+		/**
+		 * Ephemeral (sidequest) run: nothing is written to the session store and
+		 * every broadcast goes out on `sidequest:*` instead of `session:*`, so
+		 * the sidebar/inbox/badges never learn this session exists.
+		 */
+		ephemeral?: boolean;
+		/** Owning main session, echoed in the `sidequest:started` payload. */
+		parentSessionId?: string;
 	}): Promise<void> {
 		const { session, cwd } = cfg;
 		const id = session.id;
+		const persist = !cfg.ephemeral;
+		// `session:foo` for normal runs, `sidequest:foo` for ephemeral ones.
+		const ch = (name: string) =>
+			cfg.ephemeral ? `sidequest:${name}` : `session:${name}`;
 
 		const turns: UserContentBlock[][] = [...cfg.initialTurns];
 		const state: {
@@ -756,8 +917,8 @@ export class SessionManager {
 			console.log(
 				`[session ${id}] ${next} (turn=${d.turn} bg=${d.bg} prov=${d.prov})`,
 			);
-			this.send("session:status", { sessionId: id, status: next });
-			void sessionStore.updateSession(id, { status: next });
+			this.send(ch("status"), { sessionId: id, status: next });
+			if (persist) void sessionStore.updateSession(id, { status: next });
 		};
 
 		/** Stays async so `interrupt()` and `RunningEntry` are unchanged. */
@@ -814,8 +975,14 @@ export class SessionManager {
 			setIdle,
 			queryRef,
 			done,
+			ephemeral: cfg.ephemeral,
 		});
-		this.send("session:started", session);
+		this.send(
+			ch("started"),
+			cfg.parentSessionId
+				? { ...session, parentSessionId: cfg.parentSessionId }
+				: session,
+		);
 
 		let sdkIdCaptured = !!session.sdkSessionId;
 		let cliVersionLogged = false;
@@ -873,6 +1040,17 @@ export class SessionManager {
 				...(cfg.resumeSdkSessionId
 					? { resume: cfg.resumeSdkSessionId }
 					: {}),
+				// Sidequest: branch the resumed transcript at a specific message
+				// and fork it into a throw-away SDK session. `forkSession` keeps
+				// the parent's SDK session untouched; `persistSession: false`
+				// keeps the branch out of ~/.claude/projects entirely, so a
+				// sidequest leaves no trace anywhere once the app exits.
+				...(cfg.resumeSessionAt
+					? { resumeSessionAt: cfg.resumeSessionAt }
+					: {}),
+				...(cfg.ephemeral
+					? { forkSession: true, persistSession: false }
+					: {}),
 			};
 
 			const q = query({ prompt: userStream(), options });
@@ -914,7 +1092,8 @@ export class SessionManager {
 					if (sid) {
 						session.sdkSessionId = sid;
 						sdkIdCaptured = true;
-						void sessionStore.updateSession(id, { sdkSessionId: sid });
+						if (persist)
+							void sessionStore.updateSession(id, { sdkSessionId: sid });
 					}
 				}
 
@@ -1018,54 +1197,62 @@ export class SessionManager {
 						session.model = observed;
 						// `modelChangedAt` is deliberately left alone: it marks
 						// *user intent* and gates the pending-label window.
-						void sessionStore.updateSession(id, { model: observed });
-						this.send("session:patch", { sessionId: id, model: observed });
+						if (persist) {
+							void sessionStore.updateSession(id, { model: observed });
+						}
+						this.send(ch("patch"), { sessionId: id, model: observed });
 					}
 				}
 
-				this.send("session:message", {
+				this.send(ch("message"), {
 					sessionId: id,
 					message: sessionMessage,
 				});
-				void sessionStore.appendMessage(id, sessionMessage);
+				if (persist) void sessionStore.appendMessage(id, sessionMessage);
 			}
 
 			if (abort.signal.aborted) {
 				session.status = "cancelled";
 				session.finishedAt = Date.now();
 				this.broker.cancelAllForSession(id);
-				this.send("session:cancelled", {
+				this.send(ch("cancelled"), {
 					sessionId: id,
 				});
-				void sessionStore.updateSession(id, {
-					status: "cancelled",
-					finishedAt: session.finishedAt,
-				});
+				if (persist) {
+					void sessionStore.updateSession(id, {
+						status: "cancelled",
+						finishedAt: session.finishedAt,
+					});
+				}
 			} else {
 				session.status = "done";
 				session.finishedAt = Date.now();
-				this.send("session:done", {
+				this.send(ch("done"), {
 					sessionId: id,
 				});
-				void sessionStore.updateSession(id, {
-					status: "done",
-					finishedAt: session.finishedAt,
-				});
+				if (persist) {
+					void sessionStore.updateSession(id, {
+						status: "done",
+						finishedAt: session.finishedAt,
+					});
+				}
 			}
 		} catch (err: unknown) {
 			session.status = "errored";
 			session.error = err instanceof Error ? err.message : String(err);
 			session.finishedAt = Date.now();
 			this.broker.cancelAllForSession(id, "Session errored");
-			this.send("session:errored", {
+			this.send(ch("errored"), {
 				sessionId: id,
 				error: session.error,
 			});
-			void sessionStore.updateSession(id, {
-				status: "errored",
-				finishedAt: session.finishedAt,
-				error: session.error,
-			});
+			if (persist) {
+				void sessionStore.updateSession(id, {
+					status: "errored",
+					finishedAt: session.finishedAt,
+					error: session.error,
+				});
+			}
 		} finally {
 			if (sweepTimer) clearInterval(sweepTimer);
 			state.finished = true;
@@ -1078,6 +1265,27 @@ export class SessionManager {
 	pushUserMessage(sessionId: string, blocks: UserContentBlock[]) {
 		const entry = this.sessions.get(sessionId);
 		if (!entry) throw new Error(`No active session ${sessionId}`);
+
+		// Sidequests: no title derivation (their title is the parent's), no
+		// store append, no branch checkpoint. The user turn is broadcast from
+		// here rather than appended optimistically in the renderer, so the
+		// panel's transcript is fed entirely by `sidequest:*` events.
+		if (entry.ephemeral) {
+			entry.pushTurn(blocks);
+			this.send("sidequest:message", {
+				sessionId,
+				message: {
+					id: randomUUID(),
+					role: "user",
+					content: {
+						type: "user",
+						message: { role: "user", content: blocks },
+					},
+					ts: Date.now(),
+				} satisfies SessionMessage,
+			});
+			return;
+		}
 
 		// If this is the first user input on a session that started without an
 		// initial prompt, derive a meaningful title from the message text.
@@ -1131,6 +1339,11 @@ export class SessionManager {
 	 */
 	snapshotBranchCheckpoint(sessionId: string): void {
 		const entry = this.sessions.get(sessionId);
+		// Sidequests have no persisted row and no branch chip; writing here
+		// would emit a `session:patch` that lazy-creates a ghost sidebar row.
+		// Reachable via PermissionBroker.onUserCheckpoint when the user answers
+		// a permission prompt inside the sidequest panel.
+		if (entry?.ephemeral) return;
 		const source = entry?.session ?? sessionStore.getSession(sessionId);
 		if (!source) return;
 		const cwd = resolveEffectiveCwd(source);
@@ -1250,6 +1463,18 @@ export class SessionManager {
 				console.error("[ccw] setPermissionMode failed:", err);
 			}
 		}
+		// Sidequest: apply to the live query only. Reached from the panel's
+		// own mode toggle and from the ExitPlanMode auto-flip in canUseTool.
+		// Persisting or broadcasting `session:patch` would mint a ghost sidebar
+		// row, so the panel's store is the only record — `sidequest:patch`
+		// keeps it in sync. Checked on the id, not just `entry.ephemeral`, so a
+		// late call after the SDK loop tore its entry down can't fall through
+		// to the persist path below; in that case we also stay silent, because
+		// with no live query there is nothing we actually applied to announce.
+		if (entry?.ephemeral || isSidequestId(sessionId)) {
+			if (entry) this.send("sidequest:patch", { sessionId, mode });
+			return;
+		}
 		await sessionStore.updateSession(sessionId, { mode });
 		this.send("session:patch", { sessionId, mode });
 	}
@@ -1268,6 +1493,12 @@ export class SessionManager {
 	 * no SDK call, no broadcast — which is precisely the case where the user
 	 * most needs the re-assert to land. One redundant control request per
 	 * pick is a fair price for "clicking the model always works".
+	 *
+	 * Sidequests take the same ephemeral branch as `setMode`: the live query is
+	 * re-pointed, but the change is announced on `sidequest:patch` instead of
+	 * `session:patch`. The renderer's `upsertSession` lazy-creates rows from
+	 * any `session:*` payload, so leaking one here would mint a ghost sidebar
+	 * entry for a session that has no on-disk record.
 	 */
 	async setModel(sessionId: string, model: string | undefined): Promise<void> {
 		const modelChangedAt = Date.now();
@@ -1280,6 +1511,12 @@ export class SessionManager {
 			} catch (err) {
 				console.error("[ccw] setModel failed:", err);
 			}
+		}
+		if (entry?.ephemeral || isSidequestId(sessionId)) {
+			if (entry) {
+				this.send("sidequest:patch", { sessionId, model, modelChangedAt });
+			}
+			return;
 		}
 		await sessionStore.updateSession(sessionId, { model, modelChangedAt });
 		this.send("session:patch", { sessionId, model, modelChangedAt });

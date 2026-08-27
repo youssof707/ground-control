@@ -286,7 +286,6 @@ function GroupRow({
 		>
 			<span
 				aria-hidden
-				title={`Color: ${group.color}`}
 				style={{
 					width: 8,
 					height: 8,

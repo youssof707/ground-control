@@ -222,22 +222,13 @@ export function PlanApprovalCard({
 					<button
 						className="btn"
 						onClick={() => setShowDenyReason(true)}
-						title="Deny with a custom reason sent to Claude"
 					>
 						Deny…
 					</button>
-					<button
-						className="btn"
-						onClick={keepPlanning}
-						title="Don't exit plan mode — let Claude keep refining the plan"
-					>
+					<button className="btn" onClick={keepPlanning}>
 						Keep planning
 					</button>
-					<button
-						className="btn btn-warn"
-						onClick={approve}
-						title="Approve this plan and switch the session to Auto-edit mode"
-					>
+					<button className="btn btn-warn" onClick={approve}>
 						Approve & start editing
 					</button>
 				</div>

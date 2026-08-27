@@ -227,8 +227,7 @@ export function DictationButton({
 			type="button"
 			onClick={onClick}
 			disabled={disabled || busy}
-			title={title}
-			aria-label={state === "recording" ? "Stop dictation" : "Dictate"}
+			aria-label={title}
 			className={`btn btn-icon${state === "recording" ? " dictation-recording" : ""}`}
 			style={busy ? { cursor: "default" } : undefined}
 		>

@@ -46,7 +46,6 @@ export function SidebarFooter() {
 		>
 			<RateLimitMeter />
 			<span
-				title="Double-click to toggle DevTools"
 				onDoubleClick={() => {
 					void window.claude.toggleDevTools();
 				}}

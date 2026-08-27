@@ -174,7 +174,6 @@ function DefaultPermissionCard({
 					<button
 						className="btn"
 						onClick={() => setShowDenyReason(true)}
-						title="Deny with a reason that gets sent back to Claude"
 					>
 						Deny…
 					</button>
@@ -190,7 +189,6 @@ function DefaultPermissionCard({
 					<button
 						className="btn btn-warn"
 						onClick={allowAlways}
-						title={`Auto-allow all future ${req.toolName} requests for the rest of this app session`}
 					>
 						Always allow {req.toolName}
 					</button>

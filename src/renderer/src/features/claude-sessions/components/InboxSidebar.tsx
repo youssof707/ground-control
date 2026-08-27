@@ -6,6 +6,7 @@ import type {
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { useMinimizedPermissionsStore } from "../stores/useMinimizedPermissionsStore";
+import { isSidequestId } from "../stores/useSidequestsStore";
 import { PermissionCard } from "./PermissionCard";
 import { T } from "../../../design/tokens";
 import {
@@ -26,6 +27,11 @@ export function InboxSidebar({ onClose }: { onClose: () => void }) {
 	// archive code path that forgets to drain.
 	const ordered = [...queue]
 		.reverse()
+		// Sidequests have no session row, so `sessions[id]?.archivedAt == null`
+		// is vacuously true for them and they'd otherwise leak into the Inbox
+		// with a dead `/sessions/<sidequest-…>` link. Their permission cards
+		// belong in the sidequest panel and nowhere else.
+		.filter((req) => !isSidequestId(req.sessionId))
 		.filter((req) => sessions[req.sessionId]?.archivedAt == null);
 
 	return (

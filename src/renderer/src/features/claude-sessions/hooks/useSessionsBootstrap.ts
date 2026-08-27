@@ -3,6 +3,7 @@ import type {
 	ClaudeSession,
 	PermissionRequest,
 	SessionMessage,
+	SessionMode,
 	SessionStatus,
 } from "@shared/claude-sessions/types";
 import { useSessionsStore } from "../stores/useSessionsStore";
@@ -13,6 +14,7 @@ import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { useSessionGroupsStore } from "../stores/useSessionGroupsStore";
 import { useShortcutsStore } from "../stores/useShortcutsStore";
 import { usePromptShortcutsStore } from "../stores/usePromptShortcutsStore";
+import { useSidequestsStore } from "../stores/useSidequestsStore";
 import {
 	useRateLimitStore,
 	type RateLimitSnapshot,
@@ -172,6 +174,76 @@ export function useSessionsBootstrap() {
 				for (const r of queue) {
 					if (r.sessionId === sessionId) removePermission(r.requestId);
 				}
+			}),
+			// ── Sidequests ───────────────────────────────────────────────────
+			// Ephemeral forked sessions rendered in the right-hand panel. They
+			// have no store row and never appear in `sessions:list`, so these
+			// broadcasts are their *only* source of truth — there is nothing to
+			// refetch on `state:changed`.
+			window.claude.on("sidequest:started", (p) => {
+				const { id, parentSessionId, mode, model } = p as {
+					id: string;
+					parentSessionId?: string;
+					mode?: SessionMode;
+					model?: string;
+				};
+				if (parentSessionId) {
+					useSidequestsStore.getState().upsertFromStarted({
+						parentSessionId,
+						sidequestId: id,
+						mode: mode ?? "plan",
+						model,
+					});
+				}
+			}),
+			// Mode / model sync. Fires for the user's own picks (main applies
+			// them to the live SDK query but has nothing to persist), for the
+			// ExitPlanMode auto-flip to acceptEdits, and for the stream-observed
+			// model correction when the CLI falls back to a different model.
+			window.claude.on("sidequest:patch", (p) => {
+				const { sessionId, ...fields } = p as {
+					sessionId: string;
+					mode?: SessionMode;
+					model?: string;
+					modelChangedAt?: number;
+				};
+				useSidequestsStore.getState().patch(sessionId, fields);
+			}),
+			window.claude.on("sidequest:message", (p) => {
+				const { sessionId, message } = p as {
+					sessionId: string;
+					message: SessionMessage;
+				};
+				logMessageErrors(sessionId, message);
+				useSidequestsStore.getState().appendMessage(sessionId, message);
+			}),
+			window.claude.on("sidequest:status", (p) => {
+				const { sessionId, status } = p as {
+					sessionId: string;
+					status: SessionStatus;
+				};
+				useSidequestsStore.getState().setStatus(sessionId, status);
+			}),
+			window.claude.on("sidequest:done", (p) => {
+				const { sessionId } = p as { sessionId: string };
+				useSidequestsStore.getState().setStatus(sessionId, "done");
+			}),
+			window.claude.on("sidequest:cancelled", (p) => {
+				const { sessionId } = p as { sessionId: string };
+				useSidequestsStore.getState().setStatus(sessionId, "cancelled");
+			}),
+			window.claude.on("sidequest:errored", (p) => {
+				const { sessionId, error } = p as {
+					sessionId: string;
+					error?: string;
+				};
+				useSidequestsStore
+					.getState()
+					.setError(sessionId, error ?? "Sidequest failed");
+			}),
+			window.claude.on("sidequest:discarded", (p) => {
+				const { parentSessionId } = p as { parentSessionId: string };
+				useSidequestsStore.getState().discard(parentSessionId);
 			}),
 			window.claude.on("permission:request", (p) => {
 				enqueuePermission(p as PermissionRequest);

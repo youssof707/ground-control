@@ -40,6 +40,13 @@ const claude = {
 		ipcRenderer.invoke("session:hasUncommittedChanges", sessionId),
 	forkSession: (sessionId: string, messageId: string) =>
 		ipcRenderer.invoke("session:fork", { sessionId, messageId }),
+	startSidequest: (input: {
+		sidequestId: string;
+		parentSessionId: string;
+		forkMessageId: string;
+	}) => ipcRenderer.invoke("sidequest:start", input),
+	discardSidequest: (parentSessionId: string) =>
+		ipcRenderer.invoke("sidequest:discard", parentSessionId),
 	setSessionMode: (sessionId: string, mode: SessionMode) =>
 		ipcRenderer.invoke("session:setMode", { sessionId, mode }),
 	setSessionModel: (sessionId: string, model?: string) =>
@@ -78,6 +85,8 @@ const claude = {
 		ipcRenderer.invoke("settings:setSessionsSidebarWidth", { width }),
 	setNotesSidebarWidth: (width: number) =>
 		ipcRenderer.invoke("settings:setNotesSidebarWidth", { width }),
+	setSidequestSidebarWidth: (width: number) =>
+		ipcRenderer.invoke("settings:setSidequestSidebarWidth", { width }),
 	listNotes: (sessionId: string) => ipcRenderer.invoke("notes:list", sessionId),
 	createNote: (sessionId: string) =>
 		ipcRenderer.invoke("notes:create", sessionId),

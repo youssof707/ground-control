@@ -151,7 +151,6 @@ export function ColorPicker({
 							role="radio"
 							aria-checked={selected}
 							aria-label={k}
-							title={k}
 							disabled={disabled}
 							onClick={() => onChange(k)}
 							style={{

@@ -178,29 +178,20 @@ export function NoteCard({ note }: { note: Note }) {
 				<div style={{ display: "flex", alignItems: "center", gap: 4 }}>
 					{editing ? (
 						<>
-							<IconButton
-								onClick={onSaveClick}
-								ariaLabel="Save note"
-								title="Save"
-							>
+							<IconButton onClick={onSaveClick} ariaLabel="Save note">
 								<CheckIcon />
 							</IconButton>
 							<IconButton
 								onMouseDown={onCancelMouseDown}
 								onClick={onCancelClick}
 								ariaLabel="Cancel edit"
-								title="Cancel"
 							>
 								<XIcon />
 							</IconButton>
 						</>
 					) : (
 						<>
-							<IconButton
-								onClick={onEditClick}
-								ariaLabel="Edit note"
-								title="Edit"
-							>
+							<IconButton onClick={onEditClick} ariaLabel="Edit note">
 								<PencilIcon />
 							</IconButton>
 							{confirming ? (
@@ -224,11 +215,7 @@ export function NoteCard({ note }: { note: Note }) {
 									Confirm delete?
 								</button>
 							) : (
-								<IconButton
-									onClick={onDeleteClick}
-									ariaLabel="Delete note"
-									title="Delete"
-								>
+								<IconButton onClick={onDeleteClick} ariaLabel="Delete note">
 									<TrashIcon />
 								</IconButton>
 							)}
@@ -306,13 +293,11 @@ function IconButton({
 	onClick,
 	onMouseDown,
 	ariaLabel,
-	title,
 }: {
 	children: React.ReactNode;
 	onClick: () => void;
 	onMouseDown?: (e: ReactMouseEvent<HTMLButtonElement>) => void;
 	ariaLabel: string;
-	title: string;
 }) {
 	return (
 		<button
@@ -320,7 +305,6 @@ function IconButton({
 			onClick={onClick}
 			onMouseDown={onMouseDown}
 			aria-label={ariaLabel}
-			title={title}
 			style={{
 				width: 24,
 				height: 24,

@@ -1307,7 +1307,7 @@ function SessionRowSidebar({
 					>
 						{unread ? (
 							<span
-								title="Unread"
+								aria-label="Unread"
 								style={{
 									width: 7,
 									height: 7,
@@ -1773,9 +1773,6 @@ function GroupHeaderRow({
 						>
 							{aggregates.waiting > 0 ? (
 								<span
-									title={`${aggregates.waiting} session${
-										aggregates.waiting === 1 ? "" : "s"
-									} waiting for input`}
 									style={{
 										display: "inline-flex",
 										alignItems: "center",
@@ -1794,7 +1791,6 @@ function GroupHeaderRow({
 							) : null}
 							{aggregates.unread > 0 ? (
 								<span
-									title={`${aggregates.unread} unread`}
 									style={{
 										display: "inline-flex",
 										alignItems: "center",
@@ -2112,7 +2108,7 @@ function DraftRowMenu({ onDiscard }: { onDiscard: () => void }) {
 				onClick={() => setOpen((o) => !o)}
 				aria-haspopup="menu"
 				aria-expanded={open}
-				title="More actions"
+				aria-label="More actions"
 				style={{
 					display: "inline-flex",
 					alignItems: "center",
@@ -2778,7 +2774,7 @@ function RowMenuButton({
 				onClick={() => (open ? close() : openMenu())}
 				aria-haspopup="menu"
 				aria-expanded={open}
-				title="More actions"
+				aria-label="More actions"
 				style={{
 					display: "inline-flex",
 					alignItems: "center",

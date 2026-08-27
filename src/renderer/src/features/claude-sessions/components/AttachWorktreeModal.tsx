@@ -292,7 +292,6 @@ export function AttachWorktreeModal({
 								textOverflow: "ellipsis",
 								whiteSpace: "nowrap",
 							}}
-							title={baseDir}
 						>
 							{baseDir.split("/").filter(Boolean).pop() ?? baseDir}
 						</span>
@@ -485,7 +484,6 @@ function ExistingRow({
 		>
 			<span
 				aria-hidden
-				title={`Color: ${worktree.color}`}
 				style={{
 					width: 8,
 					height: 8,
@@ -517,7 +515,6 @@ function ExistingRow({
 					whiteSpace: "nowrap",
 					maxWidth: 200,
 				}}
-				title={worktree.branch}
 			>
 				{worktree.branch}
 			</span>
@@ -649,7 +646,6 @@ function DeleteWorktreeButton({
 			type="button"
 			onClick={handleClick}
 			aria-label="Delete worktree"
-			title="Delete worktree"
 			style={{
 				width: 24,
 				height: 24,
@@ -913,13 +909,6 @@ function BranchRow({
 			onMouseEnter={() => clickable && setHover(true)}
 			onMouseLeave={() => setHover(false)}
 			disabled={!clickable}
-			title={
-				inUse
-					? isCurrent
-						? "Currently checked out in the base repo"
-						: `In use by another worktree at ${branch.worktreePath}`
-					: undefined
-			}
 			style={{
 				appearance: "none",
 				textAlign: "left",

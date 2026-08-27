@@ -452,7 +452,6 @@ export function ImagePasteTextarea({
 						type="button"
 						onClick={onStop}
 						disabled={interrupting}
-						title="Stop Claude's current response"
 						aria-label="Stop"
 						style={{
 							position: "absolute",
@@ -578,10 +577,10 @@ export function ImagePasteTextarea({
 						onClick={send}
 						disabled={disabled || sending || !canSend}
 						className={`btn ${branchStale ? "btn-destructive" : "btn-primary"}`}
-						title={
+						aria-label={
 							branchStale && lastUserMessageBranch
-								? `Branch changed since last message (was "${lastUserMessageBranch}")`
-								: undefined
+								? `Send (branch changed since last message, was "${lastUserMessageBranch}")`
+								: "Send"
 						}
 						style={isRunning ? { opacity: 0.55, cursor: "default" } : undefined}
 					>

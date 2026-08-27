@@ -27,4 +27,11 @@ export function registerSettingsHandlers(): void {
 			broadcast("state:changed", undefined, e.sender.id);
 		},
 	);
+	ipcMain.handle(
+		"settings:setSidequestSidebarWidth",
+		async (e, payload: { width: number }) => {
+			await appSettings.setSidequestSidebarWidth(payload.width);
+			broadcast("state:changed", undefined, e.sender.id);
+		},
+	);
 }

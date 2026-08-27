@@ -55,6 +55,12 @@ declare global {
 				sessionId: string,
 				messageId: string,
 			) => Promise<ClaudeSession>;
+			startSidequest: (input: {
+				sidequestId: string;
+				parentSessionId: string;
+				forkMessageId: string;
+			}) => Promise<ClaudeSession>;
+			discardSidequest: (parentSessionId: string) => Promise<void>;
 			setSessionMode: (
 				sessionId: string,
 				mode: SessionMode,
@@ -88,6 +94,7 @@ declare global {
 			setLastUsedWorkspace: (cwd: string) => Promise<void>;
 			setSessionsSidebarWidth: (width: number) => Promise<void>;
 			setNotesSidebarWidth: (width: number) => Promise<void>;
+			setSidequestSidebarWidth: (width: number) => Promise<void>;
 			listNotes: (sessionId: string) => Promise<Note[]>;
 			createNote: (sessionId: string) => Promise<Note>;
 			updateNote: (id: string, markdown: string) => Promise<Note | null>;

@@ -2,6 +2,7 @@ import { Link, useMatch } from "react-router-dom";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { useReadStore } from "../stores/useReadStore";
+import { isSidequestId, useSidequestsStore } from "../stores/useSidequestsStore";
 import { T } from "../../../design/tokens";
 import type { ClaudeSessionFull } from "@shared/claude-sessions/types";
 import { isConversationSkipped } from "@shared/claude-sessions/transcript";
@@ -29,7 +30,15 @@ export function AppNav({
 	const sessionsMap = useSessionsStore((s) => s.sessions);
 	const sessionsOrder = useSessionsStore((s) => s.order);
 	const lastReadAt = useReadStore((s) => s.lastReadAt);
-	const inSession = !!useMatch("/sessions/:id/*");
+	const sessionMatch = useMatch("/sessions/:id/*");
+	const inSession = !!sessionMatch;
+	const activeSessionId = sessionMatch?.params.id;
+	// A dot on the toggle when the current session has a sidequest actively
+	// working — the panel itself may not be open, so this is the only signal
+	// the user gets that something is running back there.
+	const sidequestRunning = useSidequestsStore(
+		(s) => activeSessionId != null && s.byParent[activeSessionId]?.status === "running",
+	);
 
 	// Archive must vanish from every attention-grabbing count: the
 	// AppNav "unread" / "waiting" stats, the Inbox toggle badge, and
@@ -43,11 +52,18 @@ export function AppNav({
 		(id) => sessionsMap[id]?.status === "running" && !isArchived(id),
 	).length;
 
+	// Sidequests are a side conversation the user is already looking at in the
+	// panel — they must not drive the global attention counters, and they have
+	// no session row for `isArchived` to consult anyway.
+	const attentionQueue = queue.filter((q) => !isSidequestId(q.sessionId));
+
 	const waitingCount = new Set(
-		queue.filter((q) => !isArchived(q.sessionId)).map((q) => q.sessionId),
+		attentionQueue
+			.filter((q) => !isArchived(q.sessionId))
+			.map((q) => q.sessionId),
 	).size;
 
-	const inboxBadge = queue.reduce(
+	const inboxBadge = attentionQueue.reduce(
 		(n, q) => (isArchived(q.sessionId) ? n : n + 1),
 		0,
 	);
@@ -143,6 +159,15 @@ export function AppNav({
 					}
 				/>
 			) : null}
+			{inSession ? (
+				<SidequestToggle
+					active={rightPanel === "sidequest"}
+					running={sidequestRunning}
+					onClick={() =>
+						setRightPanel(rightPanel === "sidequest" ? null : "sidequest")
+					}
+				/>
+			) : null}
 			<InboxToggle
 				active={rightPanel === "inbox"}
 				badge={inboxBadge}
@@ -183,6 +208,52 @@ function NotesToggle({
 			}}
 		>
 			<span>Notes</span>
+		</button>
+	);
+}
+
+function SidequestToggle({
+	active,
+	running,
+	onClick,
+}: {
+	active: boolean;
+	running: boolean;
+	onClick: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			aria-pressed={active}
+			style={{
+				display: "inline-flex",
+				alignItems: "center",
+				gap: 7,
+				padding: "6px 12px",
+				borderRadius: 8,
+				fontSize: 13,
+				fontWeight: 500,
+				color: active ? T.text : T.textMute,
+				background: active ? T.surface : "transparent",
+				boxShadow: active ? `inset 0 0 0 0.5px ${T.border}` : "none",
+				border: "none",
+				cursor: "pointer",
+				marginRight: 6,
+			}}
+		>
+			<span>Sidequest</span>
+			{running ? (
+				<span
+					style={{
+						width: 6,
+						height: 6,
+						borderRadius: "50%",
+						background: T.ok,
+						flexShrink: 0,
+					}}
+				/>
+			) : null}
 		</button>
 	);
 }

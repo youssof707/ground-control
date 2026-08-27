@@ -82,7 +82,7 @@ export function WorktreeChip({
 	};
 
 	return (
-		<span style={baseStyle} title={`Worktree: ${displayName}`}>
+		<span style={baseStyle}>
 			<svg
 				width={iconSize}
 				height={iconSize}
@@ -124,7 +124,6 @@ export function WorktreeChip({
 						e.stopPropagation();
 						onDetach();
 					}}
-					title="Detach worktree from draft"
 					aria-label="Detach worktree"
 					style={{
 						appearance: "none",

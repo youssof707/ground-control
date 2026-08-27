@@ -103,7 +103,6 @@ export function SessionTokenBar({
 				background: T.win,
 				userSelect: "none",
 			}}
-			title={`Session total: ${totalTokens.toLocaleString()} tokens`}
 		>
 			<div
 				style={{

@@ -156,7 +156,7 @@ export function BranchChip({
 		<button
 			type="button"
 			onClick={onClick}
-			title={baseTitle}
+			aria-label={baseTitle}
 			style={{
 				display: "inline-flex",
 				alignItems: "center",
@@ -306,7 +306,7 @@ function BranchSwitchButton({
 				type="button"
 				onClick={onClick}
 				disabled={busy || confirmOpen}
-				title={error ? error : `Switch the working tree back to "${branch}"`}
+				aria-label={error ? error : `Switch the working tree back to "${branch}"`}
 				style={{
 					display: "inline-flex",
 					alignItems: "center",
@@ -617,7 +617,6 @@ export function MinimizeToggle({
 				e.stopPropagation();
 				onToggle();
 			}}
-			title={title}
 			aria-label={title}
 			aria-expanded={!minimized}
 			style={{

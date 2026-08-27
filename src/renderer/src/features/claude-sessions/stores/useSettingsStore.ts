@@ -16,21 +16,25 @@ interface State {
 	lastUsedWorkspace?: string;
 	sessionsSidebarWidth?: number;
 	notesSidebarWidth?: number;
+	sidequestSidebarWidth?: number;
 	hydrate: (settings: AppSettingsFile) => void;
 	setLastUsedWorkspace: (cwd: string) => void;
 	setSessionsSidebarWidth: (width: number) => void;
 	setNotesSidebarWidth: (width: number) => void;
+	setSidequestSidebarWidth: (width: number) => void;
 }
 
 export const useSettingsStore = create<State>((set, get) => ({
 	lastUsedWorkspace: undefined,
 	sessionsSidebarWidth: undefined,
 	notesSidebarWidth: undefined,
+	sidequestSidebarWidth: undefined,
 	hydrate: (settings) =>
 		set({
 			lastUsedWorkspace: settings.lastUsedWorkspace,
 			sessionsSidebarWidth: settings.sessionsSidebarWidth,
 			notesSidebarWidth: settings.notesSidebarWidth,
+			sidequestSidebarWidth: settings.sidequestSidebarWidth,
 		}),
 	setLastUsedWorkspace: (cwd) => {
 		// No-op if unchanged — avoids unnecessary IPC churn when starting
@@ -53,5 +57,10 @@ export const useSettingsStore = create<State>((set, get) => ({
 		if (get().notesSidebarWidth === width) return;
 		void window.claude?.setNotesSidebarWidth(width);
 		set({ notesSidebarWidth: width });
+	},
+	setSidequestSidebarWidth: (width) => {
+		if (get().sidequestSidebarWidth === width) return;
+		void window.claude?.setSidequestSidebarWidth(width);
+		set({ sidequestSidebarWidth: width });
 	},
 }));

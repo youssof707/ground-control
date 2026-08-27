@@ -1,6 +1,17 @@
 import type { ClaudeSessionFull } from "../schemas/claude_session";
 
 /**
+ * The only three fields model derivation actually reads. Declared as a
+ * structural subset rather than `ClaudeSessionFull` so ephemeral sessions —
+ * sidequests, which have no store row and therefore no full session object —
+ * can reuse the same derivation as the main chat's footer label and picker.
+ */
+export type ModelDerivable = Pick<
+	ClaudeSessionFull,
+	"messages" | "model" | "modelChangedAt"
+>;
+
+/**
  * Model display + derivation helpers for the session footer's model label
  * and the model picker modal.
  *
@@ -65,7 +76,7 @@ export function assistantStreamModel(content: unknown): string | null {
  * Top-level assistant messages win; the system init message is the
  * pre-first-response fallback. */
 function latestStreamModel(
-	session: ClaudeSessionFull,
+	session: ModelDerivable,
 ): { model: string; ts: number } | null {
 	for (let i = session.messages.length - 1; i >= 0; i--) {
 		const m = session.messages[i];
@@ -84,7 +95,7 @@ function latestStreamModel(
 	return null;
 }
 
-export function deriveDisplayedModel(session: ClaudeSessionFull): DisplayedModel {
+export function deriveDisplayedModel(session: ModelDerivable): DisplayedModel {
 	const stream = latestStreamModel(session);
 
 	// Optimistic window: an override was set and nothing in the stream

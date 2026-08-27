@@ -355,7 +355,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 							}}
 						>
 							<span
-								title={session.title}
 								style={{
 									overflow: "hidden",
 									textOverflow: "ellipsis",
@@ -367,7 +366,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 							<button
 								type="button"
 								onClick={beginEditTitle}
-								title="Rename session"
 								aria-label="Rename session"
 								className="session-title-edit"
 								style={{
@@ -408,7 +406,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					{session.cwd ? (
 						<button
 							type="button"
-							title={`${session.cwd}\n(click to open in Finder)`}
+							aria-label={`${session.cwd} — click to open in Finder`}
 							onClick={() => setOpenFolderModal(true)}
 							style={{
 								fontFamily: T.mono,
@@ -476,17 +474,35 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 						{session.messages.length === 0 && pending.length === 0 ? (
 							<div className="message">Waiting for first message…</div>
 						) : (
+							// The `data-message-id` wrappers are how a text selection
+							// maps back to a message: the Cmd+S sidequest handler walks
+							// up from the selection anchor with `closest()` to find the
+							// fork point. Style-neutral block wrappers — every unit's
+							// own root already carries its spacing/width.
 							renderUnits.map((u) => {
 								if (u.kind === "toolRun") {
-									return <ToolRunGroup key={u.key} entries={u.entries} />;
+									return (
+										<div
+											key={u.key}
+											data-message-id={u.entries[0]?.messageId}
+											data-role="toolRun"
+										>
+											<ToolRunGroup entries={u.entries} />
+										</div>
+									);
 								}
 								return (
-									<MessageView
+									<div
 										key={u.message.id}
-										m={u.message}
-										onFork={fork}
-										forkPending={forkingId === u.message.id}
-									/>
+										data-message-id={u.message.id}
+										data-role={u.message.role}
+									>
+										<MessageView
+											m={u.message}
+											onFork={fork}
+											forkPending={forkingId === u.message.id}
+										/>
+									</div>
 								);
 							})
 						)}

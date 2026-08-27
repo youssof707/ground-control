@@ -171,6 +171,23 @@ export function registerSessionsHandlers(): SessionManager {
 			return newSession;
 		},
 	);
+	// Sidequests are ephemeral by construction: nothing is written to the
+	// session store, so there is no `state:changed` ping and nothing for other
+	// windows to refetch. The `sidequest:*` broadcasts carry the whole story.
+	ipcMain.handle(
+		"sidequest:start",
+		(
+			_e,
+			payload: {
+				sidequestId: string;
+				parentSessionId: string;
+				forkMessageId: string;
+			},
+		) => manager.startSidequest(payload),
+	);
+	ipcMain.handle("sidequest:discard", (_e, parentSessionId: string) =>
+		manager.discardSidequest(parentSessionId),
+	);
 	ipcMain.handle(
 		"session:setMode",
 		async (e, payload: { sessionId: string; mode: SessionMode }) => {
@@ -262,6 +279,9 @@ export function registerSessionsHandlers(): SessionManager {
 		//      this is a no-op if the session is already up-to-date.
 		manager.cancel(sessionId);
 		broker.cancelAllForSession(sessionId, "Session archived");
+		// A sidequest outlives nothing — its parent is being set aside, so
+		// stop it too rather than leave an orphan SDK loop running.
+		void manager.discardSidequest(sessionId);
 		await readStore.mark(sessionId);
 		// Archiving intentionally KEEPS the session's group membership —
 		// the row returns to its group on unarchive / "Show archived
@@ -311,6 +331,9 @@ export function registerSessionsHandlers(): SessionManager {
 		// loop can't reach any window and lazy-resurrect the row via
 		// upsertSession.
 		manager.markDeleted(sessionId);
+		// Kill any sidequest forked off this session — its fork point is about
+		// to stop existing.
+		void manager.discardSidequest(sessionId);
 		// Trip the abort signal so the SDK loop breaks out on its next tick.
 		// We don't await its `done` here: the tombstone above means we don't
 		// need its broadcasts anyway.

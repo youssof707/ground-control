@@ -24,5 +24,6 @@ export const AppSettingsFileSchema = z.object({
 	lastUsedWorkspace: z.string().optional(),
 	sessionsSidebarWidth: sidebarWidth(200, 800),
 	notesSidebarWidth: sidebarWidth(280, 900),
+	sidequestSidebarWidth: sidebarWidth(280, 900),
 });
 export type AppSettingsFile = z.infer<typeof AppSettingsFileSchema>;

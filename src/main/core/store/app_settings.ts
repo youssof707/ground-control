@@ -86,3 +86,13 @@ export async function setNotesSidebarWidth(width: number): Promise<void> {
 		await persist();
 	});
 }
+
+export async function setSidequestSidebarWidth(width: number): Promise<void> {
+	assertInitialized();
+	const w = Math.round(width);
+	return enqueue(async () => {
+		if (db.sidequestSidebarWidth === w) return;
+		db = { ...db, sidequestSidebarWidth: w };
+		await persist();
+	});
+}

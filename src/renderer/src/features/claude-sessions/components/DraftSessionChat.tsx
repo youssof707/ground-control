@@ -243,7 +243,6 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 							maxLength={200}
 							spellCheck={false}
 							aria-label="Session name"
-							title={draft.title || draft.defaultTitle}
 							style={{
 								// Chromeless at rest so it reads as the title, not a
 								// form field; surface + border appear on hover/focus.
@@ -308,7 +307,7 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 							onMouseEnter={() => setFolderHover(true)}
 							onMouseLeave={() => setFolderHover(false)}
 							disabled={pickingFolder}
-							title={`${draft.cwd}\n\nClick to change folder`}
+							aria-label={`${draft.cwd} — click to change folder`}
 							style={{
 								// Reset native button chrome.
 								appearance: "none",
@@ -592,7 +591,6 @@ function AddWorktreeButton({ onClick }: { onClick: () => void }) {
 			onClick={onClick}
 			onMouseEnter={() => setHover(true)}
 			onMouseLeave={() => setHover(false)}
-			title="Attach a worktree to this draft"
 			style={{
 				appearance: "none",
 				display: "inline-flex",
