@@ -7,6 +7,7 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import rehypeHighlight from "rehype-highlight";
 import { T } from "../../../design/tokens";
 
@@ -15,6 +16,13 @@ import { T } from "../../../design/tokens";
 // rehype-highlight defaults to lowlight's `common` language set (~37 langs)
 // — no need to restrict further.
 const REMARK_PLUGINS = [remarkGfm];
+// User bubbles opt into remark-breaks (see the `breaks` prop below) so a
+// single Shift+Enter newline still renders as a hard line break instead of
+// collapsing into a space the way standard markdown treats soft breaks —
+// preserving how multi-line messages have always looked, on top of now
+// also rendering markdown. Assistant/plan/notes markdown keeps standard
+// soft-break behavior via REMARK_PLUGINS above.
+const REMARK_PLUGINS_BREAKS = [remarkGfm, remarkBreaks];
 const REHYPE_PLUGINS = [rehypeHighlight];
 
 // Custom <pre> renderer: wraps the syntax-highlighted block in a relative
@@ -161,13 +169,18 @@ const COMPONENTS = {
 // re-renders.
 export const MarkdownText = memo(function MarkdownText({
 	text,
+	breaks,
 }: {
 	text: string;
+	/** Render single newlines as hard breaks (see REMARK_PLUGINS_BREAKS above).
+	 * Used for user bubbles; defaults to off so existing callers (assistant
+	 * messages, plan approval, notes) render exactly as before. */
+	breaks?: boolean;
 }) {
 	return (
 		<div className="md">
 			<ReactMarkdown
-				remarkPlugins={REMARK_PLUGINS}
+				remarkPlugins={breaks ? REMARK_PLUGINS_BREAKS : REMARK_PLUGINS}
 				rehypePlugins={REHYPE_PLUGINS}
 				components={COMPONENTS}
 			>

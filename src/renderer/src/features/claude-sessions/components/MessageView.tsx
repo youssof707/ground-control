@@ -480,14 +480,7 @@ function UserMessage({ sdk }: { sdk: SdkLike }) {
 			>
 				{blocks.map((b, i) => {
 					if (b.type === "text") {
-						return (
-							<div
-								key={i}
-								style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-							>
-								{b.text}
-							</div>
-						);
+						return <MarkdownText key={i} text={b.text ?? ""} breaks />;
 					}
 					if (b.type === "image" && b.source?.data) {
 						// Hoisted out of the JSX: inside the onDoubleClick closure
