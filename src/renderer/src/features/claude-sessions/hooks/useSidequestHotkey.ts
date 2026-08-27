@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useMatch } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { useSidequestsStore } from "../stores/useSidequestsStore";
+import { useRightPanelStore } from "../stores/useRightPanelStore";
 import { isDraftId } from "../stores/useDraftSessionsStore";
 import {
 	lastForkableMessageId,
@@ -86,14 +87,23 @@ export function useSidequestHotkey(): void {
 			}
 
 			// CASE 1 — selection in the main thread: (re-)fork at that message.
+			// No `sdkSessionId` gate here or in case 3: the renderer's copy can
+			// be stale (the id arrives via a later `session:patch`), and main is
+			// the authority anyway — if it's genuinely missing, `startSidequest`
+			// fails with a clear error that the panel renders inline. A silent
+			// return here is indistinguishable from a broken hotkey.
 			if (selText && msgEl) {
 				const containingId = msgEl.getAttribute("data-message-id");
 				const forkMessageId = containingId
 					? resolveForkPointMessageId(session.messages ?? [], containingId)
 					: null;
-				// Nothing forkable yet (parent has never replied) — stay silent
-				// rather than opening an empty panel.
-				if (!forkMessageId || !session.sdkSessionId) return;
+				// Nothing forkable yet (parent has never replied) — open the
+				// panel so its empty state explains why, rather than doing
+				// nothing.
+				if (!forkMessageId) {
+					useRightPanelStore.getState().setRightPanel("sidequest");
+					return;
+				}
 				void (async () => {
 					const newId = await recreateSidequest(sessionId, forkMessageId);
 					if (newId) appendQuotedToDraft(newId, selText);
@@ -107,7 +117,10 @@ export function useSidequestHotkey(): void {
 			// sidequest at the last Claude message if there isn't one yet.
 			if (!sq) {
 				const forkMessageId = lastForkableMessageId(session.messages ?? []);
-				if (!forkMessageId || !session.sdkSessionId) return;
+				if (!forkMessageId) {
+					useRightPanelStore.getState().setRightPanel("sidequest");
+					return;
+				}
 				void (async () => {
 					await recreateSidequest(sessionId, forkMessageId);
 					openSidequestPanelAndFocus();

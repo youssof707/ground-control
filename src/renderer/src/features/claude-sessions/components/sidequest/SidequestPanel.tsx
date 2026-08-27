@@ -78,7 +78,21 @@ export function SidequestPanel({
 		if (el) el.scrollTop = el.scrollHeight;
 	}, [units.length, pending.length, sq?.status]);
 
-	const onClear = async () => {
+	// Whether the parent has a forkable Claude reply yet — drives both the
+	// empty state's Start button and its "waiting" copy. Subscribed (not read
+	// via getState) so the empty state flips live when the first reply lands.
+	const parentMessages = useSessionsStore(
+		(s) => s.sessions[sessionId]?.messages,
+	);
+	const canStart = useMemo(
+		() => !!lastForkableMessageId(parentMessages ?? []),
+		[parentMessages],
+	);
+
+	// Serves both the header's Clear button (discard + re-fork) and the empty
+	// state's Start button (plain fork) — the underlying action is identical:
+	// (re-)fork at the very last Claude reply in the main thread.
+	const startFresh = async () => {
 		if (clearing) return;
 		const parent = useSessionsStore.getState().sessions[sessionId];
 		const forkMessageId = lastForkableMessageId(parent?.messages ?? []);
@@ -130,7 +144,7 @@ export function SidequestPanel({
 				<div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
 					<button
 						type="button"
-						onClick={onClear}
+						onClick={startFresh}
 						disabled={clearing || !sq}
 						style={{
 							padding: "6px 12px",
@@ -189,16 +203,54 @@ export function SidequestPanel({
 				{!sq ? (
 					<div
 						style={{
-							fontSize: 12.5,
-							color: T.textMute,
 							padding: "20px 8px",
-							textAlign: "center",
-							lineHeight: 1.6,
+							display: "flex",
+							flexDirection: "column",
+							alignItems: "center",
+							gap: 12,
 						}}
 					>
-						Select text in the conversation and press ⌘S to ask about it
-						without touching the main thread. Press ⌘S with nothing selected
-						to branch from the last reply.
+						{canStart ? (
+							<button
+								type="button"
+								onClick={() => void startFresh()}
+								disabled={clearing}
+								style={{
+									padding: "6px 12px",
+									borderRadius: 8,
+									border: `0.5px solid ${T.border}`,
+									background: T.surface,
+									color: T.text,
+									fontSize: 12.5,
+									fontWeight: 500,
+									cursor: clearing ? "default" : "pointer",
+									fontFamily: T.sans,
+								}}
+							>
+								{clearing ? "Branching…" : "Start sidequest"}
+							</button>
+						) : null}
+						<div
+							style={{
+								fontSize: 12.5,
+								color: T.textMute,
+								textAlign: "center",
+								lineHeight: 1.6,
+							}}
+						>
+							{canStart ? (
+								<>
+									Select text in the conversation and press ⌘S to ask about
+									it without touching the main thread. Press ⌘S with nothing
+									selected to branch from the last reply.
+								</>
+							) : (
+								<>
+									Waiting for Claude&rsquo;s first reply — sidequests branch
+									from an assistant message.
+								</>
+							)}
+						</div>
 					</div>
 				) : (
 					<>

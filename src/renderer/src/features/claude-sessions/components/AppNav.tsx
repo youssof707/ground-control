@@ -3,6 +3,11 @@ import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { useReadStore } from "../stores/useReadStore";
 import { isSidequestId, useSidequestsStore } from "../stores/useSidequestsStore";
+import { lastForkableMessageId } from "../lib/sidequestForkPoint";
+import {
+	openSidequestPanelAndFocus,
+	recreateSidequest,
+} from "../lib/sidequestActions";
 import { T } from "../../../design/tokens";
 import type { ClaudeSessionFull } from "@shared/claude-sessions/types";
 import { isConversationSkipped } from "@shared/claude-sessions/transcript";
@@ -67,6 +72,42 @@ export function AppNav({
 		(n, q) => (isArchived(q.sessionId) ? n : n + 1),
 		0,
 	);
+
+	/**
+	 * Opening the panel *is* the request for a sidequest — don't make the user
+	 * click a second button inside it. Forks at the last Claude reply on the
+	 * way in, so the panel lands with a live composer ready to type.
+	 *
+	 * Two things it deliberately does NOT do: re-fork over an existing
+	 * sidequest (that's a live conversation — `Clear` is the explicit way to
+	 * restart), and fork when the parent has no assistant reply yet (nothing
+	 * to branch from; the panel's empty state says so and offers a button once
+	 * the first reply lands).
+	 */
+	const toggleSidequest = () => {
+		if (rightPanel === "sidequest") {
+			setRightPanel(null);
+			return;
+		}
+		if (!activeSessionId) return;
+		if (useSidequestsStore.getState().byParent[activeSessionId]) {
+			openSidequestPanelAndFocus();
+			return;
+		}
+		const parent = useSessionsStore.getState().sessions[activeSessionId];
+		const forkMessageId = lastForkableMessageId(parent?.messages ?? []);
+		if (!forkMessageId) {
+			setRightPanel("sidequest");
+			return;
+		}
+		// Open first so the fork's "Branching…" state is visible immediately;
+		// focus lands once the composer mounts.
+		setRightPanel("sidequest");
+		void (async () => {
+			await recreateSidequest(activeSessionId, forkMessageId);
+			openSidequestPanelAndFocus();
+		})();
+	};
 
 	const unreadCount = sessionsOrder.reduce((acc, id) => {
 		const sess = sessionsMap[id];
@@ -163,9 +204,7 @@ export function AppNav({
 				<SidequestToggle
 					active={rightPanel === "sidequest"}
 					running={sidequestRunning}
-					onClick={() =>
-						setRightPanel(rightPanel === "sidequest" ? null : "sidequest")
-					}
+					onClick={toggleSidequest}
 				/>
 			) : null}
 			<InboxToggle

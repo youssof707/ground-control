@@ -1097,8 +1097,21 @@ export class SessionManager {
 					if (sid) {
 						session.sdkSessionId = sid;
 						sdkIdCaptured = true;
-						if (persist)
+						if (persist) {
+							// Broadcast before persisting: the renderer gates
+							// features on `sdkSessionId` (sidequests, `canChat`),
+							// and `session:started` fired before this id existed —
+							// without a patch the renderer never learns it and
+							// those features stay dead until an app reload.
+							// Ephemeral sidequests stay inside the `persist`
+							// guard: a `session:patch` for a sidequest id would
+							// lazy-create a ghost sidebar row via `upsertSession`.
+							this.send("session:patch", {
+								sessionId: id,
+								sdkSessionId: sid,
+							});
 							void sessionStore.updateSession(id, { sdkSessionId: sid });
+						}
 					}
 				}
 
