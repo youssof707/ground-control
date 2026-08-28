@@ -56,6 +56,11 @@ declare global {
 				forkMessageId: string;
 			}) => Promise<ClaudeSession>;
 			discardSidequest: (parentSessionId: string) => Promise<void>;
+			/** Fork a sidequest reply into a real, persisted session. */
+			promoteSidequest: (
+				parentSessionId: string,
+				messageId: string,
+			) => Promise<ClaudeSession>;
 			setSessionMode: (
 				sessionId: string,
 				mode: SessionMode,

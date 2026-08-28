@@ -13,6 +13,7 @@ import {
 	openSidequestPanelAndFocus,
 	recreateSidequest,
 } from "../lib/sidequestActions";
+import { selectionStartElement, selectionText } from "../lib/selection";
 
 /**
  * Global Cmd+S — the sidequest hotkey. Mounted once, in `MainApp`.
@@ -60,15 +61,8 @@ export function useSidequestHotkey(): void {
 			e.stopPropagation();
 
 			const sel = window.getSelection();
-			const selText = sel && !sel.isCollapsed ? sel.toString().trim() : "";
-			let startEl: Element | null = null;
-			if (selText && sel && sel.rangeCount > 0) {
-				const node = sel.getRangeAt(0).startContainer;
-				startEl =
-					node.nodeType === Node.ELEMENT_NODE
-						? (node as Element)
-						: node.parentElement;
-			}
+			const selText = selectionText(sel);
+			const startEl = selText ? selectionStartElement(sel) : null;
 			// A selection spanning several messages resolves to its *first*
 			// message — that's where the user started dragging.
 			const inPanel = startEl?.closest("[data-sidequest-panel]") ?? null;

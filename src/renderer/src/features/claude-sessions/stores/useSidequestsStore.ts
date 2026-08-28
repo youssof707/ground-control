@@ -8,9 +8,14 @@ import type {
 /**
  * Sidequests are ephemeral forks of a main session, used for throw-away
  * questions ("what does this stand for?") that shouldn't pollute the main
- * thread's context. They exist only in memory — in this store on the renderer
- * side, and as a `RunningEntry` in the main process's SessionManager. Nothing
- * is written to `claude_sessions.json` or `~/.claude/projects`.
+ * thread's context. App-side they exist only in memory — in this store on the
+ * renderer side, and as a `RunningEntry` plus a `SidequestRun` in the main
+ * process's SessionManager. Nothing is written to `claude_sessions.json`.
+ *
+ * The SDK branch *does* get a transcript in `~/.claude/projects`, because
+ * forking a sidequest into a real session (the panel's Fork action, main's
+ * `promoteSidequest`) can only branch from a transcript on disk.
+ * `discardSidequest` deletes it again unless it was promoted.
  *
  * Keyed by *parent* session id: at most one sidequest per main session, kept
  * alive across navigation so switching sessions and coming back preserves the

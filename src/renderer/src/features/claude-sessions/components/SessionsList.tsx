@@ -11,6 +11,7 @@ import {
 import { useDraftStore } from "../stores/useDraftStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { useSessionGroupsStore } from "../stores/useSessionGroupsStore";
+import { useSidequestsStore } from "../stores/useSidequestsStore";
 import { ConfirmModal } from "../../../components/ConfirmModal";
 import { runBackgroundTask } from "../../background-tasks/stores/useBackgroundTasksStore";
 import { appendPromptBlock } from "../lib/composerActions";
@@ -300,7 +301,11 @@ export function SessionsList({
 	// the `session:started` broadcast.
 	const draft = useDraftSessionsStore((s) => s.draft);
 
-	const createDraftAndNavigate = (cwd: string, worktreeId?: string) => {
+	const createDraftAndNavigate = (
+		cwd: string,
+		worktreeId?: string,
+		groupId?: string,
+	) => {
 		// Remember the workspace immediately so the next New Session click
 		// pre-fills the same folder (parity with the old IPC-direct flow).
 		// If the main process later substitutes a different cwd at first send
@@ -311,6 +316,7 @@ export function SessionsList({
 			cwd,
 			defaultTitle: `Session ${order.length + 1}`,
 			worktreeId,
+			groupId,
 		});
 		// Make sure the new draft is actually visible. If the user has narrowed
 		// the workspace filter and the draft cwd isn't in it, the draft row
@@ -353,12 +359,25 @@ export function SessionsList({
 			// DraftSession.handoffDeleteSessionId doc: every retarget site
 			// must disown it explicitly or an abandoned "Handoff & delete"
 			// can later delete the wrong session.)
+			//
+			// `groupId` is disowned UNCONDITIONALLY, not inside the cwd
+			// guard below: "new session in this folder" is an inherently
+			// UNGROUPED intent, so a draft seeded by a group header's "+"
+			// must leave that group even when the cwd is unchanged —
+			// otherwise draftHost (group beats cwd) keeps the row in the
+			// group box the user just clicked away from, and the real
+			// session is born inside a group nobody asked for.
 			const patch: {
 				cwd?: string;
 				worktreeId?: string;
+				groupId?: string;
 				model?: string;
 				handoffDeleteSessionId?: string;
-			} = { model: undefined, handoffDeleteSessionId: undefined };
+			} = {
+				model: undefined,
+				handoffDeleteSessionId: undefined,
+				groupId: undefined,
+			};
 			if (draft.cwd !== cwd) {
 				// A worktree is bound to a baseDir, so retargeting invalidates
 				// the pairing — same rule as DraftSessionChat.changeFolder.
@@ -385,13 +404,21 @@ export function SessionsList({
 			// Same disowning rule as startInCwd: this is a fresh "new session
 			// on this worktree" intent, so any leftover model override or
 			// pending handoff-delete from whatever the draft was doing before
-			// must not carry forward.
+			// must not carry forward. `groupId` is disowned unconditionally
+			// for the same reason as startInCwd: targeting a worktree
+			// bucket is an ungrouped intent, and a stale groupId would keep
+			// the row rendering inside the group box instead.
 			const patch: {
 				cwd?: string;
 				worktreeId?: string;
+				groupId?: string;
 				model?: string;
 				handoffDeleteSessionId?: string;
-			} = { model: undefined, handoffDeleteSessionId: undefined };
+			} = {
+				model: undefined,
+				handoffDeleteSessionId: undefined,
+				groupId: undefined,
+			};
 			if (draft.cwd !== wt.baseDir || draft.worktreeId !== wt.id) {
 				patch.cwd = wt.baseDir;
 				patch.worktreeId = wt.id;
@@ -404,6 +431,66 @@ export function SessionsList({
 			return;
 		}
 		createDraftAndNavigate(wt.baseDir, wt.id);
+	};
+
+	// Per-group New Session. Same retarget semantics as startInCwd, with two
+	// differences:
+	//   - the target folder isn't the header's own identity (a group has no
+	//     cwd) — it's inherited from the group's newest member, resolved by
+	//     GroupSection and handed in here;
+	//   - the draft is seeded with `groupId` so the row lands inside the
+	//     group's box AND the real session is BORN in the group on first send
+	//     (ImagePasteTextarea forwards draft.groupId to startSession).
+	//     Born-with rather than set post-hoc — same rule as the handoff flow,
+	//     and it means pruneGroupIfEmpty never sees a momentarily memberless
+	//     group.
+	// Deliberately inherits the FOLDER ONLY: no worktreeId rides along. A
+	// group is an organizational bucket that can span worktrees, so copying
+	// the newest member's checkout binding would be a guess, not inheritance.
+	const startInGroup = (group: SessionGroup, cwd: string) => {
+		setStartError(null);
+		if (!cwd) return; // defensive; GroupSection hides "+" without one
+		// Force the section open so the draft isn't spawned into a folded box.
+		// NOT expandCwd: a group's collapse is persisted on the group record
+		// (survives restart), so this is the optimistic-upsert + async-IPC
+		// pair from toggleGroupCollapsed, not a local Set mutation.
+		if (group.collapsed) {
+			useSessionGroupsStore
+				.getState()
+				.upsert({ ...group, collapsed: false });
+			void window.claude
+				.setGroupCollapsed(group.id, false)
+				.catch((err) => {
+					console.error("[ccw] setGroupCollapsed failed:", err);
+				});
+		}
+		if (draft) {
+			// Same disowning rule as startInCwd/startInWorktree: a fresh "new
+			// session in this group" intent must not carry a stale model
+			// override or a pending handoff-delete.
+			const patch: {
+				cwd?: string;
+				worktreeId?: string;
+				groupId?: string;
+				model?: string;
+				handoffDeleteSessionId?: string;
+			} = { model: undefined, handoffDeleteSessionId: undefined };
+			// Guarded like startInCwd: a draft ALREADY in this group on this
+			// folder keeps a worktree the user attached by hand in the draft
+			// header. Only a genuine retarget clears the binding.
+			if (draft.groupId !== group.id || draft.cwd !== cwd) {
+				patch.cwd = cwd;
+				patch.worktreeId = undefined;
+				patch.groupId = group.id;
+			}
+			useDraftSessionsStore.getState().updateDraft(patch);
+			if (draft.cwd !== cwd) {
+				useSettingsStore.getState().setLastUsedWorkspace(cwd);
+			}
+			navigate(`/sessions/${draft.id}`);
+			return;
+		}
+		createDraftAndNavigate(cwd, undefined, group.id);
 	};
 
 	// One-click shortcut launch. A shortcut carries no cwd, so this behaves
@@ -789,18 +876,30 @@ export function SessionsList({
 		hideCwdPrefix,
 	]);
 
-	// Where the draft row renders. A draft spawned from a bucket's "+" (or
-	// retargeted into one) lands as the FIRST row inside that bucket — next
-	// to the affordance the user just clicked, and matching newest-first
-	// ordering. Worktree binding wins over cwd (same precedence as real
-	// sessions). Falls back to the top of the list when no matching bucket
-	// exists (flat single-cwd list, or a folder with no sessions yet).
+	// Where the draft row renders. A draft spawned from a bucket's or a
+	// group's "+" (or retargeted into one) lands as the FIRST row inside that
+	// container — next to the affordance the user just clicked, and matching
+	// newest-first ordering. Precedence mirrors the real-session partition
+	// above: group > worktree > cwd. Falls back to the top of the list when
+	// no matching container is rendered (flat single-cwd list, a folder with
+	// no sessions yet, or a group that auto-deleted out from under the draft).
 	const draftHost = useMemo<
 		| { kind: "top" }
+		| { kind: "group"; id: string }
 		| { kind: "cwd"; cwd: string }
 		| { kind: "worktree"; id: string }
 	>(() => {
 		if (!draft) return { kind: "top" };
+		if (
+			draft.groupId &&
+			sidebarRows.some(
+				(r) =>
+					r.kind === "group" &&
+					r.section.group.id === draft.groupId,
+			)
+		) {
+			return { kind: "group", id: draft.groupId };
+		}
 		if (
 			draft.worktreeId &&
 			sidebarRows.some(
@@ -821,11 +920,15 @@ export function SessionsList({
 		return { kind: "top" };
 	}, [draft, sidebarRows]);
 
-	const renderDraftRow = (last: boolean) =>
+	const renderDraftRow = (
+		last: boolean,
+		groupColor?: { fg: string; bg: string; border: string },
+	) =>
 		draft ? (
 			<DraftRowSidebar
 				key={draft.id}
 				draft={draft}
+				groupColor={groupColor}
 				active={draft.id === activeSessionId}
 				last={last}
 				onDiscard={() => discardDraft(draft.id)}
@@ -1138,6 +1241,24 @@ export function SessionsList({
 										onToggleCollapsed={() =>
 											toggleGroupCollapsed(group)
 										}
+										onNewSession={(cwd) =>
+											startInGroup(group, cwd)
+										}
+										// `last={false}`: a rendered group
+										// section always has >=1 member row
+										// beneath the draft, so the draft
+										// never owns the box's final hairline.
+										draftSlot={
+											draftHost.kind === "group" &&
+											draftHost.id === group.id
+												? renderDraftRow(
+													false,
+													WORKTREE_COLOR_MAP[
+														group.color
+													],
+												)
+												: null
+										}
 										onRename={(id) =>
 											setPendingRenameGroupId(id)
 										}
@@ -1224,10 +1345,38 @@ function useRowDerived(
 	const lastIncomingTs = lastIncomingMessageTs(session);
 	const unread =
 		session.status !== "running" && lastIncomingTs > lastReadAt;
+
+	// A live sidequest surfaces through its parent's row: the sidequest has no
+	// sidebar presence of its own, so this pill is the only place its activity
+	// is visible once you navigate away. Primitive selectors (never the state
+	// object) so streaming sidequest messages don't re-render every row.
+	// Sidequest permission requests are keyed by the *sidequest* id, which the
+	// row's own `pending` filter (keyed by session id) can never match.
+	const sqStatus = useSidequestsStore(
+		(s) => s.byParent[session.id]?.status,
+	);
+	const sqId = useSidequestsStore(
+		(s) => s.byParent[session.id]?.sidequestId,
+	);
+	const sqHasPending = usePermissionsStore(
+		(s) => sqId != null && s.queue.some((q) => q.sessionId === sqId),
+	);
+	const sqRunning = sqStatus === "running" || sqStatus === "starting";
+
+	// Waiting (either thread) beats running beats everything else — same
+	// precedence the main session already applies to itself.
+	const status =
+		hasPending || sqHasPending
+			? "awaiting_permission"
+			: session.status !== "running" && sqRunning
+				? "running"
+				: session.status;
+
 	return {
 		hasPending,
 		summary,
 		unread,
+		status,
 	};
 }
 
@@ -1269,7 +1418,10 @@ function SessionRowSidebar({
 	onAddToGroup: () => void;
 	onRemoveFromGroup: () => void;
 }) {
-	const { hasPending, summary, unread } = useRowDerived(session, pending);
+	const { hasPending, summary, unread, status } = useRowDerived(
+		session,
+		pending,
+	);
 	const markUnread = useReadStore((s) => s.markUnread);
 	const archived = session.archivedAt != null;
 	return (
@@ -1404,9 +1556,9 @@ function SessionRowSidebar({
 							minWidth: 0,
 						}}
 					>
-						<StatusPill
-							status={hasPending ? "awaiting_permission" : session.status}
-						/>
+						{/* `status` folds in sidequest activity (running / waiting)
+						    on top of the session's own state — see useRowDerived. */}
+						<StatusPill status={status} />
 						{session.branch ? (
 							<BranchChipWithDelta
 								branch={session.branch}
@@ -1455,6 +1607,8 @@ function GroupSection({
 	lastReadAtMap,
 	activeSessionId,
 	onToggleCollapsed,
+	onNewSession,
+	draftSlot,
 	onRename,
 	onDelete,
 	onArchive,
@@ -1469,6 +1623,15 @@ function GroupSection({
 	lastReadAtMap: Record<string, number>;
 	activeSessionId?: string;
 	onToggleCollapsed: () => void;
+	/** New Session in this group. The folder is resolved HERE rather than by
+	 * the caller because it's a property of the group's membership: the cwd
+	 * of the group's newest member. `ids` comes from `visibleOrder`, so it's
+	 * already newest-first — ids[0] is the most recent member. */
+	onNewSession: (cwd: string) => void;
+	/** The draft row, when this group is its host. A slot rather than
+	 * draft/activeSessionId/onDiscard props, so the draft's wiring stays in
+	 * SessionsList next to the cwd and worktree buckets that do the same. */
+	draftSlot?: React.ReactNode;
 	onRename: (groupId: string) => void;
 	onDelete: (id: string) => void;
 	onArchive: (id: string) => void;
@@ -1477,6 +1640,14 @@ function GroupSection({
 	onRemoveFromGroup: (id: string) => void;
 }) {
 	const c = WORKTREE_COLOR_MAP[group.color];
+	// Folder the header's "+" targets: the newest member's cwd. The walk past
+	// a member with no cwd is belt-and-braces — a group can never be empty
+	// (main auto-deletes at zero members via pruneGroupIfEmpty), so this all
+	// but always resolves on the first entry. When nothing resolves, the
+	// header renders no "+" at all rather than a dead one.
+	const newSessionCwd = ids
+		.map((id) => sessions[id]?.cwd)
+		.find((cwd): cwd is string => !!cwd);
 	// Only draw aggregate indicators when the section is folded — expanded
 	// members show their own dots/pills; doubling up would be noise.
 	const aggregates = group.collapsed
@@ -1505,8 +1676,14 @@ function GroupSection({
 				count={ids.length}
 				aggregates={aggregates}
 				onToggle={onToggleCollapsed}
+				onNewSession={
+					newSessionCwd
+						? () => onNewSession(newSessionCwd)
+						: undefined
+				}
 				onRename={() => onRename(group.id)}
 			/>
+			{group.collapsed ? null : draftSlot}
 			{group.collapsed
 				? null
 				: ids.map((id, i) => {
@@ -1705,12 +1882,16 @@ function GroupHeaderRow({
 	count,
 	aggregates,
 	onToggle,
+	onNewSession,
 	onRename,
 }: {
 	group: SessionGroup;
 	count: number;
 	aggregates: { waiting: number; unread: number } | null;
 	onToggle: () => void;
+	/** Omitted when no member has a cwd — the header then renders no "+" at
+	 * all rather than a button with nothing to target. */
+	onNewSession?: () => void;
 	onRename: () => void;
 }) {
 	// Cursor coords of the current right-click, or null when the menu is
@@ -1722,135 +1903,207 @@ function GroupHeaderRow({
 	const c = WORKTREE_COLOR_MAP[group.color];
 	return (
 		<>
-			<button
-				type="button"
-				onClick={onToggle}
+			{/* A flex ROW, not a single button: the "+" must be a sibling of
+			    the toggle, never a descendant (nested <button> is invalid
+			    HTML, and a nested click target would need stopPropagation to
+			    avoid also collapsing the group). Same restructure CwdHeaderRow
+			    carries. The wrapper owns the under-rule so it spans the full
+			    width including behind the "+", and owns the context menu so
+			    right-click works across the whole strip — dead right-click
+			    zones would be worse than the button-only version this
+			    replaces. `contextmenu` bubbles up from the "+", so no
+			    stopPropagation is needed anywhere. */}
+			<div
 				onContextMenu={(e) => {
 					e.preventDefault();
 					setMenuPos({ x: e.clientX, y: e.clientY });
 				}}
-				aria-expanded={!group.collapsed}
 				style={{
-					appearance: "none",
-					width: "100%",
 					display: "flex",
 					alignItems: "center",
-					gap: 7,
-					padding: "8px 12px",
 					// Bottom hairline appears only when expanded, splitting the
 					// header from the first member row; collapsed headers stand
 					// alone inside the bordered box.
-					borderTop: "none",
-					borderLeft: "none",
-					borderRight: "none",
 					borderBottom: group.collapsed
 						? "none"
 						: `0.5px solid ${T.borderSoft}`,
-					background: "transparent",
-					cursor: "pointer",
-					textAlign: "left",
-					outline: "none",
+					// 2px + the 24px button's 12px half-width puts the glyph's
+					// center 14px from the box edge — the same optical column
+					// as the rows' ⋯ button. Matches CwdHeaderRow.
+					paddingRight: 2,
 				}}
 			>
-				<svg
-					width="8"
-					height="8"
-					viewBox="0 0 8 8"
-					fill="none"
-					aria-hidden
+				<button
+					type="button"
+					onClick={onToggle}
+					aria-expanded={!group.collapsed}
 					style={{
-						flexShrink: 0,
-						color: T.textFaint,
-						transform: group.collapsed
-							? "rotate(0deg)"
-							: "rotate(90deg)",
-						transition: "transform 120ms ease",
-					}}
-				>
-					<path
-						d="M2.5 1.5L6 4L2.5 6.5"
-						stroke="currentColor"
-						strokeWidth="1.4"
-						strokeLinecap="round"
-						strokeLinejoin="round"
-					/>
-				</svg>
-				{/* Group color lives on the name itself (no separate dot) —
-				    one fewer element, and the label doubles as the swatch. */}
-				<span
-					style={{
-						fontSize: 11,
-						fontWeight: 600,
-						letterSpacing: 0.5,
-						textTransform: "uppercase",
-						color: c.fg,
-						overflow: "hidden",
-						textOverflow: "ellipsis",
-						whiteSpace: "nowrap",
+						appearance: "none",
+						flex: 1,
 						minWidth: 0,
+						display: "flex",
+						alignItems: "center",
+						gap: 7,
+						padding: "8px 12px",
+						border: "none",
+						background: "transparent",
+						cursor: "pointer",
+						textAlign: "left",
+						outline: "none",
 					}}
 				>
-					{group.name}
-				</span>
-				<span
-					style={{
-						fontSize: 10.5,
-						color: T.textFaint,
-						flexShrink: 0,
-					}}
-				>
-					{count}
-				</span>
-				{aggregates &&
+					<svg
+						width="8"
+						height="8"
+						viewBox="0 0 8 8"
+						fill="none"
+						aria-hidden
+						style={{
+							flexShrink: 0,
+							color: T.textFaint,
+							transform: group.collapsed
+								? "rotate(0deg)"
+								: "rotate(90deg)",
+							transition: "transform 120ms ease",
+						}}
+					>
+						<path
+							d="M2.5 1.5L6 4L2.5 6.5"
+							stroke="currentColor"
+							strokeWidth="1.4"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+						/>
+					</svg>
+					{/* Group color lives on the name itself (no separate dot) —
+				    one fewer element, and the label doubles as the swatch. */}
+					<span
+						style={{
+							fontSize: 11,
+							fontWeight: 600,
+							letterSpacing: 0.5,
+							textTransform: "uppercase",
+							color: c.fg,
+							overflow: "hidden",
+							textOverflow: "ellipsis",
+							whiteSpace: "nowrap",
+							minWidth: 0,
+						}}
+					>
+						{group.name}
+					</span>
+					<span
+						style={{
+							fontSize: 10.5,
+							color: T.textFaint,
+							flexShrink: 0,
+						}}
+					>
+						{count}
+					</span>
+					{aggregates &&
 				(aggregates.unread > 0 || aggregates.waiting > 0) ? (
-						<span
-							style={{
-								marginLeft: "auto",
-								display: "inline-flex",
-								alignItems: "center",
-								gap: 6,
-								flexShrink: 0,
-							}}
+							<span
+								style={{
+									marginLeft: "auto",
+									display: "inline-flex",
+									alignItems: "center",
+									gap: 6,
+									flexShrink: 0,
+								}}
+							>
+								{aggregates.waiting > 0 ? (
+									<span
+										style={{
+											display: "inline-flex",
+											alignItems: "center",
+											height: 16,
+											padding: "0 6px",
+											borderRadius: 8,
+											border: `0.5px solid ${T.warnBorder}`,
+											background: T.warnSoft,
+											color: T.warn,
+											fontSize: 10,
+											fontWeight: 600,
+										}}
+									>
+										{aggregates.waiting}
+									</span>
+								) : null}
+								{aggregates.unread > 0 ? (
+									<span
+										style={{
+											display: "inline-flex",
+											alignItems: "center",
+											height: 16,
+											padding: "0 6px",
+											borderRadius: 8,
+											border: `0.5px solid ${T.accentBorder}`,
+											background: T.accentSoft,
+											color: T.accent,
+											fontSize: 10,
+											fontWeight: 600,
+										}}
+									>
+										{aggregates.unread}
+									</span>
+								) : null}
+							</span>
+						) : null}
+				</button>
+				{/* No "+" when no member carries a cwd — there'd be no folder
+				    to target. Mirrors CwdHeaderRow's `{cwd ? … : null}`. */}
+				{onNewSession ? (
+					<button
+						type="button"
+						onClick={onNewSession}
+						aria-label={`New session in ${group.name}`}
+						style={{
+							display: "inline-flex",
+							alignItems: "center",
+							justifyContent: "center",
+							flexShrink: 0,
+							width: 24,
+							height: 24,
+							padding: 0,
+							border: "none",
+							borderRadius: 4,
+							background: "transparent",
+							color: T.textFaint,
+							cursor: "pointer",
+						}}
+						// Rests neutral (T.textFaint) like the chevron and the
+						// count — the name is the group's only colored element
+						// and should stay that way. Hover pulls into the
+						// group's own hue rather than the neutral
+						// ROW_SELECTED_BG the cwd buckets use, matching how
+						// SessionRowSidebar tints its active fill in a group.
+						onMouseEnter={(e) => {
+							e.currentTarget.style.background = `color-mix(in oklab, ${c.fg} 8%, transparent)`;
+							e.currentTarget.style.color = c.fg;
+						}}
+						onMouseLeave={(e) => {
+							e.currentTarget.style.background = "transparent";
+							e.currentTarget.style.color = T.textFaint;
+						}}
+					>
+						<svg
+							width="13"
+							height="13"
+							viewBox="0 0 14 14"
+							fill="none"
+							aria-hidden
 						>
-							{aggregates.waiting > 0 ? (
-								<span
-									style={{
-										display: "inline-flex",
-										alignItems: "center",
-										height: 16,
-										padding: "0 6px",
-										borderRadius: 8,
-										border: `0.5px solid ${T.warnBorder}`,
-										background: T.warnSoft,
-										color: T.warn,
-										fontSize: 10,
-										fontWeight: 600,
-									}}
-								>
-									{aggregates.waiting}
-								</span>
-							) : null}
-							{aggregates.unread > 0 ? (
-								<span
-									style={{
-										display: "inline-flex",
-										alignItems: "center",
-										height: 16,
-										padding: "0 6px",
-										borderRadius: 8,
-										border: `0.5px solid ${T.accentBorder}`,
-										background: T.accentSoft,
-										color: T.accent,
-										fontSize: 10,
-										fontWeight: 600,
-									}}
-								>
-									{aggregates.unread}
-								</span>
-							) : null}
-						</span>
-					) : null}
-			</button>
+							<path
+								d="M7 3v8M3 7h8"
+								stroke="currentColor"
+								strokeWidth="1.6"
+								strokeLinecap="round"
+							/>
+						</svg>
+					</button>
+				) : null}
+			</div>
 			{menuPos ? (
 				<GroupContextMenu
 					x={menuPos.x}
@@ -1969,11 +2222,16 @@ function DraftRowSidebar({
 	draft,
 	active,
 	last,
+	groupColor,
 	onDiscard,
 }: {
 	draft: DraftSession;
 	active: boolean;
 	last: boolean;
+	/** Set when the row renders inside a group box, so the active fill and
+	 * stripe take the group's hue instead of the neutral accent — the same
+	 * treatment SessionRowSidebar gives its `inGroup` members. */
+	groupColor?: { fg: string; bg: string; border: string };
 	onDiscard: () => void;
 }) {
 	const worktree = useWorktreesStore((s) =>
@@ -1984,8 +2242,13 @@ function DraftRowSidebar({
 			style={{
 				borderBottom: last ? "none" : `0.5px solid ${T.borderSoft}`,
 				// Same relative lift as SessionRowSidebar — a draft row can land
-				// inside a recessed bucket too.
-				background: active ? ROW_SELECTED_BG : "transparent",
+				// inside a recessed bucket too. Inside a group box the fill
+				// comes from the group hue so the row belongs to its container.
+				background: active
+					? groupColor
+						? `color-mix(in oklab, ${groupColor.fg} 7%, transparent)`
+						: ROW_SELECTED_BG
+					: "transparent",
 				position: "relative",
 			}}
 		>
@@ -1997,7 +2260,7 @@ function DraftRowSidebar({
 						top: 0,
 						bottom: 0,
 						width: 3,
-						background: T.accent,
+						background: groupColor ? groupColor.fg : T.accent,
 					}}
 				/>
 			) : null}

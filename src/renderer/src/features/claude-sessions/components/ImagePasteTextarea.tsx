@@ -3,15 +3,10 @@ import {
 	useLayoutEffect,
 	useRef,
 	useState,
-	type ClipboardEvent,
 	type KeyboardEvent,
 } from "react";
 import { useNavigate } from "react-router-dom";
-import type {
-	SessionMode,
-	UserContentBlock,
-	UserImageMediaType,
-} from "@shared/claude-sessions/types";
+import type { SessionMode } from "@shared/claude-sessions/types";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { useDraftStore } from "../stores/useDraftStore";
 import {
@@ -23,15 +18,15 @@ import {
 	useQueuedMessagesStore,
 	type QueuedMessage,
 } from "../stores/useQueuedMessagesStore";
-import type { PendingImage } from "../lib/pendingImage";
-import { openImageInPreview } from "../lib/imageActions";
+import { buildUserBlocks, draftFromBlocks } from "../lib/composerImages";
+import { useComposerImages } from "../hooks/useComposerImages";
 import { sendTurn } from "../lib/sendTurn";
 import { appendPromptBlock, focusComposer } from "../lib/composerActions";
 import { runHandoffDelete } from "../lib/handoffActions";
 import { T } from "../../../design/tokens";
 import { ModeToggle, isBranchStale } from "../../../design/Atoms";
 import { DictationButton, type DictationHandle } from "./DictationButton";
-import { CopyImageButton } from "./CopyImageButton";
+import { PendingImageStrip } from "./PendingImageThumb";
 import type { Shortcut } from "@shared/schemas/shortcuts";
 import { ShortcutsMenuButton } from "./ShortcutsMenu";
 
@@ -44,28 +39,10 @@ interface Props {
 	interrupting?: boolean;
 }
 
-const SUPPORTED_IMAGE_TYPES: readonly UserImageMediaType[] = [
-	"image/jpeg",
-	"image/png",
-	"image/gif",
-	"image/webp",
-];
-
-function toSupportedMediaType(t: string): UserImageMediaType | null {
-	return (SUPPORTED_IMAGE_TYPES as readonly string[]).includes(t)
-		? (t as UserImageMediaType)
-		: null;
-}
-
-// Stable reference so the "no draft images" selector default doesn't
-// trigger re-renders on every store update.
-const EMPTY_IMAGES: PendingImage[] = Object.freeze(
-	[] as PendingImage[],
-) as PendingImage[];
-
-// Same deal for "no queued messages" — a fresh [] literal on every render
-// would break the zustand selector's reference equality and re-render the
-// composer on every unrelated store update.
+// A fresh [] literal on every render would break the zustand selector's
+// reference equality and re-render the composer on every unrelated store
+// update. (The images equivalent lives in `lib/composerImages`, shared with
+// the sidequest composer.)
 const EMPTY_QUEUE: QueuedMessage[] = Object.freeze(
 	[] as QueuedMessage[],
 ) as QueuedMessage[];
@@ -165,22 +142,16 @@ export function ImagePasteTextarea({
 	const text = useDraftStore(
 		(s) => s.draftsBySession[sessionId]?.text ?? "",
 	);
-	const images = useDraftStore(
-		(s) => s.draftsBySession[sessionId]?.images ?? EMPTY_IMAGES,
-	);
 	const setText = (next: string) =>
 		useDraftStore.getState().setDraftText(sessionId, next);
-	const setImages = (
-		next: PendingImage[] | ((prev: PendingImage[]) => PendingImage[]),
-	) => {
-		const current =
-			useDraftStore.getState().draftsBySession[sessionId]?.images ?? [];
-		const value = typeof next === "function" ? next(current) : next;
-		useDraftStore.getState().setDraftImages(sessionId, value);
-	};
 	const [sending, setSending] = useState(false);
 	const [dictating, setDictating] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	// Paste-to-attach, shared with the sidequest composer.
+	const { images, onPaste, removeImage, setImages } = useComposerImages(
+		sessionId,
+		setError,
+	);
 	const [modeSwitching, setModeSwitching] = useState(false);
 	// Draft awareness — when the sessionId is a draft, status / mode / branch
 	// don't exist in useSessionsStore yet. We read from useDraftSessionsStore
@@ -333,57 +304,10 @@ export function ImagePasteTextarea({
 		focusComposer();
 	};
 
-	const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
-		const items = Array.from(e.clipboardData.items);
-		const imageItems = items.filter((it) => it.type.startsWith("image/"));
-		if (imageItems.length === 0) return;
-		e.preventDefault();
-		for (const item of imageItems) {
-			const file = item.getAsFile();
-			if (!file) continue;
-			const mediaType = toSupportedMediaType(file.type);
-			if (!mediaType) {
-				setError(`Unsupported image type: ${file.type}`);
-				continue;
-			}
-			const reader = new FileReader();
-			reader.onload = () => {
-				const dataUrl = reader.result as string;
-				const data = dataUrl.split(",")[1] ?? "";
-				setImages((prev) => [
-					...prev,
-					{ media_type: mediaType, data, previewUrl: dataUrl },
-				]);
-			};
-			reader.readAsDataURL(file);
-		}
-	};
-
-	const removeImage = (idx: number) =>
-		setImages((prev) => prev.filter((_, i) => i !== idx));
-
-	// Shared by send() and queueMessage() — images first, then the text block,
-	// matching the SDK's expected content-block order.
-	const buildBlocks = (): UserContentBlock[] => {
-		const blocks: UserContentBlock[] = [];
-		for (const img of images) {
-			blocks.push({
-				type: "image",
-				source: {
-					type: "base64",
-					media_type: img.media_type,
-					data: img.data,
-				},
-			});
-		}
-		if (text.trim()) blocks.push({ type: "text", text: text.trim() });
-		return blocks;
-	};
-
 	const send = async () => {
 		if (sending) return;
 		if (!text.trim() && images.length === 0) return;
-		const blocks = buildBlocks();
+		const blocks = buildUserBlocks(text, images);
 
 		setSending(true);
 		setError(null);
@@ -446,7 +370,7 @@ export function ImagePasteTextarea({
 	// session's current turn is completely done.
 	const queueMessage = () => {
 		if (!text.trim() && images.length === 0) return;
-		const blocks = buildBlocks();
+		const blocks = buildUserBlocks(text, images);
 		const trimmed = text.trim();
 		useQueuedMessagesStore.getState().enqueue(sessionId, {
 			id: crypto.randomUUID(),
@@ -467,21 +391,9 @@ export function ImagePasteTextarea({
 	// `text`/`images` from the stored blocks rather than the
 	// `preview`/`imageCount` summary, so nothing is lost on the round trip.
 	const restoreQueuedMessage = (msg: QueuedMessage) => {
-		let restoredText = "";
-		const restoredImages: PendingImage[] = [];
-		for (const block of msg.blocks) {
-			if (block.type === "text") {
-				restoredText = restoredText
-					? `${restoredText}\n${block.text}`
-					: block.text;
-			} else if (block.type === "image") {
-				restoredImages.push({
-					media_type: block.source.media_type,
-					data: block.source.data,
-					previewUrl: `data:${block.source.media_type};base64,${block.source.data}`,
-				});
-			}
-		}
+		const { text: restoredText, images: restoredImages } = draftFromBlocks(
+			msg.blocks,
+		);
 		useQueuedMessagesStore.getState().cancel(sessionId, msg.id);
 		useQueuedMessagesStore.getState().setError(sessionId, null);
 		setText(restoredText);
@@ -701,25 +613,11 @@ export function ImagePasteTextarea({
 					</div>
 				) : null}
 
-				{images.length > 0 ? (
-					<div
-						style={{
-							display: "flex",
-							gap: 6,
-							flexWrap: "wrap",
-							marginBottom: 10,
-						}}
-					>
-						{images.map((img, i) => (
-							<PendingImageThumb
-								key={i}
-								img={img}
-								onRemove={() => removeImage(i)}
-								onError={setError}
-							/>
-						))}
-					</div>
-				) : null}
+				<PendingImageStrip
+					images={images}
+					onRemove={removeImage}
+					onError={setError}
+				/>
 
 				{error ? (
 					<div
@@ -1079,89 +977,6 @@ function QueuedMessageChip({
 				}}
 				onMouseLeave={(e) => {
 					e.currentTarget.style.background = "transparent";
-				}}
-			>
-				×
-			</button>
-		</div>
-	);
-}
-
-/**
- * One pending-paste thumbnail: the image, a hover-revealed copy button, and
- * the always-visible "×" remove button.
- *
- * Extracted from the composer's `images.map` so each thumbnail owns its own
- * hover state — a single `hoveredIndex` on the parent would re-render every
- * thumbnail on each mouse move between them.
- */
-function PendingImageThumb({
-	img,
-	onRemove,
-	onError,
-}: {
-	img: PendingImage;
-	onRemove: () => void;
-	onError: (message: string | null) => void;
-}) {
-	const [hovered, setHovered] = useState(false);
-	return (
-		<div
-			style={{ position: "relative" }}
-			onMouseEnter={() => setHovered(true)}
-			onMouseLeave={() => setHovered(false)}
-		>
-			<img
-				src={img.previewUrl}
-				alt=""
-				// `img.data` (raw base64) rather than `previewUrl` — the handler
-				// accepts either, but this skips shipping the redundant data-URL
-				// prefix over IPC.
-				onDoubleClick={() => {
-					void openImageInPreview(img.media_type, img.data).then(
-						// null on success, which also clears any stale error from
-						// a previous failed attempt.
-						onError,
-					);
-				}}
-				style={{
-					display: "block",
-					height: 64,
-					width: 64,
-					objectFit: "cover",
-					borderRadius: 6,
-					border: `0.5px solid ${T.border}`,
-					// Suppress the selection flash a double-click otherwise
-					// paints over the thumbnail.
-					userSelect: "none",
-				}}
-			/>
-			{/* Top-left: the "×" already owns the top-right corner. Sized down
-			    to 20px so it doesn't swamp a 64px thumbnail. */}
-			<CopyImageButton
-				mediaType={img.media_type}
-				data={img.data}
-				hovered={hovered}
-				corner="left"
-				size={20}
-				inset={4}
-			/>
-			<button
-				onClick={onRemove}
-				aria-label="Remove"
-				style={{
-					position: "absolute",
-					top: -6,
-					right: -6,
-					width: 20,
-					height: 20,
-					borderRadius: "50%",
-					border: "none",
-					background: T.text,
-					color: T.bg,
-					fontSize: 12,
-					cursor: "pointer",
-					lineHeight: 1,
 				}}
 			>
 				×

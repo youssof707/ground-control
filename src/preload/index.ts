@@ -43,6 +43,8 @@ const claude = {
 	}) => ipcRenderer.invoke("sidequest:start", input),
 	discardSidequest: (parentSessionId: string) =>
 		ipcRenderer.invoke("sidequest:discard", parentSessionId),
+	promoteSidequest: (parentSessionId: string, messageId: string) =>
+		ipcRenderer.invoke("sidequest:promote", { parentSessionId, messageId }),
 	setSessionMode: (sessionId: string, mode: SessionMode) =>
 		ipcRenderer.invoke("session:setMode", { sessionId, mode }),
 	setSessionModel: (sessionId: string, model?: string) =>

@@ -180,9 +180,23 @@ export function registerSessionsHandlers(): SessionManager {
 			return newSession;
 		},
 	);
-	// Sidequests are ephemeral by construction: nothing is written to the
-	// session store, so there is no `state:changed` ping and nothing for other
-	// windows to refetch. The `sidequest:*` broadcasts carry the whole story.
+	// Promote a sidequest into a real session (the panel's Fork action). Unlike
+	// the rest of the sidequest surface this DOES mint a store row, so it pings
+	// `state:changed` exactly like `session:fork`.
+	ipcMain.handle(
+		"sidequest:promote",
+		async (e, payload: { parentSessionId: string; messageId: string }) => {
+			const newSession = await manager.promoteSidequest(
+				payload.parentSessionId,
+				payload.messageId,
+			);
+			broadcast("state:changed", undefined, e.sender.id);
+			return newSession;
+		},
+	);
+	// Starting and discarding, by contrast, write nothing to the session store,
+	// so there is no `state:changed` ping and nothing for other windows to
+	// refetch. The `sidequest:*` broadcasts carry the whole story.
 	ipcMain.handle(
 		"sidequest:start",
 		(

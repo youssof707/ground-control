@@ -14,21 +14,25 @@ export function quoteInline(text: string): string {
 }
 
 /**
- * Append a quoted selection to a session's composer draft, inline.
+ * Append a quoted selection to a composer draft, inline.
+ *
+ * `draftId` is whatever `useDraftStore` is keyed by for that composer: a
+ * session id for the main composer, a sidequest id for the sidequest panel's.
+ * Cmd+R passes either, depending on where the selection was highlighted.
  *
  * Appends rather than replaces: the user may already have typed a question
  * before selecting more evidence, and clobbering that would be hostile.
  * Existing trailing whitespace is trimmed and the quote is joined with a
  * single space — no newlines are introduced either side.
  */
-export function appendQuotedInline(sessionId: string, text: string): void {
+export function appendQuotedInline(draftId: string, text: string): void {
 	const { draftsBySession, setDraftText } = useDraftStore.getState();
-	const existing = draftsBySession[sessionId]?.text ?? "";
+	const existing = draftsBySession[draftId]?.text ?? "";
 	const trimmed = existing.replace(/\s+$/, "");
 	const next = trimmed
 		? `${trimmed} ${quoteInline(text)}`
 		: quoteInline(text);
-	setDraftText(sessionId, next);
+	setDraftText(draftId, next);
 }
 
 /** Ask the main composer to focus (caret at end). */

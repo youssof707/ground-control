@@ -134,7 +134,12 @@ function AssistantMessage({
 					return <RawBlock key={i} block={b} />;
 				})}
 			</div>
-			{canFork || canHandoff ? (
+			{/* "Copy message" needs neither callback, so any reply with text
+			    gets the menu — that's what makes the sidequest panel (which
+			    passes no `onHandoff`, and no `onFork` mid-stream) still offer
+			    Copy. No-op for the main chat, where `canHandoff` is already
+			    exactly `messageText.length > 0`. */}
+			{canFork || canHandoff || messageText.length > 0 ? (
 				<MessageActionsMenu
 					rowHovered={hovered}
 					pending={!!forkPending}
@@ -149,10 +154,11 @@ function AssistantMessage({
 	);
 }
 
-// Rough on-screen height of the open menu panel (3 items × ~26 px + 8 px
-// padding + 1 px border). Used only to decide whether to flip the panel
-// upward when there isn't enough room below the trigger.
-const MENU_ESTIMATED_HEIGHT = 100;
+// Rough on-screen height of the open menu panel (~26 px per item + 8 px
+// padding + 1 px border). Item count varies — the sidequest shows two, the
+// main chat three — and this only decides whether to flip the panel upward
+// when there isn't enough room below the trigger.
+const menuEstimatedHeight = (itemCount: number) => itemCount * 26 + 9;
 const MENU_VIEWPORT_MARGIN = 8;
 const MENU_TRIGGER_GAP = 4;
 
@@ -219,15 +225,16 @@ function MessageActionsMenu({
 		}
 		const rect = triggerRef.current?.getBoundingClientRect();
 		if (rect) {
+			// Copy is always rendered; Fork and Handoff are conditional.
+			const height = menuEstimatedHeight(
+				1 + (showFork ? 1 : 0) + (showHandoff ? 1 : 0),
+			);
 			const wouldOverflowBottom =
-				rect.bottom +
-					MENU_TRIGGER_GAP +
-					MENU_ESTIMATED_HEIGHT +
-					MENU_VIEWPORT_MARGIN >
+				rect.bottom + MENU_TRIGGER_GAP + height + MENU_VIEWPORT_MARGIN >
 				window.innerHeight;
 			setMenuPos({
 				top: wouldOverflowBottom
-					? rect.top - MENU_TRIGGER_GAP - MENU_ESTIMATED_HEIGHT
+					? rect.top - MENU_TRIGGER_GAP - height
 					: rect.bottom + MENU_TRIGGER_GAP,
 				left: rect.left,
 			});

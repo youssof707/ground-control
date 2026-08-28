@@ -1,4 +1,5 @@
 import {
+	deleteSession as sdkDeleteSession,
 	forkSession as sdkForkSession,
 	query,
 	type ModelInfo,
@@ -305,6 +306,72 @@ function firstTextFromBlocks(blocks: UserContentBlock[]): string {
 	return "";
 }
 
+/**
+ * How long to let a sidequest's SDK loop wind down before unlinking its
+ * transcript anyway, and how long the whole quit-time sweep may take. Both are
+ * ceilings on housekeeping — exceeding them leaves an orphaned JSONL in
+ * `~/.claude/projects`, which is untidy but harmless, and is strictly better
+ * than a CLI that won't die holding the app open.
+ */
+const TRANSCRIPT_TEARDOWN_TIMEOUT_MS = 3000;
+const SIDEQUEST_SWEEP_TIMEOUT_MS = 4000;
+
+/**
+ * Run `fn`, and on failure run it once more after a short delay. For racing
+ * the CLI's asynchronous JSONL flush — see the call site in `forkFrom`.
+ */
+async function retryOnce<T>(fn: () => Promise<T>, delayMs = 300): Promise<T> {
+	try {
+		return await fn();
+	} catch {
+		await new Promise((r) => setTimeout(r, delayMs));
+		return await fn();
+	}
+}
+
+/**
+ * Truncate a transcript to (and including) the message at `msgIndex`, plus the
+ * turn-end `result` message that immediately follows when present.
+ *
+ * The SDK emits exactly one `result` per turn, carrying that turn's token
+ * usage; without it a forked session's SessionTokenBar would read 0
+ * (single-turn parent) or miss the latest turn's cost. Result messages render
+ * invisibly, so including it doesn't change the visible chat history.
+ */
+function truncateThrough(
+	messages: SessionMessage[],
+	msgIndex: number,
+): SessionMessage[] {
+	let endIndex = msgIndex + 1;
+	if (endIndex < messages.length && messages[endIndex].role === "result") {
+		endIndex++;
+	}
+	return messages.slice(0, endIndex);
+}
+
+/**
+ * The in-memory record backing a live sidequest. Sidequests have no row in
+ * `claude_sessions.json`, so this is the only place main can answer "what has
+ * this branch actually said?" — which `promoteSidequest` needs in order to
+ * mint a real session out of one.
+ */
+interface SidequestRun {
+	/** The same object runLoop mutates, so `sdkSessionId` stays current. */
+	session: ClaudeSession;
+	parentSessionId: string;
+	/** The parent assistant message this branched from. */
+	forkMessageId: string;
+	/** Every message broadcast on `sidequest:message`, in order, same ids. */
+	messages: SessionMessage[];
+	/**
+	 * Set once this sidequest has been promoted into a persisted session. The
+	 * promoted session's inherited messages still carry the *sidequest's*
+	 * `session_id`, so its SDK transcript has to outlive the discard that
+	 * would normally delete it — see `discardSidequest`.
+	 */
+	promoted?: boolean;
+}
+
 export class SessionManager {
 	private sessions = new Map<string, RunningEntry>();
 	// Tombstones for deleted sessions. Once an id lands here, `send()` drops
@@ -316,6 +383,18 @@ export class SessionManager {
 	// parentSessionId -> sidequestId. At most one sidequest per main session;
 	// purely in-memory, so sidequests die with the process by design.
 	private sidequests = new Map<string, string>();
+	// sidequestId -> everything `promoteSidequest` needs to turn an ephemeral
+	// branch into a real session.
+	//
+	// Deliberately NOT stored on the `RunningEntry`: runLoop's `finally` does
+	// `this.sessions.delete(id)`, so a sidequest whose CLI died would lose its
+	// transcript here while the renderer keeps rendering it — and a dead
+	// sidequest is exactly when someone wants to salvage the conversation.
+	// Cleared by `discardSidequest`, so it's bounded at one entry per parent.
+	private sidequestRuns = new Map<string, SidequestRun>();
+	// In-flight `deleteSdkTranscript` calls, so `discardAllSidequests` can wait
+	// on deletions that `discardSidequest` otherwise fires and forgets.
+	private pendingTranscriptDeletes = new Set<Promise<void>>();
 
 	constructor(private broker: PermissionBroker) {}
 
@@ -526,6 +605,19 @@ export class SessionManager {
 	): Promise<ClaudeSession> {
 		const parent = sessionStore.getSession(parentWrapperId);
 		if (!parent) throw new Error("Parent session not found");
+		return this.forkFrom(parent, wrapperMessageId);
+	}
+
+	/**
+	 * The body of `fork()`, taking the parent as a value rather than reading it
+	 * from the store — so `promoteSidequest` can pass a synthesized parent
+	 * assembled from a live sidequest, which has no store row at all.
+	 */
+	private async forkFrom(
+		parent: ClaudeSessionFull,
+		wrapperMessageId: string,
+		opts?: { title?: string; groupId?: string },
+	): Promise<ClaudeSession> {
 		if (!parent.sdkSessionId) {
 			throw new Error(
 				"This session has no SDK session id yet — wait for Claude's first response before forking.",
@@ -541,21 +633,8 @@ export class SessionManager {
 			wrapperMessageId,
 		);
 
-		// Include the turn-end `result` message that immediately follows the
-		// forked-from assistant, when present. The SDK emits exactly one
-		// `result` per turn, carrying that turn's token usage; without it the
-		// forked session's SessionTokenBar would read 0 (single-turn parent)
-		// or miss the latest turn's cost. Result messages are rendered
-		// invisibly, so this doesn't change the visible chat history.
-		let endIndex = msgIndex + 1;
-		if (
-			endIndex < parent.messages.length &&
-			parent.messages[endIndex].role === "result"
-		) {
-			endIndex++;
-		}
-		const truncated = parent.messages.slice(0, endIndex);
-		const newTitle = `${parent.title} (fork)`;
+		const truncated = truncateThrough(parent.messages, msgIndex);
+		const newTitle = opts?.title ?? `${parent.title} (fork)`;
 
 		// No `dir` option on purpose: when omitted the SDK searches *all* project
 		// directories for the session file. That's load-bearing here — the ancestor
@@ -563,10 +642,18 @@ export class SessionManager {
 		// resolves to today (e.g. a worktree since removed from the registry).
 		let newSdkId: string;
 		try {
-			({ sessionId: newSdkId } = await sdkForkSession(sourceSdkId, {
-				upToMessageId: sdkUuid,
-				title: newTitle,
-			}));
+			// One retry: `sdkForkSession` reads the transcript from disk, but the
+			// CLI writes it asynchronously from the stream we've already relayed
+			// to the renderer. Forking a reply the instant it lands — routine in
+			// the sidequest panel, where the message you just read is the one you
+			// click — can beat the flush. Only the not-yet-there failure is worth
+			// retrying; a genuinely missing transcript fails the same way twice.
+			({ sessionId: newSdkId } = await retryOnce(() =>
+				sdkForkSession(sourceSdkId, {
+					upToMessageId: sdkUuid,
+					title: newTitle,
+				}),
+			));
 		} catch (err) {
 			// Don't retry against parent.sdkSessionId — that's the bug this routing
 			// fixes, and if it ever succeeded it would branch from an unrelated
@@ -613,8 +700,10 @@ export class SessionManager {
 			// run in the same sandbox directory.
 			worktreeId: parent.worktreeId,
 			// Fork also inherits the parent's sidebar group — a fork of a
-			// grouped session lands next to its parent in the sidebar.
-			groupId: parent.groupId,
+			// grouped session lands next to its parent in the sidebar. A
+			// promoted sidequest overrides this with the *main* session's
+			// group, since the synthetic parent has none of its own.
+			groupId: opts?.groupId ?? parent.groupId,
 			// Re-id each entry so they don't collide with the parent's message
 			// ids in the renderer's flat store. Original SDK content and
 			// timestamps are preserved.
@@ -696,12 +785,17 @@ export class SessionManager {
 	 * one of its assistant messages, for asking throw-away questions without
 	 * polluting the main thread's context.
 	 *
-	 * Nothing is persisted — not in `claude_sessions.json` (no
-	 * `sessionStore.createSession`, and `runLoop` runs with `ephemeral: true`)
-	 * and not in `~/.claude/projects` (the SDK runs with
-	 * `persistSession: false`). The only state is the `RunningEntry` in
-	 * `this.sessions` plus the parent→sidequest link in `this.sidequests`,
-	 * both of which vanish on quit.
+	 * Nothing reaches `claude_sessions.json` — no `sessionStore.createSession`,
+	 * and `runLoop` runs with `ephemeral: true`, so the sidebar, inbox and
+	 * badges never learn a sidequest exists. App-side state is the
+	 * `RunningEntry` in `this.sessions`, the parent→sidequest link in
+	 * `this.sidequests`, and the transcript in `this.sidequestRuns` — all
+	 * in-memory, all gone on quit.
+	 *
+	 * The SDK side *is* persisted, though: the branch gets a real transcript in
+	 * `~/.claude/projects`, because `promoteSidequest` forks from it and
+	 * `sdkForkSession` can only read from disk. `discardSidequest` deletes that
+	 * transcript again, so an un-promoted sidequest still leaves no trace.
 	 *
 	 * Because the entry lives in the same map as normal sessions,
 	 * `pushUserMessage`, `interrupt`, `setModel` and `supportedModels` all
@@ -748,7 +842,14 @@ export class SessionManager {
 			worktreeId: parent.worktreeId,
 		};
 
+		// Both maps are set *after* discardSidequest above, which clears them.
 		this.sidequests.set(parentSessionId, sidequestId);
+		this.sidequestRuns.set(sidequestId, {
+			session,
+			parentSessionId,
+			forkMessageId,
+			messages: [],
+		});
 
 		// Don't await — runLoop runs the SDK loop until it ends. Its
 		// synchronous prologue registers the entry and emits
@@ -768,14 +869,16 @@ export class SessionManager {
 
 	/**
 	 * Discard a parent's sidequest: abort its SDK loop, cancel any permission
-	 * prompts it left hanging, and tombstone its id so late SDK events can't
-	 * repopulate the renderer's panel after the user cleared it. No-op when
-	 * the parent has no sidequest.
+	 * prompts it left hanging, tombstone its id so late SDK events can't
+	 * repopulate the renderer's panel after the user cleared it, and delete the
+	 * branch's SDK transcript. No-op when the parent has no sidequest.
 	 */
 	async discardSidequest(parentSessionId: string): Promise<void> {
 		const sidequestId = this.sidequests.get(parentSessionId);
 		if (!sidequestId) return;
 		this.sidequests.delete(parentSessionId);
+		const run = this.sidequestRuns.get(sidequestId);
+		this.sidequestRuns.delete(sidequestId);
 
 		// Broadcast before tombstoning: this payload carries no `sessionId`/`id`
 		// key, so `send()` lets it through either way, but ordering keeps the
@@ -786,6 +889,158 @@ export class SessionManager {
 		// Teardown can take seconds if the CLI is mid-tool; don't make the
 		// caller (and the user's next keystroke) wait on it.
 		void this.cancelAndWait(sidequestId);
+
+		// Reclaim the branch's transcript in ~/.claude/projects. Sidequests run
+		// with `forkSession: true`, which copies the whole parent transcript
+		// prefix into a new file on *every* Cmd+S re-fork — left alone that
+		// grows without bound and clutters the user's `claude --resume` picker.
+		//
+		// Except when it was promoted: the promoted session's inherited
+		// messages still carry this sidequest's `session_id`, so forking again
+		// inside it routes back here (see resolveForkSource). Deleting the file
+		// would self-inflict the exact "transcript may have been deleted or
+		// cleared" failure that function's doc warns about.
+		const sdkId = run?.session.sdkSessionId;
+		if (sdkId && !run?.promoted) {
+			// Tracked rather than plain-`void`ed so the quit sweep below can
+			// actually wait for it — otherwise `app.exit(0)` cuts it off.
+			const p: Promise<void> = this.deleteSdkTranscript(
+				sdkId,
+				sidequestId,
+			).finally(() => this.pendingTranscriptDeletes.delete(p));
+			this.pendingTranscriptDeletes.add(p);
+		}
+	}
+
+	/**
+	 * Best-effort removal of an SDK transcript from `~/.claude/projects`. No
+	 * `dir` on purpose — the SDK then searches every project directory, the
+	 * same reason `sdkForkSession` omits it in `forkFrom`.
+	 *
+	 * Deliberately never throws: this is housekeeping, and failing it should
+	 * not turn a Clear into a visible error. Gives the SDK loop a moment to
+	 * wind down first (the CLI still has the file open, and could recreate it
+	 * after an unlink), but never blocks on it — a wedged CLI must not be able
+	 * to hang the quit sweep below.
+	 */
+	private async deleteSdkTranscript(
+		sdkSessionId: string,
+		wrapperId: string,
+	): Promise<void> {
+		try {
+			const done = this.sessions.get(wrapperId)?.done;
+			if (done) {
+				await Promise.race([
+					done,
+					new Promise((r) => setTimeout(r, TRANSCRIPT_TEARDOWN_TIMEOUT_MS)),
+				]);
+			}
+			await sdkDeleteSession(sdkSessionId);
+		} catch (err) {
+			console.error(
+				`[ccw] failed to delete sidequest SDK transcript ${sdkSessionId}:`,
+				err,
+			);
+		}
+	}
+
+	/**
+	 * Discard every live sidequest and wait for their SDK transcripts to be
+	 * reclaimed. Called on quit: `discardSidequest` alone fires the deletion
+	 * as a floating promise, which the shutdown sequence's `app.exit(0)` would
+	 * cut off, leaking one full transcript copy per open sidequest per run.
+	 *
+	 * Bounded rather than thorough — an unreachable CLI must never be able to
+	 * hold the app open. Anything missed is an orphan in `~/.claude/projects`,
+	 * which is untidy but harmless.
+	 */
+	async discardAllSidequests(): Promise<void> {
+		const parents = [...this.sidequests.keys()];
+		if (parents.length === 0) return;
+		const sweep = (async () => {
+			await Promise.all(parents.map((p) => this.discardSidequest(p)));
+			// discardSidequest only *starts* the transcript deletions.
+			await Promise.all([...this.pendingTranscriptDeletes]);
+		})();
+		await Promise.race([
+			sweep.catch((err) =>
+				console.error("[ccw] sidequest quit sweep failed:", err),
+			),
+			new Promise((r) => setTimeout(r, SIDEQUEST_SWEEP_TIMEOUT_MS)),
+		]);
+	}
+
+	/**
+	 * Promote a sidequest into a real, persisted session: the Fork action in
+	 * the sidequest panel's message menu.
+	 *
+	 * A sidequest is already a fork, so "fork" here can't mean what it means in
+	 * the main chat. It means *keep this* — mint a persisted session carrying
+	 * the conversation through `wrapperMessageId` and leave it live so the user
+	 * can continue in it.
+	 *
+	 * The synthesized parent's transcript is the main thread's history up to
+	 * the branch point followed by the sidequest's own turns. That ordering
+	 * isn't cosmetic: it makes the promoted session's *visible* history match
+	 * its actual *SDK* context, since the sidequest was itself an SDK fork at
+	 * exactly that point.
+	 *
+	 * The sidequest itself survives — same "parent untouched" contract as
+	 * `fork()`, and discarding would silently drop the tail when the user
+	 * promoted from a non-final message.
+	 */
+	async promoteSidequest(
+		parentSessionId: string,
+		wrapperMessageId: string,
+	): Promise<ClaudeSession> {
+		// Resolve through the parent link rather than trusting a sidequest id
+		// from the renderer: a Fork click that raced a Cmd+S re-fork would
+		// otherwise promote a torn-down branch whose transcript we just deleted.
+		const sidequestId = this.sidequests.get(parentSessionId);
+		const run = sidequestId
+			? this.sidequestRuns.get(sidequestId)
+			: undefined;
+		if (!run) {
+			throw new Error(
+				"This sidequest is no longer available — start a new one and try again.",
+			);
+		}
+		if (run.messages.length === 0 || !run.session.sdkSessionId) {
+			throw new Error(
+				"This sidequest hasn't started yet — send a message before forking it into a session.",
+			);
+		}
+
+		// May be undefined if the main session was deleted out from under a
+		// still-running sidequest. Rare (delete/archive both discard first), but
+		// the promotion is still worth completing on the sidequest turns alone.
+		const realParent = sessionStore.getSession(parentSessionId);
+		const forkIndex =
+			realParent?.messages.findIndex((m) => m.id === run.forkMessageId) ?? -1;
+		const prefix =
+			realParent && forkIndex >= 0
+				? truncateThrough(realParent.messages, forkIndex)
+				: [];
+
+		// Not re-id'd here — forkFrom re-ids every copied message anyway.
+		const synthetic: ClaudeSessionFull = {
+			...run.session,
+			messages: [...prefix, ...run.messages],
+		};
+
+		// `wrapperMessageId` is always in the sidequest half, so forkFrom's
+		// truncation yields prefix + sidequest-through-the-click. And
+		// resolveForkSource prefers the target message's own `session_id` over
+		// `parent.sdkSessionId` — which is what routes the SDK fork at the
+		// sidequest's own branch rather than the main thread's. Don't
+		// "simplify" that preference away.
+		const next = await this.forkFrom(synthetic, wrapperMessageId, {
+			title: `${realParent?.title ?? "Sidequest"} (sidequest)`,
+			groupId: realParent?.groupId,
+		});
+		// Now load-bearing for discardSidequest's transcript cleanup.
+		run.promoted = true;
+		return next;
 	}
 
 	getSidequestId(parentSessionId: string): string | undefined {
@@ -1046,16 +1301,20 @@ export class SessionManager {
 					? { resume: cfg.resumeSdkSessionId }
 					: {}),
 				// Sidequest: branch the resumed transcript at a specific message
-				// and fork it into a throw-away SDK session. `forkSession` keeps
-				// the parent's SDK session untouched; `persistSession: false`
-				// keeps the branch out of ~/.claude/projects entirely, so a
-				// sidequest leaves no trace anywhere once the app exits.
+				// and fork it into its own SDK session, leaving the parent's
+				// untouched.
+				//
+				// The branch *is* persisted to ~/.claude/projects (no
+				// `persistSession: false`), even though the sidequest is
+				// ephemeral everywhere else. `sdkForkSession` can only read a
+				// transcript from disk, so promoting a sidequest into a real
+				// session (promoteSidequest) is impossible without it.
+				// discardSidequest deletes the file again, so an un-promoted
+				// sidequest still leaves nothing behind.
 				...(cfg.resumeSessionAt
 					? { resumeSessionAt: cfg.resumeSessionAt }
 					: {}),
-				...(cfg.ephemeral
-					? { forkSession: true, persistSession: false }
-					: {}),
+				...(cfg.ephemeral ? { forkSession: true } : {}),
 			};
 
 			const q = query({ prompt: userStream(), options });
@@ -1226,7 +1485,15 @@ export class SessionManager {
 					sessionId: id,
 					message: sessionMessage,
 				});
-				if (persist) void sessionStore.appendMessage(id, sessionMessage);
+				if (persist) {
+					void sessionStore.appendMessage(id, sessionMessage);
+				} else {
+					// A sidequest has no store row, so this map is main's only
+					// copy of the transcript — and promoteSidequest needs it to
+					// build the promoted session's history. Same object, same
+					// id, as the one the renderer just received.
+					this.sidequestRuns.get(id)?.messages.push(sessionMessage);
+				}
 			}
 
 			if (abort.signal.aborted) {
@@ -1290,17 +1557,22 @@ export class SessionManager {
 		// panel's transcript is fed entirely by `sidequest:*` events.
 		if (entry.ephemeral) {
 			entry.pushTurn(blocks);
+			const userMessage: SessionMessage = {
+				id: randomUUID(),
+				role: "user",
+				content: {
+					type: "user",
+					message: { role: "user", content: blocks },
+				},
+				ts: Date.now(),
+			};
+			// Kept in main's copy of the transcript too — the id has to be the
+			// same one the renderer sees, because a Fork click sends a
+			// SessionMessage.id back for promoteSidequest to look up.
+			this.sidequestRuns.get(sessionId)?.messages.push(userMessage);
 			this.send("sidequest:message", {
 				sessionId,
-				message: {
-					id: randomUUID(),
-					role: "user",
-					content: {
-						type: "user",
-						message: { role: "user", content: blocks },
-					},
-					ts: Date.now(),
-				} satisfies SessionMessage,
+				message: userMessage,
 			});
 			return;
 		}

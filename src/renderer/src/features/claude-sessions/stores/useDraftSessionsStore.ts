@@ -74,6 +74,11 @@ interface State {
 		defaultTitle: string;
 		mode?: SessionMode;
 		worktreeId?: string;
+		/** Sidebar group the draft is filed into at birth. Seeded by the group
+		 * header's "+" so the row lands inside that group's box and the real
+		 * session is BORN in the group on first send — same "born-with, not
+		 * set post-hoc" rule the handoff flow relies on. */
+		groupId?: string;
 	}) => DraftSession;
 	// The patch type intentionally allows `worktreeId: undefined`,
 	// `model: undefined`, `groupId: undefined`, and
@@ -103,7 +108,7 @@ export function isDraftId(id: string | undefined | null): id is string {
 
 export const useDraftSessionsStore = create<State>((set) => ({
 	draft: null,
-	createDraft: ({ cwd, defaultTitle, mode = "plan", worktreeId }) => {
+	createDraft: ({ cwd, defaultTitle, mode = "plan", worktreeId, groupId }) => {
 		const draft: DraftSession = {
 			id: `draft-${crypto.randomUUID()}`,
 			cwd,
@@ -112,6 +117,7 @@ export const useDraftSessionsStore = create<State>((set) => ({
 			mode,
 			createdAt: Date.now(),
 			worktreeId,
+			groupId,
 		};
 		set({ draft });
 		return draft;

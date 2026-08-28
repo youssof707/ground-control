@@ -360,6 +360,17 @@ app.on("will-quit", (event) => {
 		} catch (err) {
 			console.error("[ccw] error flushing store:", err);
 		}
+		// Sidequests are ephemeral app-side but their SDK branches are real
+		// transcripts on disk (SessionManager.startSidequest explains why).
+		// Reclaim them here — `discardSidequest` fires the deletion as a
+		// floating promise that `app.exit(0)` below would otherwise cut off,
+		// leaking one full transcript copy per open sidequest per run.
+		// Internally time-boxed, so a wedged CLI can't hold the app open.
+		try {
+			await sessionManager?.discardAllSidequests();
+		} catch (err) {
+			console.error("[ccw] error discarding sidequests:", err);
+		}
 		app.exit(0);
 	})();
 });

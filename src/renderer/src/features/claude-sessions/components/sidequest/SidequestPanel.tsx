@@ -7,10 +7,8 @@ import {
 	useState,
 	type PointerEvent as ReactPointerEvent,
 } from "react";
-import type {
-	SessionMode,
-	UserContentBlock,
-} from "@shared/claude-sessions/types";
+import { useNavigate } from "react-router-dom";
+import type { SessionMode } from "@shared/claude-sessions/types";
 import {
 	deriveDisplayedModel,
 	formatModelName,
@@ -24,17 +22,21 @@ import {
 } from "../../stores/useSidequestsStore";
 import { groupMessagesIntoUnits } from "../../lib/groupMessages";
 import { lastForkableMessageId } from "../../lib/sidequestForkPoint";
+import { buildUserBlocks } from "../../lib/composerImages";
+import { useComposerImages } from "../../hooks/useComposerImages";
 import {
 	openSidequestPanelAndFocus,
 	recreateSidequest,
 } from "../../lib/sidequestActions";
 import { MessageView } from "../MessageView";
+import { ActivityChip } from "../ActivityChip";
 import { ToolRunGroup } from "../ToolRunGroup";
 import { PermissionCard } from "../PermissionCard";
 import { ModelPickerModal } from "../ModelPickerModal";
 import { DictationButton, type DictationHandle } from "../DictationButton";
+import { PendingImageStrip } from "../PendingImageThumb";
 import { T } from "../../../../design/tokens";
-import { ModeToggle } from "../../../../design/Atoms";
+import { ModeToggle, StatusPill } from "../../../../design/Atoms";
 
 /**
  * The sidequest transcript + composer. Wrapped by `SidequestSidebarShell`,
@@ -58,6 +60,9 @@ export function SidequestPanel({
 	const sq = useSidequestsStore((s) => s.byParent[sessionId]);
 	const focusNonce = useSidequestsStore((s) => s.focusNonce);
 	const [clearing, setClearing] = useState(false);
+	const [forkingId, setForkingId] = useState<string | null>(null);
+	const [forkError, setForkError] = useState<string | null>(null);
+	const navigate = useNavigate();
 
 	const units = useMemo(
 		() => groupMessagesIntoUnits(sq?.messages ?? []),
@@ -88,6 +93,45 @@ export function SidequestPanel({
 		() => !!lastForkableMessageId(parentMessages ?? []),
 		[parentMessages],
 	);
+
+	/**
+	 * Fork a sidequest reply into a real session and go there. Main does the
+	 * work (`promoteSidequest`): the new session carries the main thread's
+	 * history through the branch point plus the sidequest's turns through this
+	 * reply, and is left live so the composer works on arrival.
+	 *
+	 * `useCallback` is load-bearing — `MessageView` is memoized, and an
+	 * unstable `onFork` would re-run rehype-highlight across the whole
+	 * transcript on every keystroke in the composer.
+	 */
+	const fork = useCallback(
+		async (messageId: string) => {
+			if (forkingId) return;
+			setForkingId(messageId);
+			setForkError(null);
+			try {
+				const next = await window.claude.promoteSidequest(
+					sessionId,
+					messageId,
+				);
+				// Only on success — a failure has to stay readable in the panel
+				// we're still standing in.
+				navigate(`/sessions/${next.id}`);
+			} catch (err) {
+				setForkError(err instanceof Error ? err.message : String(err));
+			} finally {
+				setForkingId(null);
+			}
+		},
+		[forkingId, sessionId, navigate],
+	);
+
+	// Forking mid-stream would silently drop everything that lands after the
+	// click, and `promoteSidequest` ends by resuming the new session — a second
+	// CLI process in the same worktree while this one is still mid-tool.
+	// Withholding `onFork` leaves Copy message reachable (see MessageView).
+	const canFork =
+		!!sq && sq.status !== "running" && sq.status !== "starting";
 
 	// Serves both the header's Clear button (discard + re-fork) and the empty
 	// state's Start button (plain fork) — the underlying action is identical:
@@ -125,187 +169,264 @@ export function SidequestPanel({
 					flexShrink: 0,
 					padding: "20px 20px 16px",
 					display: "flex",
-					alignItems: "flex-start",
-					justifyContent: "space-between",
-					gap: 12,
+					flexDirection: "column",
+					gap: 8,
 				}}
 			>
-				<h1
+				{/* Row 1: title + actions. Row 2 below: status chip — same
+				    title-then-status stacking as SessionChat's header and the
+				    sidebar rows, so a sidequest reads like a real session. */}
+				<div
 					style={{
-						margin: 0,
-						fontSize: 20,
-						fontWeight: 600,
-						color: T.text,
-						letterSpacing: "-0.3px",
+						display: "flex",
+						alignItems: "flex-start",
+						justifyContent: "space-between",
+						gap: 12,
 					}}
 				>
-					Sidequest
-				</h1>
-				<div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-					<button
-						type="button"
-						onClick={startFresh}
-						disabled={clearing || !sq}
+					<h1
 						style={{
-							padding: "6px 12px",
-							borderRadius: 8,
-							border: `0.5px solid ${T.border}`,
-							background: T.surface,
-							color: sq ? T.text : T.textFaint,
-							fontSize: 12.5,
-							fontWeight: 500,
-							cursor: sq && !clearing ? "pointer" : "default",
-							fontFamily: T.sans,
+							margin: 0,
+							fontSize: 20,
+							fontWeight: 600,
+							color: T.text,
+							letterSpacing: "-0.3px",
 						}}
 					>
-						Clear
-					</button>
-					<button
-						type="button"
-						onClick={onClose}
-						aria-label="Close sidequest"
-						style={{
-							flexShrink: 0,
-							width: 28,
-							height: 28,
-							borderRadius: 8,
-							border: `0.5px solid ${T.border}`,
-							background: T.surface,
-							color: T.textDim,
-							cursor: "pointer",
-							display: "inline-flex",
-							alignItems: "center",
-							justifyContent: "center",
-						}}
-					>
-						<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-							<path
-								d="M3 3l6 6M9 3l-6 6"
-								stroke="currentColor"
-								strokeWidth="1.5"
-								strokeLinecap="round"
-							/>
-						</svg>
-					</button>
+						Sidequest
+					</h1>
+					<div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+						<button
+							type="button"
+							onClick={startFresh}
+							disabled={clearing || !sq}
+							style={{
+								padding: "6px 12px",
+								borderRadius: 8,
+								border: `0.5px solid ${T.border}`,
+								background: T.surface,
+								color: sq ? T.text : T.textFaint,
+								fontSize: 12.5,
+								fontWeight: 500,
+								cursor: sq && !clearing ? "pointer" : "default",
+								fontFamily: T.sans,
+							}}
+						>
+							Clear
+						</button>
+						<button
+							type="button"
+							onClick={onClose}
+							aria-label="Close sidequest"
+							style={{
+								flexShrink: 0,
+								width: 28,
+								height: 28,
+								borderRadius: 8,
+								border: `0.5px solid ${T.border}`,
+								background: T.surface,
+								color: T.textDim,
+								cursor: "pointer",
+								display: "inline-flex",
+								alignItems: "center",
+								justifyContent: "center",
+							}}
+						>
+							<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+								<path
+									d="M3 3l6 6M9 3l-6 6"
+									stroke="currentColor"
+									strokeWidth="1.5"
+									strokeLinecap="round"
+								/>
+							</svg>
+						</button>
+					</div>
 				</div>
-			</header>
-
-			<div
-				ref={scrollRef}
-				style={{
-					flex: 1,
-					overflow: "auto",
-					minHeight: 0,
-					minWidth: 0,
-					padding: "0 16px 16px",
-				}}
-			>
-				{!sq ? (
+				{sq ? (
 					<div
 						style={{
-							padding: "20px 8px",
 							display: "flex",
-							flexDirection: "column",
 							alignItems: "center",
-							gap: 12,
+							flexWrap: "wrap",
+							gap: 10,
 						}}
 					>
-						{canStart ? (
-							<button
-								type="button"
-								onClick={() => void startFresh()}
-								disabled={clearing}
-								style={{
-									padding: "6px 12px",
-									borderRadius: 8,
-									border: `0.5px solid ${T.border}`,
-									background: T.surface,
-									color: T.text,
-									fontSize: 12.5,
-									fontWeight: 500,
-									cursor: clearing ? "default" : "pointer",
-									fontFamily: T.sans,
-								}}
-							>
-								{clearing ? "Branching…" : "Start sidequest"}
-							</button>
-						) : null}
+						{/* Same pair of states the sidebar rows show: a pending
+						    permission wins as "waiting for input" (orange), and
+						    "starting" renders as running — branching is activity.
+						    `sq.status` itself never carries awaiting_permission;
+						    main only emits running/idle, so it's derived from the
+						    permission queue exactly like everywhere else. */}
+						<StatusPill
+							status={
+								pending.length > 0
+									? "awaiting_permission"
+									: sq.status === "starting"
+										? "running"
+										: sq.status
+							}
+						/>
+					</div>
+				) : null}
+			</header>
+
+			{/* Transcript (with floating chip overlay) — same structure as
+			    SessionChat: the scroll area fills a relative wrapper, and the
+			    ActivityChip floats over its bottom-right corner. */}
+			<div
+				style={{
+					flex: 1,
+					minHeight: 0,
+					minWidth: 0,
+					position: "relative",
+					display: "flex",
+					flexDirection: "column",
+				}}
+			>
+				<div
+					ref={scrollRef}
+					style={{
+						flex: 1,
+						overflow: "auto",
+						minHeight: 0,
+						minWidth: 0,
+						padding: "0 16px 16px",
+					}}
+				>
+					{!sq ? (
 						<div
 							style={{
-								fontSize: 12.5,
-								color: T.textMute,
-								textAlign: "center",
-								lineHeight: 1.6,
+								padding: "20px 8px",
+								display: "flex",
+								flexDirection: "column",
+								alignItems: "center",
+								gap: 12,
 							}}
 						>
 							{canStart ? (
-								<>
-									Select text in the conversation and press ⌘S to ask about
-									it without touching the main thread. Press ⌘S with nothing
-									selected to branch from the last reply.
-								</>
-							) : (
-								<>
-									Waiting for Claude&rsquo;s first reply — sidequests branch
-									from an assistant message.
-								</>
+								<button
+									type="button"
+									onClick={() => void startFresh()}
+									disabled={clearing}
+									style={{
+										padding: "6px 12px",
+										borderRadius: 8,
+										border: `0.5px solid ${T.border}`,
+										background: T.surface,
+										color: T.text,
+										fontSize: 12.5,
+										fontWeight: 500,
+										cursor: clearing ? "default" : "pointer",
+										fontFamily: T.sans,
+									}}
+								>
+									{clearing ? "Branching…" : "Start sidequest"}
+								</button>
+							) : null}
+							<div
+								style={{
+									fontSize: 12.5,
+									color: T.textMute,
+									textAlign: "center",
+									lineHeight: 1.6,
+								}}
+							>
+								{canStart ? (
+									<>
+										Select text in the conversation and press ⌘S to ask about
+										it without touching the main thread. Press ⌘S with nothing
+										selected to branch from the last reply.
+									</>
+								) : (
+									<>
+										Waiting for Claude&rsquo;s first reply — sidequests branch
+										from an assistant message.
+									</>
+								)}
+							</div>
+						</div>
+					) : (
+						<>
+							{sq.error || forkError ? (
+								<div
+									style={{
+										fontSize: 12,
+										color: T.danger,
+										background: T.dangerSoft,
+										border: `0.5px solid ${T.dangerBorder}`,
+										padding: 10,
+										borderRadius: 8,
+										marginBottom: 12,
+									}}
+								>
+									{sq.error || forkError}
+								</div>
+							) : null}
+							{units.map((u) =>
+								u.kind === "toolRun" ? (
+									<ToolRunGroup key={u.key} entries={u.entries} />
+								) : (
+								// `onFork` here means "promote this branch into a
+								// real session" — a sidequest is already a fork, so
+								// the main chat's meaning doesn't apply. No
+								// `onHandoff`: promoting is the better version of it.
+									<MessageView
+										key={u.message.id}
+										m={u.message}
+										onFork={canFork ? fork : undefined}
+										forkPending={forkingId === u.message.id}
+									/>
+								),
 							)}
+							{pending.length > 0 ? (
+								<div
+									style={{
+										display: "flex",
+										flexDirection: "column",
+										gap: 12,
+										margin: "12px 0",
+									}}
+								>
+									{pending.map((p) => (
+										<PermissionCard key={p.requestId} req={p} />
+									))}
+								</div>
+							) : null}
+						</>
+					)}
+				</div>
+
+				{/* Same working indicator as the main thread — identical chip,
+			    identical bottom-right float. "starting" shows it too: branching
+			    is activity, and the chip's elapsed clock runs off `createdAt`
+			    until the first message lands. Hidden while a permission card is
+			    up (the chip nulls itself on `hasPending`), matching SessionChat. */}
+				{sq && (sq.status === "running" || sq.status === "starting") ? (
+					<div
+						style={{
+							position: "absolute",
+							left: 0,
+							right: 0,
+							bottom: 0,
+							padding: "0 16px 4px",
+							display: "flex",
+							justifyContent: "flex-end",
+							pointerEvents: "none",
+						}}
+					>
+						<div style={{ pointerEvents: "auto" }}>
+							<ActivityChip
+								session={{
+									messages: sq.messages,
+									createdAt: sq.createdAt,
+									status: sq.status,
+								}}
+								hasPending={pending.length > 0}
+							/>
 						</div>
 					</div>
-				) : (
-					<>
-						{sq.error ? (
-							<div
-								style={{
-									fontSize: 12,
-									color: T.danger,
-									background: T.dangerSoft,
-									border: `0.5px solid ${T.dangerBorder}`,
-									padding: 10,
-									borderRadius: 8,
-									marginBottom: 12,
-								}}
-							>
-								{sq.error}
-							</div>
-						) : null}
-						{units.map((u) =>
-							u.kind === "toolRun" ? (
-								<ToolRunGroup key={u.key} entries={u.entries} />
-							) : (
-								// No `onFork` — a sidequest is already a fork, and
-								// forking one into a persisted session isn't a flow
-								// this panel offers.
-								<MessageView key={u.message.id} m={u.message} />
-							),
-						)}
-						{pending.length > 0 ? (
-							<div
-								style={{
-									display: "flex",
-									flexDirection: "column",
-									gap: 12,
-									margin: "12px 0",
-								}}
-							>
-								{pending.map((p) => (
-									<PermissionCard key={p.requestId} req={p} />
-								))}
-							</div>
-						) : null}
-						{sq.status === "starting" || sq.status === "running" ? (
-							<div
-								style={{
-									fontSize: 12,
-									color: T.textMute,
-									padding: "8px 4px",
-								}}
-							>
-								{sq.status === "starting" ? "Branching…" : "Working…"}
-							</div>
-						) : null}
-					</>
-				)}
+				) : null}
 			</div>
 
 			{sq ? <SidequestComposer sq={sq} focusNonce={focusNonce} /> : null}
@@ -342,11 +463,21 @@ function SidequestComposer({
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 	const dictationRef = useRef<DictationHandle>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [sending, setSending] = useState(false);
 	const [dictating, setDictating] = useState(false);
 	const [modeSwitching, setModeSwitching] = useState(false);
 	const [pickerOpen, setPickerOpen] = useState(false);
 	const [modelHover, setModelHover] = useState(false);
 	const [interrupting, setInterrupting] = useState(false);
+	// Paste-to-attach, the same hook (and therefore the same draft-store
+	// backing) the main composer uses — keyed by the sidequest id.
+	const { images, onPaste, removeImage } = useComposerImages(
+		sidequestId,
+		setError,
+	);
+	// Images alone are a valid message: a screenshot with no question is the
+	// most common sidequest paste.
+	const canSend = !!text.trim() || images.length > 0;
 
 	// Same stream-derived label the main chat's token bar shows: the model
 	// *actually* answering, not just the requested override, so a CLI-side
@@ -537,19 +668,28 @@ function SidequestComposer({
 	}, [focusNonce, sidequestId]);
 
 	const send = async () => {
+		if (sending || !canSend) return;
 		const trimmed = text.trim();
-		if (!trimmed) return;
-		const blocks: UserContentBlock[] = [{ type: "text", text: trimmed }];
+		const blocks = buildUserBlocks(text, images);
+		// Captured before clearDraft wipes the store entry — the restore path
+		// below has to put images back too, not just the text.
+		const sentImages = images;
 		// Clear optimistically — the turn comes back to the transcript via the
 		// `sidequest:message` broadcast main fires from `pushUserMessage`.
 		useDraftStore.getState().clearDraft(sidequestId);
+		setSending(true);
 		setError(null);
 		try {
 			await window.claude.sendUserMessage({ sessionId: sidequestId, blocks });
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
-			// Put the text back so it isn't lost.
+			// Put the whole draft back so nothing is lost — losing a multi-MB
+			// pasted screenshot to a transient IPC failure is not recoverable.
+			// Both setters re-read the current draft, so the order is safe.
+			useDraftStore.getState().setDraftImages(sidequestId, sentImages);
 			useDraftStore.getState().setDraftText(sidequestId, trimmed);
+		} finally {
+			setSending(false);
 		}
 	};
 
@@ -671,12 +811,27 @@ function SidequestComposer({
 							<span>{interrupting ? "Stopping…" : "Stop"}</span>
 						</button>
 					) : null}
+					{/* Same placement as the main composer: thumbnails sit above
+					    the textarea, inside the input box. Smaller here because
+					    the panel goes as narrow as SIDEQUEST_MIN_WIDTH (280px).
+					    The right inset keeps the last thumbnail's "×" clear of
+					    the Stop button floating in that corner — staging a
+					    follow-up while Claude is still working is normal here. */}
+					<div style={{ paddingRight: running ? 64 : 0 }}>
+						<PendingImageStrip
+							images={images}
+							size={48}
+							onRemove={removeImage}
+							onError={setError}
+						/>
+					</div>
 					<textarea
 						ref={textareaRef}
 						value={text}
 						onChange={(e) =>
 							useDraftStore.getState().setDraftText(sidequestId, e.target.value)
 						}
+						onPaste={onPaste}
 						onKeyDown={(e) => {
 							if (e.key === "Enter" && !e.shiftKey) {
 								e.preventDefault();
@@ -737,16 +892,17 @@ function SidequestComposer({
 					<button
 						type="button"
 						onClick={() => void send()}
-						disabled={!text.trim()}
+						disabled={!canSend || sending}
 						style={{
 							padding: "6px 14px",
 							borderRadius: 8,
-							border: `0.5px solid ${text.trim() ? T.accentBorder : T.border}`,
-							background: text.trim() ? T.accentSoft : T.surface,
-							color: text.trim() ? T.text : T.textFaint,
+							border: `0.5px solid ${canSend ? T.accentBorder : T.border}`,
+							background: canSend ? T.accentSoft : T.surface,
+							color: canSend ? T.text : T.textFaint,
 							fontSize: 12.5,
 							fontWeight: 500,
-							cursor: text.trim() ? "pointer" : "default",
+							cursor: canSend && !sending ? "pointer" : "default",
+							opacity: sending ? 0.55 : 1,
 							fontFamily: T.sans,
 						}}
 					>
