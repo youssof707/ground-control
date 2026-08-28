@@ -364,10 +364,10 @@ export function ImagePasteTextarea({
 	};
 
 	// Queue-message (the split-button's dropup menu action). Only offered
-	// while running and only ever leaves the composer with one queued
-	// message at a time — see the disabled state on the menu item below.
-	// Never touches IPC: useQueuedMessageFlusher fires this once the
-	// session's current turn is completely done.
+	// while running; can be used repeatedly — messages append to the
+	// session's FIFO and render as a horizontal chip strip above the
+	// composer. Never touches IPC: useQueuedMessageFlusher fires these one
+	// per turn as each of the session's turns completes.
 	const queueMessage = () => {
 		if (!text.trim() && images.length === 0) return;
 		const blocks = buildUserBlocks(text, images);
@@ -483,9 +483,6 @@ export function ImagePasteTextarea({
 	};
 
 	const canSend = !!(text.trim() || images.length > 0);
-	// One-at-a-time in the UI today — the store is a FIFO array so a future
-	// multi-queue UI is a pure UI-layer change (drop this check).
-	const hasQueuedMessage = queuedMessages.length > 0;
 
 	const sendAriaLabel =
 		branchStale && lastUserMessageBranch
@@ -593,17 +590,22 @@ export function ImagePasteTextarea({
 					<div
 						style={{
 							display: "flex",
-							flexDirection: "column",
-							alignItems: "flex-start",
 							gap: 6,
 							marginBottom: 10,
+							overflowX: "auto",
+							// The global ::-webkit-scrollbar is 10px tall — chunky next
+							// to 22px chips, so this strip asks for the thin variant.
+							scrollbarWidth: "thin",
 						}}
 					>
-						{queuedMessages.map((msg) => (
+						{queuedMessages.map((msg, i) => (
 							<QueuedMessageChip
 								key={msg.id}
 								message={msg}
-								error={queueError}
+								// A failed flush unshifts the message back to the head and
+								// holds the queue, so the error belongs to the first chip
+								// only — the rest are just waiting behind it.
+								error={i === 0 ? queueError : undefined}
 								onCancel={() =>
 									useQueuedMessagesStore.getState().cancel(sessionId, msg.id)
 								}
@@ -770,23 +772,10 @@ export function ImagePasteTextarea({
 										boxShadow: "0 -8px 24px rgba(0,0,0,0.18)",
 									}}
 								>
-									{hasQueuedMessage ? (
-										<div
-											style={{
-												padding: "6px 10px",
-												fontSize: 12,
-												color: T.textFaint,
-												maxWidth: 220,
-											}}
-										>
-											A message is already queued for this session.
-										</div>
-									) : (
-										<SendMenuItem
-											label="Queue message"
-											onClick={queueMessage}
-										/>
-									)}
+									<SendMenuItem
+										label="Queue message"
+										onClick={queueMessage}
+									/>
 								</div>
 							) : null}
 						</div>
@@ -897,7 +886,9 @@ function QueuedMessageChip({
 				display: "inline-flex",
 				alignItems: "center",
 				gap: 6,
-				maxWidth: "100%",
+				// Chips live in a horizontal scroller — keep intrinsic width and
+				// overflow into the scroll instead of squishing to fit.
+				flexShrink: 0,
 				height: 22,
 				padding: "0 4px 0 8px",
 				borderRadius: 5,
