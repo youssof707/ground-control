@@ -569,6 +569,32 @@ function SidequestComposer({
 		return () => window.removeEventListener("keydown", onWindowKeyDown, true);
 	}, [dictating]);
 
+	// Escape discards an in-progress recording — nothing is transcribed or
+	// inserted. Same guards as the Enter listener above, and it only swallows
+	// the key when a recording was actually cancelled, so Escape still reaches
+	// modals and context menus the rest of the time.
+	useEffect(() => {
+		if (!dictating) return;
+		const onWindowKeyDown = (e: globalThis.KeyboardEvent) => {
+			if (e.key !== "Escape") return;
+			if (e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+			const target = e.target as HTMLElement | null;
+			if (
+				target
+				&& target !== textareaRef.current
+				&& (target.isContentEditable
+					|| ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+			) {
+				return;
+			}
+			if (!dictationRef.current?.cancelIfRecording()) return;
+			e.preventDefault();
+			e.stopPropagation();
+		};
+		window.addEventListener("keydown", onWindowKeyDown, true);
+		return () => window.removeEventListener("keydown", onWindowKeyDown, true);
+	}, [dictating]);
+
 	// ── Resize model — identical to SessionChat's chat input ────────────────
 	// `inputHeight` is the single source of truth for the rendered height,
 	// updated by either (1) the drag handle, any direction, set directly, or
@@ -884,7 +910,7 @@ function SidequestComposer({
 					<div style={{ flex: 1, minWidth: 0 }} />
 					{dictating ? (
 						<span style={{ fontSize: 11, color: T.textFaint }}>
-							↵ to finish
+							↵ finish · esc cancel
 						</span>
 					) : null}
 				</div>

@@ -13,6 +13,7 @@ import { useSettingsStore } from "../stores/useSettingsStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { useSessionGroupsStore } from "../stores/useSessionGroupsStore";
 import { useShortcutsStore } from "../stores/useShortcutsStore";
+import { useSkillsStore } from "../stores/useSkillsStore";
 import { useSidequestsStore } from "../stores/useSidequestsStore";
 import {
 	useRateLimitStore,
@@ -48,6 +49,7 @@ export function useSessionsBootstrap() {
 			worktrees: 0,
 			groups: 0,
 			shortcuts: 0,
+			skills: 0,
 		};
 
 		async function refetchSessions(): Promise<void> {
@@ -107,6 +109,22 @@ export function useSessionsBootstrap() {
 			useShortcutsStore.getState().hydrate(list);
 		}
 
+		async function refetchSkills(): Promise<void> {
+			const my = ++seq.skills;
+			// Unlike the store-backed domains this reads the user's
+			// ~/.claude/skills directory, which can fail transiently — log
+			// and keep the in-memory list rather than wiping it.
+			let list;
+			try {
+				list = await window.claude.listSkills();
+			} catch (err) {
+				console.error("[ccw] skills refetch failed", err);
+				return;
+			}
+			if (my !== seq.skills) return;
+			useSkillsStore.getState().hydrate(list);
+		}
+
 		function refetchAll(): void {
 			void refetchSessions();
 			void refetchReadState();
@@ -116,6 +134,7 @@ export function useSessionsBootstrap() {
 			void refetchWorktrees();
 			void refetchGroups();
 			void refetchShortcuts();
+			void refetchSkills();
 		}
 
 		// CRITICAL ORDERING: register the per-event listeners FIRST so that

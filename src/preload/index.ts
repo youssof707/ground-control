@@ -120,6 +120,7 @@ const claude = {
 	updateShortcut: (input: UpdateShortcutInput) =>
 		ipcRenderer.invoke("shortcuts:update", input),
 	deleteShortcut: (id: string) => ipcRenderer.invoke("shortcuts:delete", id),
+	listSkills: () => ipcRenderer.invoke("skills:list"),
 	getAppInfo: () => ipcRenderer.invoke("appInfo:get"),
 	toggleDevTools: () => ipcRenderer.invoke("devtools:toggle"),
 	checkForUpdate: () => ipcRenderer.invoke("updater:check"),

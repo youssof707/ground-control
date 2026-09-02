@@ -1,37 +1,50 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { Shortcut } from "@shared/schemas/shortcuts";
+import type { Skill } from "@shared/schemas/skills";
 import { T } from "../../../design/tokens";
 import { useShortcutsStore } from "../stores/useShortcutsStore";
-import { shortcutLabel } from "./ShortcutForm";
+import { useSkillsStore } from "../stores/useSkillsStore";
+import { promptPreview, shortcutLabel } from "./ShortcutForm";
 import { CreateShortcutModal } from "./CreateShortcutModal";
 import { EditShortcutsModal } from "./EditShortcutsModal";
 
+type Tab = "skills" | "shortcuts";
+
 /**
- * The single shortcuts ⚡ menu, used both by the sidebar (where running a
- * shortcut starts a new session) and by the composer footer (where running
- * a shortcut appends into the session you're already in). Same model, same
- * list, same create/edit modals — only the panel's anchor direction and the
- * trigger button's styling differ per call site, via props.
+ * The single shortcuts ⚡ launcher, used both by the sidebar (where running
+ * an entry starts a new session) and by the composer footer (where running
+ * an entry inserts into the session you're already in). Clicking the bolt
+ * opens a two-tab modal:
+ *
+ * - "Skills" (default): the user's personal global Claude skills from
+ *   `~/.claude/skills/` — clicking one inserts its `/name` slash command.
+ *   Every open kicks off an async re-read of the directory; the in-memory
+ *   list renders immediately with a spinner beside the tabs while the
+ *   refresh is in flight (never block on disk).
+ * - "Shortcuts": the saved reusable prompts, with the create/edit entry
+ *   points living inside the modal. Create/Edit close this modal before
+ *   opening theirs (no stacked backdrops or dueling Escape handlers).
  */
 export function ShortcutsMenuButton({
-	placement,
 	buttonClassName,
 	buttonStyle,
 	disabled,
 	onRun,
+	onRunSkill,
 }: {
-	/** Which way the panel opens: "down" from a header-row button, "up" from
-	 * a composer pinned to the bottom of the window. Both variants anchor
-	 * their right edge to the button's right edge. */
-	placement: "down" | "up";
 	buttonClassName: string;
 	buttonStyle?: CSSProperties;
 	disabled?: boolean;
 	onRun: (sc: Shortcut) => void;
+	onRunSkill: (skill: Skill) => void;
 }) {
 	const [open, setOpen] = useState(false);
+	const [tab, setTab] = useState<Tab>("skills");
+	const [refreshing, setRefreshing] = useState(false);
 	const [creating, setCreating] = useState(false);
 	const [editing, setEditing] = useState(false);
+
+	const skills = useSkillsStore((s) => s.skills);
 	const shortcutsById = useShortcutsStore((s) => s.shortcuts);
 	const shortcuts = useMemo(
 		() =>
@@ -42,34 +55,56 @@ export function ShortcutsMenuButton({
 			),
 		[shortcutsById],
 	);
-	const ref = useRef<HTMLDivElement>(null);
 
+	// Reset to the default tab on every open.
 	useEffect(() => {
 		if (!open) return;
-		const onDocClick = (e: MouseEvent) => {
-			if (ref.current && !ref.current.contains(e.target as Node)) {
-				setOpen(false);
-			}
-		};
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") setOpen(false);
-		};
-		document.addEventListener("mousedown", onDocClick);
-		document.addEventListener("keydown", onKey);
+		setTab("skills");
+	}, [open]);
+
+	// Open-triggered async skills refresh: hydrate the shared store when it
+	// lands, keep the stale list on failure. `stale` guards against the
+	// modal closing (or reopening) before the invoke settles.
+	useEffect(() => {
+		if (!open) return;
+		let stale = false;
+		setRefreshing(true);
+		window.claude
+			.listSkills()
+			.then((list) => {
+				if (!stale) useSkillsStore.getState().hydrate(list);
+			})
+			.catch((err) => console.error("[ccw] skills refresh failed", err))
+			.finally(() => {
+				if (!stale) setRefreshing(false);
+			});
 		return () => {
-			document.removeEventListener("mousedown", onDocClick);
-			document.removeEventListener("keydown", onKey);
+			stale = true;
 		};
 	}, [open]);
 
+	// Escape closes. Only bound while open, so it can't fight the
+	// Create/Edit modals' own handlers (those open after this closes).
+	useEffect(() => {
+		if (!open) return;
+		const handler = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				e.preventDefault();
+				setOpen(false);
+			}
+		};
+		window.addEventListener("keydown", handler);
+		return () => window.removeEventListener("keydown", handler);
+	}, [open]);
+
 	return (
-		<div ref={ref} style={{ position: "relative" }}>
+		<>
 			<button
 				type="button"
 				className={buttonClassName}
-				onClick={() => setOpen((o) => !o)}
+				onClick={() => setOpen(true)}
 				disabled={disabled}
-				aria-haspopup="menu"
+				aria-haspopup="dialog"
 				aria-expanded={open}
 				aria-label="Shortcuts"
 				style={{ color: open ? T.text : T.textDim, ...buttonStyle }}
@@ -87,111 +122,233 @@ export function ShortcutsMenuButton({
 			</button>
 			{open ? (
 				<div
-					role="menu"
-					style={{
-						position: "absolute",
-						...(placement === "down"
-							? { top: "calc(100% + 4px)" }
-							: { bottom: "calc(100% + 4px)" }),
-						right: 0,
-						minWidth: 220,
-						maxHeight: 280,
-						overflowY: "auto",
-						background: T.surfaceHi,
-						border: `0.5px solid ${T.border}`,
-						borderRadius: 8,
-						padding: 4,
-						zIndex: 50,
-						boxShadow:
-							placement === "down"
-								? "0 8px 24px rgba(0,0,0,0.18)"
-								: "0 -8px 24px rgba(0,0,0,0.18)",
-					}}
+					className="modal-backdrop"
+					onClick={() => setOpen(false)}
+					role="presentation"
 				>
-					{shortcuts.map((sc) => (
-						<ShortcutMenuItem
-							key={sc.id}
-							label={shortcutLabel(sc)}
-							onClick={() => {
-								setOpen(false);
-								onRun(sc);
-							}}
-						/>
-					))}
-					{shortcuts.length > 0 ? (
+					<div
+						className="modal-card"
+						onClick={(e) => e.stopPropagation()}
+						role="dialog"
+						aria-modal="true"
+						aria-labelledby="shortcuts-launcher-title"
+						style={{ width: "min(440px, calc(100vw - 32px))" }}
+					>
+						<h2 id="shortcuts-launcher-title" className="modal-title">
+							Skills & shortcuts
+						</h2>
+
 						<div
-							role="separator"
 							style={{
-								height: 0,
-								borderTop: `0.5px solid ${T.borderSoft}`,
-								margin: "4px 2px",
+								display: "flex",
+								alignItems: "center",
+								gap: 10,
+								marginBottom: 12,
 							}}
-						/>
-					) : null}
-					<ShortcutMenuItem
-						label="Create shortcut"
-						onClick={() => {
-							setOpen(false);
-							setCreating(true);
-						}}
-					/>
-					{shortcuts.length > 0 ? (
-						<ShortcutMenuItem
-							label="Edit shortcuts"
-							onClick={() => {
-								setOpen(false);
-								setEditing(true);
+						>
+							<SegmentedToggle value={tab} onChange={setTab} />
+							{refreshing ? (
+								<span className="asyncy-btn-spinner" aria-hidden />
+							) : null}
+						</div>
+
+						<div
+							style={{
+								display: "flex",
+								flexDirection: "column",
+								gap: 6,
+								maxHeight: "min(50vh, 360px)",
+								overflowY: "auto",
 							}}
-						/>
-					) : null}
+						>
+							{tab === "skills" ? (
+								skills.length > 0 ? (
+									skills.map((skill) => (
+										<LauncherRow
+											key={skill.name}
+											label={`/${skill.name}`}
+											description={skill.description}
+											onClick={() => {
+												setOpen(false);
+												onRunSkill(skill);
+											}}
+										/>
+									))
+								) : refreshing ? null : (
+									<div style={{ fontSize: 12.5, color: T.textDim }}>
+										No skills in ~/.claude/skills
+									</div>
+								)
+							) : shortcuts.length > 0 ? (
+								shortcuts.map((sc) => (
+									<LauncherRow
+										key={sc.id}
+										label={shortcutLabel(sc)}
+										description={promptPreview(sc.prompt, 80)}
+										onClick={() => {
+											setOpen(false);
+											onRun(sc);
+										}}
+									/>
+								))
+							) : (
+								<div style={{ fontSize: 12.5, color: T.textDim }}>
+									No shortcuts yet.
+								</div>
+							)}
+						</div>
+
+						{tab === "shortcuts" ? (
+							<div className="modal-actions">
+								{shortcuts.length > 0 ? (
+									<button
+										className="btn"
+										onClick={() => {
+											setOpen(false);
+											setEditing(true);
+										}}
+									>
+										Edit shortcuts
+									</button>
+								) : null}
+								<button
+									className="btn btn-primary"
+									onClick={() => {
+										setOpen(false);
+										setCreating(true);
+									}}
+								>
+									Create shortcut
+								</button>
+							</div>
+						) : null}
+					</div>
 				</div>
 			) : null}
 			<CreateShortcutModal open={creating} onClose={() => setCreating(false)} />
 			<EditShortcutsModal open={editing} onClose={() => setEditing(false)} />
-		</div>
+		</>
 	);
 }
 
 /**
- * Menu row for the shortcuts dropdown. A trimmed private implementation
- * rather than a reuse of SessionsList's `MenuItem` — that one carries
- * active/danger/checkbox/mono affordances this menu never needs, and
- * hoisting it would churn its dozen other call sites in a 2900-line file.
+ * Two-tab segmented toggle. A trimmed private copy of the pattern in
+ * AttachWorktreeModal (which itself notes segmented toggles are
+ * intentionally duplicated per modal) — surfaceLow trough, surfaceHi
+ * thumb on the active side, no accent color.
  */
-function ShortcutMenuItem({
+function SegmentedToggle({
+	value,
+	onChange,
+}: {
+	value: Tab;
+	onChange: (t: Tab) => void;
+}) {
+	return (
+		<div
+			role="tablist"
+			style={{
+				display: "inline-flex",
+				alignSelf: "flex-start",
+				background: T.surfaceLow,
+				border: `0.5px solid ${T.border}`,
+				borderRadius: 7,
+				padding: 2,
+				gap: 2,
+			}}
+		>
+			<SegmentedItem
+				label="Skills"
+				active={value === "skills"}
+				onClick={() => onChange("skills")}
+			/>
+			<SegmentedItem
+				label="Shortcuts"
+				active={value === "shortcuts"}
+				onClick={() => onChange("shortcuts")}
+			/>
+		</div>
+	);
+}
+
+function SegmentedItem({
 	label,
+	active,
 	onClick,
 }: {
 	label: string;
+	active: boolean;
 	onClick: () => void;
 }) {
+	const [hover, setHover] = useState(false);
 	return (
 		<button
 			type="button"
-			role="menuitem"
+			role="tab"
+			aria-selected={active}
 			onClick={onClick}
+			onMouseEnter={() => setHover(true)}
+			onMouseLeave={() => setHover(false)}
+			style={{
+				appearance: "none",
+				border: "none",
+				background: active ? T.surfaceHi : hover ? T.surface : "transparent",
+				color: active ? T.text : T.textDim,
+				fontSize: 11.5,
+				fontWeight: active ? 600 : 500,
+				padding: "5px 10px",
+				borderRadius: 5,
+				cursor: "pointer",
+				transition: "background 80ms ease, color 80ms ease",
+			}}
+		>
+			{label}
+		</button>
+	);
+}
+
+/**
+ * Clickable run-row shared by both tabs: bold label line plus a dimmed
+ * one-line description. Same bordered-card hover treatment as
+ * EditShortcutsModal's ShortcutRow, minus the inline delete affordance
+ * (management lives behind "Edit shortcuts").
+ */
+function LauncherRow({
+	label,
+	description,
+	onClick,
+}: {
+	label: string;
+	description: string;
+	onClick: () => void;
+}) {
+	const [hover, setHover] = useState(false);
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			onMouseEnter={() => setHover(true)}
+			onMouseLeave={() => setHover(false)}
 			style={{
 				display: "flex",
-				alignItems: "center",
+				flexDirection: "column",
+				alignItems: "stretch",
+				gap: 2,
 				width: "100%",
 				textAlign: "left",
-				padding: "6px 10px",
-				borderRadius: 6,
-				border: "none",
-				background: "transparent",
-				color: T.text,
-				fontSize: 13,
+				padding: "7px 10px",
+				border: `0.5px solid ${hover ? T.accentBorder : T.border}`,
+				borderRadius: 8,
+				background: hover ? T.surfaceHi : T.surface,
 				cursor: "pointer",
-			}}
-			onMouseEnter={(e) => {
-				e.currentTarget.style.background = T.surface;
-			}}
-			onMouseLeave={(e) => {
-				e.currentTarget.style.background = "transparent";
+				transition: "background 80ms ease, border-color 80ms ease",
 			}}
 		>
 			<span
 				style={{
+					fontSize: 13,
+					fontWeight: 600,
+					color: T.text,
 					overflow: "hidden",
 					textOverflow: "ellipsis",
 					whiteSpace: "nowrap",
@@ -200,6 +357,20 @@ function ShortcutMenuItem({
 			>
 				{label}
 			</span>
+			{description ? (
+				<span
+					style={{
+						fontSize: 11.5,
+						color: T.textDim,
+						overflow: "hidden",
+						textOverflow: "ellipsis",
+						whiteSpace: "nowrap",
+						minWidth: 0,
+					}}
+				>
+					{description}
+				</span>
+			) : null}
 		</button>
 	);
 }

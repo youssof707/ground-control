@@ -28,6 +28,7 @@ import { ModeToggle, isBranchStale } from "../../../design/Atoms";
 import { DictationButton, type DictationHandle } from "./DictationButton";
 import { PendingImageStrip } from "./PendingImageThumb";
 import type { Shortcut } from "@shared/schemas/shortcuts";
+import type { Skill } from "@shared/schemas/skills";
 import { ShortcutsMenuButton } from "./ShortcutsMenu";
 
 interface Props {
@@ -304,6 +305,16 @@ export function ImagePasteTextarea({
 		focusComposer();
 	};
 
+	/**
+	 * Run a skill in this session: append its slash command to the composer.
+	 * Skills carry no mode (unlike shortcuts), so the session's current mode
+	 * is left alone.
+	 */
+	const runSkill = (skill: Skill) => {
+		appendPromptBlock(sessionId, `/${skill.name}`);
+		focusComposer();
+	};
+
 	const send = async () => {
 		if (sending) return;
 		if (!text.trim() && images.length === 0) return;
@@ -458,6 +469,33 @@ export function ImagePasteTextarea({
 				return;
 			}
 			if (!dictationRef.current?.commitIfRecording()) return;
+			e.preventDefault();
+			e.stopPropagation();
+		};
+		window.addEventListener("keydown", onWindowKeyDown, true);
+		return () => window.removeEventListener("keydown", onWindowKeyDown, true);
+	}, [dictating]);
+
+	// Escape discards an in-progress recording — nothing is transcribed or
+	// inserted. Mirrors the Enter listener above (capture phase, mounted only
+	// while recording, other text fields excluded). We only swallow the key
+	// when a recording was actually cancelled, so Escape still reaches the
+	// send menu / modals / context menus the rest of the time.
+	useEffect(() => {
+		if (!dictating) return;
+		const onWindowKeyDown = (e: globalThis.KeyboardEvent) => {
+			if (e.key !== "Escape") return;
+			if (e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+			const target = e.target as HTMLElement | null;
+			if (
+				target
+				&& target !== textareaRef.current
+				&& (target.isContentEditable
+					|| ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+			) {
+				return;
+			}
+			if (!dictationRef.current?.cancelIfRecording()) return;
 			e.preventDefault();
 			e.stopPropagation();
 		};
@@ -672,15 +710,15 @@ export function ImagePasteTextarea({
 				>
 					{dictating ? (
 						<span style={{ fontSize: 11.5, color: T.textFaint }}>
-							↵ to finish dictating
+							↵ finish · esc cancel
 						</span>
 					) : null}
 					<div style={{ flex: 1 }} />
 					<ShortcutsMenuButton
-						placement="up"
 						buttonClassName="btn btn-icon"
 						disabled={disabled || sending}
 						onRun={runShortcut}
+						onRunSkill={runSkill}
 					/>
 					<DictationButton
 						ref={dictationRef}

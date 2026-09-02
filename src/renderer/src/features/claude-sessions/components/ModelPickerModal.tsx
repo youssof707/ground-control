@@ -6,6 +6,7 @@ import {
 	parseModelIdentity,
 	parseOptionIdentity,
 } from "@shared/claude-sessions/sessionModel";
+import { focusComposer } from "../lib/composerActions";
 
 interface ModelOption {
 	/** undefined = clear the override (CLI default model). */
@@ -157,6 +158,11 @@ export function ModelPickerModal({
 		try {
 			await onSelect(value);
 			onClose();
+			// Picking a model is a one-shot detour, not a control the user
+			// meant to linger on — hand focus straight back to the composer
+			// so typing can continue uninterrupted. Same pattern as
+			// runShortcut/runSkill in ImagePasteTextarea.
+			focusComposer();
 		} catch (err) {
 			setSaving(false);
 			setError(err instanceof Error ? err.message : String(err));

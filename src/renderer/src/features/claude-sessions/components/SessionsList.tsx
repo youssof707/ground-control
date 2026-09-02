@@ -32,6 +32,7 @@ import {
 } from "@shared/claude-sessions/transcript";
 import type { SessionGroup } from "@shared/schemas/session_groups";
 import type { Shortcut } from "@shared/schemas/shortcuts";
+import type { Skill } from "@shared/schemas/skills";
 import type { Worktree } from "@shared/schemas/worktrees";
 
 /**
@@ -207,7 +208,7 @@ export function SessionsList({
 	//   - a dangling groupId (group record missing — crash window, stale
 	//     cache) degrades to "ungrouped" instead of vanishing the row, and
 	//     a dangling worktreeId likewise degrades to the cwd bucket.
-	const { ungroupedBuckets, groupSections, cwdBucketCount, hideCwdPrefix } =
+	const { ungroupedBuckets, groupSections, hideCwdPrefix } =
 		useMemo(() => {
 			const byCwd = new Map<string, string[]>();
 			const byWorktree = new Map<string, string[]>();
@@ -281,7 +282,6 @@ export function SessionsList({
 			return {
 				ungroupedBuckets: buckets,
 				groupSections: sections,
-				cwdBucketCount: byCwd.size,
 				hideCwdPrefix: hidePrefix,
 			};
 		}, [visibleOrder, sessions, groups, worktrees]);
@@ -534,6 +534,44 @@ export function SessionsList({
 			cwd = resolved;
 		}
 		appendPromptBlock(id, sc.prompt);
+		// Keep the new draft visible if the workspace filter is narrowed
+		// (same reasoning as createDraftAndNavigate).
+		setWorkspaceFilter((prev) =>
+			prev.length === 0 || prev.includes(cwd) ? prev : [...prev, cwd],
+		);
+		navigate(`/sessions/${id}`);
+	};
+
+	// One-click skill launch — same draft-slot rules as startFromShortcut,
+	// but a skill carries no mode or title: an existing draft keeps both,
+	// a fresh draft gets the store defaults. The skill's slash command is
+	// what gets appended to the composer.
+	const startFromSkill = async (skill: Skill) => {
+		setStartError(null);
+		const drafts = useDraftSessionsStore.getState();
+		let id: string;
+		let cwd: string;
+		if (draft) {
+			// Same disowning rule as startFromShortcut — a skill launch is a
+			// fresh intent for the shared draft slot.
+			drafts.updateDraft({
+				model: undefined,
+				handoffDeleteSessionId: undefined,
+			});
+			id = draft.id;
+			cwd = draft.cwd;
+		} else {
+			const resolved = targetCwd ?? (await window.claude.pickFolder());
+			if (!resolved) return;
+			useSettingsStore.getState().setLastUsedWorkspace(resolved);
+			const d = drafts.createDraft({
+				cwd: resolved,
+				defaultTitle: `Session ${order.length + 1}`,
+			});
+			id = d.id;
+			cwd = resolved;
+		}
+		appendPromptBlock(id, `/${skill.name}`);
 		// Keep the new draft visible if the workspace filter is narrowed
 		// (same reasoning as createDraftAndNavigate).
 		setWorkspaceFilter((prev) =>
@@ -825,29 +863,12 @@ export function SessionsList({
 	// state (menu open).
 	const sidebarRows = useMemo<SidebarRow[]>(() => {
 		const rows: SidebarRow[] = [];
-		// A lone cwd needs no sectioning — skip the boxes entirely and
-		// render the flat list (rows keep their own cwd footers instead).
-		// Only CWD buckets count toward this: worktree buckets always render
-		// as boxes and must not force the lone cwd's sessions into one.
-		const sectioned = cwdBucketCount > 1;
-		if (!sectioned) {
-			// Flat cwd rows first (there is at most one cwd bucket), then the
-			// worktree boxes after — even if a worktree's label would sort
-			// ahead of the lone cwd.
-			for (const bucket of ungroupedBuckets) {
-				if (bucket.kind !== "cwd") continue;
-				bucket.ids.forEach((id, i) => {
-					rows.push({
-						kind: "session",
-						id,
-						lastInBucket: i === bucket.ids.length - 1,
-					});
-				});
-			}
-		}
+		// Every cwd bucket is boxed, including a lone one — the folder header
+		// is a fixed part of the sidebar's vocabulary rather than something
+		// that appears only once a second folder shows up. Worktree buckets
+		// were always boxed and are unchanged.
 		for (const bucket of ungroupedBuckets) {
 			if (bucket.kind === "cwd") {
-				if (!sectioned) continue; // already emitted flat above
 				rows.push({
 					kind: "cwdBucket",
 					cwd: bucket.cwd,
@@ -868,21 +889,15 @@ export function SessionsList({
 			rows.push({ kind: "group", section });
 		}
 		return rows;
-	}, [
-		ungroupedBuckets,
-		groupSections,
-		collapsedCwds,
-		cwdBucketCount,
-		hideCwdPrefix,
-	]);
+	}, [ungroupedBuckets, groupSections, collapsedCwds, hideCwdPrefix]);
 
 	// Where the draft row renders. A draft spawned from a bucket's or a
 	// group's "+" (or retargeted into one) lands as the FIRST row inside that
 	// container — next to the affordance the user just clicked, and matching
 	// newest-first ordering. Precedence mirrors the real-session partition
 	// above: group > worktree > cwd. Falls back to the top of the list when
-	// no matching container is rendered (flat single-cwd list, a folder with
-	// no sessions yet, or a group that auto-deleted out from under the draft).
+	// no matching container is rendered (a folder with no sessions yet, or a
+	// group that auto-deleted out from under the draft).
 	const draftHost = useMemo<
 		| { kind: "top" }
 		| { kind: "group"; id: string }
@@ -935,10 +950,11 @@ export function SessionsList({
 			/>
 		) : null;
 
-	// Shared renderer for ungrouped session rows — used both inside cwd
-	// bucket boxes (hideCwd: the header already names the folder) and in
-	// the flat single-cwd list (footer shown).
-	const renderSessionRow = (id: string, last: boolean, hideCwd: boolean) => {
+	// Shared renderer for ungrouped session rows. Always inside a cwd or
+	// worktree box, so the per-row cwd footer is suppressed — the bucket
+	// header already names the folder. (Group members keep their footer:
+	// a group can span folders, so its rows still need the label.)
+	const renderSessionRow = (id: string, last: boolean) => {
 		const s = sessions[id];
 		const sessionPending = queue.filter((q) => q.sessionId === id);
 		return (
@@ -946,7 +962,7 @@ export function SessionsList({
 				key={id}
 				session={s}
 				last={last}
-				hideCwd={hideCwd}
+				hideCwd
 				pending={sessionPending}
 				active={id === activeSessionId}
 				onDelete={() => {
@@ -1042,10 +1058,10 @@ export function SessionsList({
 						<span style={{ flexShrink: 0 }}>New Session</span>
 					</button>
 					<ShortcutsMenuButton
-						placement="down"
 						buttonClassName="btn"
 						buttonStyle={{ width: 32, padding: 0 }}
 						onRun={(sc) => void startFromShortcut(sc)}
+						onRunSkill={(skill) => void startFromSkill(skill)}
 					/>
 				</div>
 				{workspaces.length > 0 || archivedCount > 0 ? (
@@ -1176,7 +1192,6 @@ export function SessionsList({
 												renderSessionRow(
 													id,
 													i === row.ids.length - 1,
-													true,
 												),
 											)}
 									</div>
@@ -1221,70 +1236,62 @@ export function SessionsList({
 												renderSessionRow(
 													id,
 													i === row.ids.length - 1,
-													true,
 												),
 											)}
 									</div>
 								);
 							}
-							if (row.kind === "group") {
-								const { group, ids } = row.section;
-								return (
-									<GroupSection
-										key={`group:${group.id}`}
-										group={group}
-										ids={ids}
-										sessions={sessions}
-										queue={queue}
-										lastReadAtMap={lastReadAtMap}
-										activeSessionId={activeSessionId}
-										onToggleCollapsed={() =>
-											toggleGroupCollapsed(group)
-										}
-										onNewSession={(cwd) =>
-											startInGroup(group, cwd)
-										}
-										// `last={false}`: a rendered group
-										// section always has >=1 member row
-										// beneath the draft, so the draft
-										// never owns the box's final hairline.
-										draftSlot={
-											draftHost.kind === "group" &&
-											draftHost.id === group.id
-												? renderDraftRow(
-													false,
-													WORKTREE_COLOR_MAP[
-														group.color
-													],
-												)
-												: null
-										}
-										onRename={(id) =>
-											setPendingRenameGroupId(id)
-										}
-										onDelete={(id) => {
-											setPendingDeleteId(id);
-											setDeleteError(null);
-											setAlsoDeleteWorktree(false);
-										}}
-										onArchive={(id) => {
-											setPendingArchiveId(id);
-											setArchiveError(null);
-										}}
-										onUnarchive={(id) => void unarchive(id)}
-										onAddToGroup={(id) =>
-											setPendingGroupSessionId(id)
-										}
-										onRemoveFromGroup={(id) =>
-											void removeFromGroup(id)
-										}
-									/>
-								);
-							}
-							return renderSessionRow(
-								row.id,
-								row.lastInBucket,
-								false,
+							const { group, ids } = row.section;
+							return (
+								<GroupSection
+									key={`group:${group.id}`}
+									group={group}
+									ids={ids}
+									sessions={sessions}
+									queue={queue}
+									lastReadAtMap={lastReadAtMap}
+									activeSessionId={activeSessionId}
+									onToggleCollapsed={() =>
+										toggleGroupCollapsed(group)
+									}
+									onNewSession={(cwd) =>
+										startInGroup(group, cwd)
+									}
+									// `last={false}`: a rendered group
+									// section always has >=1 member row
+									// beneath the draft, so the draft
+									// never owns the box's final hairline.
+									draftSlot={
+										draftHost.kind === "group" &&
+										draftHost.id === group.id
+											? renderDraftRow(
+												false,
+												WORKTREE_COLOR_MAP[
+													group.color
+												],
+											)
+											: null
+									}
+									onRename={(id) =>
+										setPendingRenameGroupId(id)
+									}
+									onDelete={(id) => {
+										setPendingDeleteId(id);
+										setDeleteError(null);
+										setAlsoDeleteWorktree(false);
+									}}
+									onArchive={(id) => {
+										setPendingArchiveId(id);
+										setArchiveError(null);
+									}}
+									onUnarchive={(id) => void unarchive(id)}
+									onAddToGroup={(id) =>
+										setPendingGroupSessionId(id)
+									}
+									onRemoveFromGroup={(id) =>
+										void removeFromGroup(id)
+									}
+								/>
 							);
 						})}
 					</div>
@@ -1315,11 +1322,11 @@ type UngroupedBucket =
 /** One entry in the sidebar's top-level render sequence. */
 type SidebarRow =
 	/** One cwd's worth of ungrouped sessions, rendered as a recessed dark
-	 * box (header + member rows). Only used when 2+ cwds are present. */
+	 * box (header + member rows). Always boxed, even for a lone cwd. */
 	| { kind: "cwdBucket"; cwd: string; ids: string[]; collapsed: boolean }
 	/** One worktree's worth of sessions — same recessed box as cwdBucket,
 	 * labeled "folder: worktree" (bare worktree name when only one folder
-	 * is visible). Always boxed, even in the single-cwd flat layout. */
+	 * is visible). */
 	| {
 		kind: "worktreeBucket";
 		worktree: Worktree;
@@ -1327,8 +1334,6 @@ type SidebarRow =
 		collapsed: boolean;
 		label: string;
 	}
-	/** Flat ungrouped row — the single-cwd case, no sectioning. */
-	| { kind: "session"; id: string; lastInBucket: boolean }
 	| { kind: "group"; section: { group: SessionGroup; ids: string[] } };
 
 /**

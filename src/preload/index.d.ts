@@ -24,6 +24,7 @@ import type {
 	Shortcut,
 	UpdateShortcutInput,
 } from "../shared/schemas/shortcuts";
+import type { Skill } from "../shared/schemas/skills";
 import type {
 	ModelInfo,
 	SDKRateLimitInfo,
@@ -123,6 +124,7 @@ declare global {
 			createShortcut: (input: CreateShortcutInput) => Promise<Shortcut>;
 			updateShortcut: (input: UpdateShortcutInput) => Promise<Shortcut>;
 			deleteShortcut: (id: string) => Promise<void>;
+			listSkills: () => Promise<Skill[]>;
 			getAppInfo: () => Promise<{
 				env: "dev" | "prod";
 				storeFolder: string;

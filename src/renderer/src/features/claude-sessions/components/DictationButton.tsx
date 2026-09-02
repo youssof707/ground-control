@@ -31,6 +31,13 @@ export interface DictationHandle {
 	 * swallow the triggering event, e.g. Enter-to-send).
 	 */
 	commitIfRecording: () => boolean;
+	/**
+	 * If a recording is in progress (or still spinning up), throw the audio
+	 * away and return to idle — nothing is transcribed or inserted. Returns
+	 * true when something was actually cancelled (callers should then swallow
+	 * the triggering event, e.g. Escape-to-close-modal).
+	 */
+	cancelIfRecording: () => boolean;
 }
 
 interface Props {
@@ -68,6 +75,11 @@ export function DictationButton({
 	const chunksRef = useRef<Float32Array[]>([]);
 	const maxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const mountedRef = useRef(true);
+	// Bumped by every start and every cancel. `startRecording` awaits several
+	// times before the mic is live; comparing against the generation it opened
+	// with lets an Escape mid-`starting` win the race against an in-flight
+	// promise that would otherwise flip us to "recording" a beat later.
+	const runIdRef = useRef(0);
 
 	useEffect(() => {
 		mountedRef.current = true;
@@ -91,10 +103,18 @@ export function DictationButton({
 		chunksRef.current = [];
 	};
 
+	/**
+	 * States the owner treats as "a take is in progress" — it mounts its
+	 * Enter/Escape listeners and shows the keyboard hint for these. `starting`
+	 * counts so Escape can back out of mic init, which is otherwise a
+	 * commitment you can't undo (the button is disabled while it spins up).
+	 */
+	const isActive = (s: DictationState) => s === "recording" || s === "starting";
+
 	const setStateSafe = (next: DictationState) => {
 		if (!mountedRef.current) return;
-		if ((stateRef.current === "recording") !== (next === "recording")) {
-			onRecordingChange?.(next === "recording");
+		if (isActive(stateRef.current) !== isActive(next)) {
+			onRecordingChange?.(isActive(next));
 		}
 		stateRef.current = next;
 		setState(next);
@@ -115,6 +135,10 @@ export function DictationButton({
 	};
 
 	const startRecording = async (): Promise<void> => {
+		const gen = ++runIdRef.current;
+		/** True once a cancel (or a competing start) has superseded this run. */
+		const abandoned = () => runIdRef.current !== gen;
+
 		// Immediate visual feedback — permission checks + mic init can take a
 		// beat, especially on first use.
 		setStateSafe("starting");
@@ -123,6 +147,7 @@ export function DictationButton({
 				window.claude.requestMicAccess(),
 				window.claude.dictationModelStatus(),
 			]);
+			if (abandoned()) return;
 			if (!granted) {
 				setStateSafe("idle");
 				onError(
@@ -131,11 +156,18 @@ export function DictationButton({
 				return;
 			}
 			if (modelState !== "ready") await ensureModel();
+			if (abandoned()) return;
 
 			const stream = await navigator.mediaDevices.getUserMedia({
 				audio: { channelCount: 1 },
 			});
+			// Adopt the stream before the abandon check so cleanupCapture can
+			// stop the tracks we just opened.
 			streamRef.current = stream;
+			if (abandoned()) {
+				cleanupCapture();
+				return;
+			}
 			chunksRef.current = [];
 
 			// Capture raw PCM at whisper's 16 kHz directly — Chromium resamples
@@ -160,9 +192,22 @@ export function DictationButton({
 			}, MAX_RECORD_MS);
 		} catch (err) {
 			cleanupCapture();
+			// A cancelled start can still reject (e.g. getUserMedia losing the
+			// track we just stopped). That's expected, not worth an error block.
+			if (abandoned()) return;
 			setStateSafe("idle");
 			onError(err instanceof Error ? err.message : String(err));
 		}
+	};
+
+	/**
+	 * Throw away an in-progress capture without transcribing it. Bumping the
+	 * run id also abandons a start that hasn't reached the mic yet.
+	 */
+	const cancelRecording = (): void => {
+		runIdRef.current++;
+		cleanupCapture();
+		setStateSafe("idle");
 	};
 
 	const stopAndTranscribe = async (): Promise<void> => {
@@ -205,6 +250,12 @@ export function DictationButton({
 		commitIfRecording: () => {
 			if (stateRef.current !== "recording") return false;
 			void stopAndTranscribe();
+			return true;
+		},
+		cancelIfRecording: () => {
+			const s = stateRef.current;
+			if (s !== "recording" && s !== "starting") return false;
+			cancelRecording();
 			return true;
 		},
 	}));
