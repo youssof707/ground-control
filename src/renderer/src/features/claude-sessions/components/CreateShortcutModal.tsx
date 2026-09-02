@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useBackdropDismiss } from "../../../components/useBackdropDismiss";
 import { useShortcutsStore } from "../stores/useShortcutsStore";
 import {
 	EMPTY_SHORTCUT_FORM,
@@ -74,13 +75,14 @@ export function CreateShortcutModal({
 		}
 	}, [canSave, form, upsert, onClose]);
 
+	const backdropProps = useBackdropDismiss(onClose);
+
 	if (!open) return null;
 
 	return (
-		<div className="modal-backdrop" onClick={onClose} role="presentation">
+		<div className="modal-backdrop" {...backdropProps}>
 			<div
 				className="modal-card"
-				onClick={(e) => e.stopPropagation()}
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="create-shortcut-title"

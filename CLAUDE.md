@@ -1,5 +1,17 @@
 # ground-control
 
+Living rules for Claude working in this repo. Prefer patterns here over inventing new
+ones. When a rule or convention changes — or a new durable one gets established — edit
+this file so the next session inherits it.
+
+## Keyboard shortcuts
+
+**Whenever a keyboard shortcut is added, changed, or removed, update this list.** This is
+the single source of truth so shortcuts are easy to find.
+
+- `Cmd+S` — open a side quest
+- `Cmd+K` — open the shortcut menu
+
 ## UI rules
 
 **NO TOOLTIPS. EVER. Unless I explicitly ask for one in that specific request.**

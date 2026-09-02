@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useBackdropDismiss } from "../../../components/useBackdropDismiss";
 import { T } from "../../../design/tokens";
 import { WORKTREE_COLOR_MAP } from "../../../design/WorktreeChip";
 import { ColorPicker, LabeledInput } from "../../../design/FormControls";
@@ -121,13 +122,14 @@ export function AddToGroupModal({
 		}
 	}, [sessionId, canCreate, name, color, onClose]);
 
+	const backdropProps = useBackdropDismiss(onClose);
+
 	if (!open) return null;
 
 	return (
-		<div className="modal-backdrop" onClick={onClose} role="presentation">
+		<div className="modal-backdrop" {...backdropProps}>
 			<div
 				className="modal-card"
-				onClick={(e) => e.stopPropagation()}
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="add-to-group-title"

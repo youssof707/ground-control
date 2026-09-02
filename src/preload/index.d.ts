@@ -125,6 +125,7 @@ declare global {
 			updateShortcut: (input: UpdateShortcutInput) => Promise<Shortcut>;
 			deleteShortcut: (id: string) => Promise<void>;
 			listSkills: () => Promise<Skill[]>;
+			openSkillsFolder: () => Promise<void>;
 			getAppInfo: () => Promise<{
 				env: "dev" | "prod";
 				storeFolder: string;

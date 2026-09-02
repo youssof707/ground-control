@@ -6,6 +6,7 @@ import {
 	type MouseEvent as ReactMouseEvent,
 } from "react";
 import type { Shortcut } from "@shared/schemas/shortcuts";
+import { useBackdropDismiss } from "../../../components/useBackdropDismiss";
 import { T } from "../../../design/tokens";
 import { useShortcutsStore } from "../stores/useShortcutsStore";
 import {
@@ -136,17 +137,14 @@ export function EditShortcutsModal({
 		[remove],
 	);
 
+	const backdropProps = useBackdropDismiss(onClose);
+
 	if (!open) return null;
 
 	return (
-		<div
-			className="modal-backdrop"
-			onClick={onClose}
-			role="presentation"
-		>
+		<div className="modal-backdrop" {...backdropProps}>
 			<div
 				className="modal-card"
-				onClick={(e) => e.stopPropagation()}
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="edit-shortcuts-title"

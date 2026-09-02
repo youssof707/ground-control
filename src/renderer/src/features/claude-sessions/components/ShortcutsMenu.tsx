@@ -1,6 +1,13 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import {
+	useCallback,
+	useEffect,
+	useMemo,
+	useState,
+	type CSSProperties,
+} from "react";
 import type { Shortcut } from "@shared/schemas/shortcuts";
 import type { Skill } from "@shared/schemas/skills";
+import { useBackdropDismiss } from "../../../components/useBackdropDismiss";
 import { T } from "../../../design/tokens";
 import { useShortcutsStore } from "../stores/useShortcutsStore";
 import { useSkillsStore } from "../stores/useSkillsStore";
@@ -39,6 +46,8 @@ export function ShortcutsMenuButton({
 	onRunSkill: (skill: Skill) => void;
 }) {
 	const [open, setOpen] = useState(false);
+	const closeMenu = useCallback(() => setOpen(false), []);
+	const backdropProps = useBackdropDismiss(closeMenu);
 	const [tab, setTab] = useState<Tab>("skills");
 	const [refreshing, setRefreshing] = useState(false);
 	const [creating, setCreating] = useState(false);
@@ -121,14 +130,9 @@ export function ShortcutsMenuButton({
 				</svg>
 			</button>
 			{open ? (
-				<div
-					className="modal-backdrop"
-					onClick={() => setOpen(false)}
-					role="presentation"
-				>
+				<div className="modal-backdrop" {...backdropProps}>
 					<div
 						className="modal-card"
-						onClick={(e) => e.stopPropagation()}
 						role="dialog"
 						aria-modal="true"
 						aria-labelledby="shortcuts-launcher-title"
@@ -142,14 +146,18 @@ export function ShortcutsMenuButton({
 							style={{
 								display: "flex",
 								alignItems: "center",
+								justifyContent: "space-between",
 								gap: 10,
 								marginBottom: 12,
 							}}
 						>
-							<SegmentedToggle value={tab} onChange={setTab} />
-							{refreshing ? (
-								<span className="asyncy-btn-spinner" aria-hidden />
-							) : null}
+							<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+								<SegmentedToggle value={tab} onChange={setTab} />
+								{refreshing ? (
+									<span className="asyncy-btn-spinner" aria-hidden />
+								) : null}
+							</div>
+							{tab === "skills" ? <RevealSkillsFolderButton /> : null}
 						</div>
 
 						<div
@@ -303,6 +311,54 @@ function SegmentedItem({
 			}}
 		>
 			{label}
+		</button>
+	);
+}
+
+/**
+ * Opens `~/.claude/skills` in Finder. Deliberately unlabeled and nearly
+ * invisible at rest (a dim glyph, no border, no background) — this is a
+ * power-user escape hatch, not a primary action, and the modal shouldn't
+ * visually advertise "here's a filesystem button." It only exists on the
+ * Skills tab, since that's the folder it opens.
+ */
+function RevealSkillsFolderButton() {
+	const [hover, setHover] = useState(false);
+	return (
+		<button
+			type="button"
+			aria-label="Open skills folder in Finder"
+			onClick={() => {
+				window.claude
+					.openSkillsFolder()
+					.catch((err) => console.error("[ccw] open skills folder failed", err));
+			}}
+			onMouseEnter={() => setHover(true)}
+			onMouseLeave={() => setHover(false)}
+			style={{
+				display: "flex",
+				alignItems: "center",
+				justifyContent: "center",
+				width: 20,
+				height: 20,
+				border: "none",
+				background: "transparent",
+				padding: 0,
+				color: T.textDim,
+				opacity: hover ? 0.85 : 0.2,
+				cursor: "pointer",
+				transition: "opacity 150ms ease",
+			}}
+		>
+			<svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+				<path
+					d="M1.5 3.6a1 1 0 0 1 1-1h2.6l1 1.2h4.4a1 1 0 0 1 1 1v4.9a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1V3.6z"
+					stroke="currentColor"
+					strokeWidth="1.1"
+					strokeLinejoin="round"
+					fill="none"
+				/>
+			</svg>
 		</button>
 	);
 }

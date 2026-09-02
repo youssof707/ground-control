@@ -121,6 +121,7 @@ const claude = {
 		ipcRenderer.invoke("shortcuts:update", input),
 	deleteShortcut: (id: string) => ipcRenderer.invoke("shortcuts:delete", id),
 	listSkills: () => ipcRenderer.invoke("skills:list"),
+	openSkillsFolder: () => ipcRenderer.invoke("skills:openFolder"),
 	getAppInfo: () => ipcRenderer.invoke("appInfo:get"),
 	toggleDevTools: () => ipcRenderer.invoke("devtools:toggle"),
 	checkForUpdate: () => ipcRenderer.invoke("updater:check"),

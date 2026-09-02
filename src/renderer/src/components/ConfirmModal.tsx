@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from "react";
+import { useBackdropDismiss } from "./useBackdropDismiss";
 
 interface Props {
 	open: boolean;
@@ -55,13 +56,14 @@ export function ConfirmModal({
 		return () => window.removeEventListener("keydown", handler);
 	}, [open, onCancel, onConfirm]);
 
+	const backdropProps = useBackdropDismiss(onCancel);
+
 	if (!open) return null;
 
 	return (
-		<div className="modal-backdrop" onClick={onCancel} role="presentation">
+		<div className="modal-backdrop" {...backdropProps}>
 			<div
 				className="modal-card"
-				onClick={(e) => e.stopPropagation()}
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="modal-title"

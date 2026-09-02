@@ -1,8 +1,10 @@
-import { ipcMain } from "electron";
-import { readdir, readFile } from "fs/promises";
+import { ipcMain, shell } from "electron";
+import { mkdir, readdir, readFile } from "fs/promises";
 import { homedir } from "os";
 import { join } from "path";
 import type { Skill } from "../../shared/schemas/skills";
+
+const SKILLS_DIR = join(homedir(), ".claude", "skills");
 
 /**
  * IPC surface for the user's personal global Claude skills: the
@@ -18,10 +20,22 @@ import type { Skill } from "../../shared/schemas/skills";
  */
 export function registerSkillsHandlers(): void {
 	ipcMain.handle("skills:list", () => listSkills());
+	ipcMain.handle("skills:openFolder", () => openSkillsFolder());
+}
+
+/**
+ * Opens `~/.claude/skills` in Finder. Creates the directory first if it
+ * doesn't exist yet (fresh machine, no skills written) so the entry point
+ * always lands somewhere real instead of erroring.
+ */
+async function openSkillsFolder(): Promise<void> {
+	await mkdir(SKILLS_DIR, { recursive: true });
+	const message = await shell.openPath(SKILLS_DIR);
+	if (message) throw new Error(message);
 }
 
 async function listSkills(): Promise<Skill[]> {
-	const dir = join(homedir(), ".claude", "skills");
+	const dir = SKILLS_DIR;
 	let entries;
 	try {
 		entries = await readdir(dir, { withFileTypes: true });

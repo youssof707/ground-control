@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useBackdropDismiss } from "../../../components/useBackdropDismiss";
 import { useUpdateStore } from "../stores/useUpdateStore";
 
 /**
@@ -41,6 +42,11 @@ export function UpdateModal() {
 		return () => window.removeEventListener("keydown", handler);
 	}, [modalOpen, installInProgress, closeModal]);
 
+	// `undefined` while installing keeps the backdrop inert, same as before.
+	const backdropProps = useBackdropDismiss(
+		installInProgress ? undefined : closeModal,
+	);
+
 	if (!modalOpen) return null;
 
 	async function onInstall() {
@@ -58,14 +64,9 @@ export function UpdateModal() {
 	}
 
 	return (
-		<div
-			className="modal-backdrop"
-			onClick={installInProgress ? undefined : closeModal}
-			role="presentation"
-		>
+		<div className="modal-backdrop" {...backdropProps}>
 			<div
 				className="modal-card"
-				onClick={(e) => e.stopPropagation()}
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="update-modal-title"

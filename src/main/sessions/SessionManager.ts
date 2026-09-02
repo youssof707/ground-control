@@ -274,29 +274,40 @@ function stripUrls(text: string): string {
 	);
 }
 
+// Only the first line becomes the title — a multi-line message shouldn't
+// have all its lines run together into one long, run-on name. Lines are
+// scanned in order (raw alongside their URL-stripped counterpart) and the
+// first one that still has content wins, so a first line that's *just* a
+// link is skipped in favor of whatever comes after it, instead of the raw
+// URL becoming the name.
 function deriveTitle(text: string, maxLen = 60): string {
-	const cleaned = text.replace(/\s+/g, " ").trim();
-	if (!cleaned) return "";
-	let title = cleaned;
-	const stripped = stripUrls(cleaned);
-	// Only tidy when a URL was actually removed, so URL-free messages derive
-	// byte-for-byte the same name they always have.
-	if (stripped !== cleaned) {
-		const tidied = stripped
+	const rawLines = text.split("\n");
+	const strippedLines = stripUrls(text).split("\n");
+
+	for (let i = 0; i < rawLines.length; i++) {
+		const raw = rawLines[i].replace(/\s+/g, " ").trim();
+		const stripped = (strippedLines[i] ?? rawLines[i])
 			.replace(/\s+/g, " ")
-			// Punctuation the URL used to sit in front of: `did you see ?`.
-			.replace(/\s+([?!.,;:])/g, "$1")
-			// Separators the URL was sitting between: `check out , then run`.
-			// Leaves `?`/`!`/`.` alone so a question keeps reading like one.
-			.replace(/^[\s,;:·|/\\–—-]+|[\s,;:·|/\\–—-]+$/g, "")
 			.trim();
-		// A message that was *only* a link strips down to nothing. Keep the raw
-		// text in that case so those sessions get the name they'd have had
-		// before this stripping existed, rather than going blank.
-		if (/[\p{Letter}\p{Number}]/u.test(tidied)) title = tidied;
+		if (!stripped) continue; // blank line, or a line that was only a URL
+
+		let title = stripped;
+		// Only tidy when a URL was actually removed from this line, so
+		// URL-free lines derive byte-for-byte the same name they always have.
+		if (stripped !== raw) {
+			title = stripped
+				// Punctuation the URL used to sit in front of: `did you see ?`.
+				.replace(/\s+([?!.,;:])/g, "$1")
+				// Separators the URL was sitting between: `check out , then run`.
+				// Leaves `?`/`!`/`.` alone so a question keeps reading like one.
+				.replace(/^[\s,;:·|/\\–—-]+|[\s,;:·|/\\–—-]+$/g, "")
+				.trim();
+			if (!title) continue; // nothing left once the URL is gone
+		}
+
+		return title.length <= maxLen ? title : title.slice(0, maxLen - 1) + "…";
 	}
-	if (title.length <= maxLen) return title;
-	return title.slice(0, maxLen - 1) + "…";
+	return "";
 }
 
 function firstTextFromBlocks(blocks: UserContentBlock[]): string {

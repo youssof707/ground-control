@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ModelInfo } from "@anthropic-ai/claude-agent-sdk";
+import { useBackdropDismiss } from "../../../components/useBackdropDismiss";
 import { T } from "../../../design/tokens";
 import {
 	identityMatches,
@@ -149,6 +150,8 @@ export function ModelPickerModal({
 		return () => window.removeEventListener("keydown", handler);
 	}, [open, onClose]);
 
+	const backdropProps = useBackdropDismiss(onClose);
+
 	if (!open) return null;
 
 	const pick = async (value: string | undefined) => {
@@ -209,10 +212,9 @@ export function ModelPickerModal({
 	}
 
 	return (
-		<div className="modal-backdrop" onClick={onClose} role="presentation">
+		<div className="modal-backdrop" {...backdropProps}>
 			<div
 				className="modal-card"
-				onClick={(e) => e.stopPropagation()}
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="model-picker-title"
