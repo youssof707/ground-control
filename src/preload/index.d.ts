@@ -70,7 +70,7 @@ declare global {
 				sessionId: string,
 				model?: string,
 			) => Promise<void>;
-			getSupportedModels: (sessionId: string) => Promise<ModelInfo[]>;
+			getSupportedModels: (sessionId?: string) => Promise<ModelInfo[]>;
 			respondPermission: (decision: PermissionDecision) => void;
 			listSessions: () => Promise<ClaudeSessionFull[]>;
 			deleteSession: (sessionId: string) => Promise<void>;
@@ -93,6 +93,7 @@ declare global {
 			markUnread: (sessionId: string) => Promise<void>;
 			getSettings: () => Promise<AppSettingsFile>;
 			setLastUsedWorkspace: (cwd: string) => Promise<void>;
+			setDefaultModel: (model?: string) => Promise<void>;
 			setSessionsSidebarWidth: (width: number) => Promise<void>;
 			setNotesSidebarWidth: (width: number) => Promise<void>;
 			setSidequestSidebarWidth: (width: number) => Promise<void>;

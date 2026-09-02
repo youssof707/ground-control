@@ -8,6 +8,8 @@ import {
 	deriveDisplayedModel,
 	formatModelName,
 } from "@shared/claude-sessions/sessionModel";
+import { switchModelAndResume } from "../lib/modelSwitchActions";
+import { useModelPickerStore } from "../stores/useModelPickerStore";
 import { ModelPickerModal } from "./ModelPickerModal";
 
 // ─── Shapes pulled from the Claude Agent SDK message stream ──────────────────
@@ -82,12 +84,24 @@ export function SessionTokenBar({
 		() => deriveDisplayedModel(session),
 		[session.messages, session.model, session.modelChangedAt],
 	);
-	const [pickerOpen, setPickerOpen] = useState(false);
+	// Lifted to a store rather than local state so the global Cmd+Shift+M
+	// hotkey and the composer's model chip (next to the Stop pill) can open
+	// this same modal instance from outside this component's subtree — see
+	// useModelPickerStore.ts.
+	const pickerOpen = useModelPickerStore(
+		(s) => s.openForSessionId === session.id,
+	);
 	const [modelHover, setModelHover] = useState(false);
 
 	const modelLabel = displayed.model
 		? formatModelName(displayed.model)
 		: "Default";
+	// awaiting_permission counts as "running" here too: a turn is still in
+	// flight, just paused on a permission/plan/question card — interrupting
+	// it (which switchModelAndResume does) cancels that pending decision the
+	// same way the composer's own Stop button already does.
+	const isRunning =
+		session.status === "running" || session.status === "awaiting_permission";
 
 	return (
 		<div
@@ -115,7 +129,7 @@ export function SessionTokenBar({
 			>
 				<span style={{ color: T.textDim }}>{fmtTokens(totalTokens)} tok</span>
 				<button
-					onClick={() => setPickerOpen(true)}
+					onClick={() => useModelPickerStore.getState().open(session.id)}
 					onMouseEnter={() => setModelHover(true)}
 					onMouseLeave={() => setModelHover(false)}
 					style={{
@@ -143,10 +157,14 @@ export function SessionTokenBar({
 				open={pickerOpen}
 				sessionId={session.id}
 				effectiveModel={displayed.model}
+				isRunning={isRunning}
 				onSelect={(value) =>
 					window.claude.setSessionModel(session.id, value)
 				}
-				onClose={() => setPickerOpen(false)}
+				onSwitchAndResume={(value) =>
+					switchModelAndResume(session.id, value)
+				}
+				onClose={() => useModelPickerStore.getState().close()}
 			/>
 		</div>
 	);

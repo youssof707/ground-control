@@ -21,6 +21,7 @@ interface State {
 	setDraftText: (sessionId: string, text: string) => void;
 	setDraftImages: (sessionId: string, images: PendingImage[]) => void;
 	clearDraft: (sessionId: string) => void;
+	moveDraft: (fromSessionId: string, toSessionId: string) => void;
 	// Monotonic counter the main composer watches to (re-)focus itself and
 	// place the caret at the end. Bumped by the Cmd+R composer-focus hotkey
 	// (see composerActions.focusComposer) — mirrors useSidequestsStore's
@@ -75,6 +76,31 @@ export const useDraftStore = create<State>((set) => ({
 			const rest = { ...s.draftsBySession };
 			delete rest[sessionId];
 			return { draftsBySession: rest };
+		}),
+
+	/**
+	 * Re-key a draft onto a different session id, text and images together.
+	 *
+	 * For sidequests, whose id is minted fresh on every re-fork: Clear and the
+	 * send-time auto-recovery both replace the sidequest wholesale, and without
+	 * this the user's typed text and pasted images would die with the old id.
+	 * Overwrites the destination — a freshly forked sidequest is always blank.
+	 */
+	moveDraft: (fromSessionId, toSessionId) =>
+		set((s) => {
+			if (!fromSessionId || !toSessionId || fromSessionId === toSessionId) {
+				return s;
+			}
+			const draft = s.draftsBySession[fromSessionId];
+			const rest = { ...s.draftsBySession };
+			delete rest[fromSessionId];
+			// Nothing worth carrying: still clear the destination so a stale
+			// draft can't reappear under the new id.
+			if (isEmpty(draft)) {
+				delete rest[toSessionId];
+				return { draftsBySession: rest };
+			}
+			return { draftsBySession: { ...rest, [toSessionId]: draft } };
 		}),
 
 	bumpComposerFocus: () =>

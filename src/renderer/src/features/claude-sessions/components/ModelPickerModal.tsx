@@ -62,28 +62,61 @@ const SYNTHETIC_DEFAULT: ModelOption = {
  * stash the value on the draft record and forward it to `startSession`
  * on first send). Errors thrown from `onSelect` surface in the modal's
  * error slot instead of crashing.
+ *
+ * When `isRunning` is true (a turn is currently in flight for this session),
+ * picking a model routes through `onSwitchAndResume` instead of the plain
+ * `onSelect` — interrupt the running turn, set the model, and resume, all
+ * in one gesture, no separate Stop click and no typing "continue" by hand.
+ * See `switchModelAndResume` (lib/modelSwitchActions.ts).
  */
 export function ModelPickerModal({
 	open,
 	sessionId,
 	effectiveModel,
+	subtitle = "Applies to this session only.",
+	focusComposerAfterSelect = true,
 	onSelect,
+	onSwitchAndResume,
+	isRunning,
 	onClose,
 }: {
 	open: boolean;
-	sessionId: string;
+	/** Session whose live query answers the model list. Omitted by the
+	 * app-settings "Default model" picker (no session exists yet) — main's
+	 * `supportedModels` falls back to its transient probe query in that
+	 * case, the same path a draft or idle session already takes. */
+	sessionId?: string;
 	/** The model *actually in effect* — the same stream-derived value the
 	 * footer label shows (`deriveDisplayedModel(...).model`), not the
 	 * requested override. Highlighting must reflect reality: when the CLI
 	 * flips the model out from under us (server-side fallback, `/model`
 	 * inside the SDK), the picker has to show the model that's really
 	 * running, or the row you actually want reads as already-selected and
-	 * feels dead. Drafts have no stream, so they pass `draft.model`. */
+	 * feels dead. Drafts have no stream, so they pass `draft.model`. The
+	 * app-settings picker passes the saved default. */
 	effectiveModel: string | undefined;
+	/** Line under the title. Defaults to the per-session wording; the app
+	 * settings pane overrides it since its pick has app-wide scope. */
+	subtitle?: string;
+	/** Hand focus back to the composer after a pick. True for the three
+	 * chat-side call sites; the app-settings picker passes false — the
+	 * composer sits behind the still-open Settings modal, and grabbing
+	 * focus would yank it out of the dialog the user is in. */
+	focusComposerAfterSelect?: boolean;
 	/** Called with the chosen model id, or `undefined` to clear the
 	 * override. May be async; the modal disables its buttons while the
 	 * promise is pending and surfaces thrown errors in the error slot. */
 	onSelect: (value: string | undefined) => Promise<void> | void;
+	/** Interrupt the current turn, set the model, and resume — called
+	 * instead of `onSelect` when `isRunning` is true. Omitted by callers
+	 * with no live turn to interrupt (drafts), where `isRunning` is always
+	 * false anyway. */
+	onSwitchAndResume?: (value: string | undefined) => Promise<void> | void;
+	/** True when a turn is currently in flight for this session. Picking a
+	 * model then routes through `onSwitchAndResume` and the modal's helper
+	 * line says so up front — switching mid-response is a deliberate,
+	 * fully-automatic action, not a silent side effect. */
+	isRunning?: boolean;
 	onClose: () => void;
 }) {
 	const [options, setOptions] = useState<ModelOption[]>([]);
@@ -159,13 +192,19 @@ export function ModelPickerModal({
 		setSaving(true);
 		setError(null);
 		try {
-			await onSelect(value);
+			if (isRunning && onSwitchAndResume) {
+				await onSwitchAndResume(value);
+			} else {
+				await onSelect(value);
+			}
 			onClose();
 			// Picking a model is a one-shot detour, not a control the user
 			// meant to linger on — hand focus straight back to the composer
 			// so typing can continue uninterrupted. Same pattern as
-			// runShortcut/runSkill in ImagePasteTextarea.
-			focusComposer();
+			// runShortcut/runSkill in ImagePasteTextarea. Skipped by the
+			// app-settings picker, whose composer sits behind the still-open
+			// Settings modal.
+			if (focusComposerAfterSelect) focusComposer();
 		} catch (err) {
 			setSaving(false);
 			setError(err instanceof Error ? err.message : String(err));
@@ -222,7 +261,12 @@ export function ModelPickerModal({
 				<h2 id="model-picker-title" className="modal-title">
 					Model
 				</h2>
-				<div className="modal-message">Applies to this session only.</div>
+				<div className="modal-message">
+					{subtitle}
+					{isRunning && onSwitchAndResume
+						? " Picking a model stops the current response and continues with it automatically."
+						: ""}
+				</div>
 
 				{loading ? (
 					// Loading state: spinner + label, sized to roughly match the

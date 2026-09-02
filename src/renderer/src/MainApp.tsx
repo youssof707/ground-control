@@ -26,6 +26,9 @@ import {
 } from "./features/claude-sessions/stores/useRightPanelStore";
 import { useSidequestHotkey } from "./features/claude-sessions/hooks/useSidequestHotkey";
 import { useComposerFocusHotkey } from "./features/claude-sessions/hooks/useComposerFocusHotkey";
+import { useCommandPaletteHotkey } from "./features/claude-sessions/hooks/useCommandPaletteHotkey";
+import { useModelPickerHotkey } from "./features/claude-sessions/hooks/useModelPickerHotkey";
+import { CommandPaletteModal } from "./features/claude-sessions/components/CommandPaletteModal";
 import { T } from "./design/tokens";
 
 // Re-exported for the components that already import the type from here.
@@ -50,6 +53,14 @@ export default function MainApp() {
 	// Global ⌘R — focuses the main composer, quoting any highlighted
 	// selection inline. Mounted once, here.
 	useComposerFocusHotkey();
+	// Global ⌘K — opens the Skills/Shortcuts palette: new-session mode
+	// outside a composer, insert mode when a composer is focused. Mounted
+	// once, here.
+	useCommandPaletteHotkey();
+	// Global ⌘⇧M — opens the model picker for the active session. Picking a
+	// model while a turn is running interrupts it, switches, and resumes
+	// automatically (see useModelPickerHotkey.ts / modelSwitchActions.ts).
+	useModelPickerHotkey();
 	const rightPanel = useRightPanelStore((s) => s.rightPanel);
 	const setRightPanel = useRightPanelStore((s) => s.setRightPanel);
 	return (
@@ -69,6 +80,7 @@ export default function MainApp() {
 			<AppNav rightPanel={rightPanel} setRightPanel={setRightPanel} />
 			<MainBody rightPanel={rightPanel} setRightPanel={setRightPanel} />
 			<UpdateModal />
+			<CommandPaletteModal />
 			{/* Ambient bottom-right chip for fire-and-forget work (worktree
 			    deletion today). Self-hides when nothing is running. */}
 			<BackgroundTasksIndicator />

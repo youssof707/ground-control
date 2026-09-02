@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { SessionMode } from "@shared/claude-sessions/types";
+import { appDefaultModel } from "./useSettingsStore";
 
 /**
  * Single-slot in-memory store for the "draft session" — a session the user
@@ -44,8 +45,9 @@ export interface DraftSession {
 	 * `startSession`, at which point the SessionManager persists the
 	 * binding onto the created session record. */
 	worktreeId?: string;
-	/** Optional model override chosen in the draft header. Undefined = use
-	 * the CLI default. Forwarded to `startSession` on first send;
+	/** Optional model override chosen in the draft header, or seeded from
+	 * the app-wide default model (Settings) at draft creation. Undefined =
+	 * use the CLI default. Forwarded to `startSession` on first send;
 	 * SessionManager stamps it onto the created session record and hands
 	 * it to the SDK loop. Same id space as `session.model` (bare aliases
 	 * like `sonnet`, `fable`, or full SDK ids like `claude-sonnet-4-5-…`),
@@ -118,6 +120,14 @@ export const useDraftSessionsStore = create<State>((set) => ({
 			createdAt: Date.now(),
 			worktreeId,
 			groupId,
+			// Seed the app-wide default so the chip in the draft header shows
+			// the model BEFORE the first send — an invisible main-side
+			// substitution would make the header lie. Undefined when no
+			// default is set, which is the pre-existing "omit `model`"
+			// behaviour. Callers that mean to inherit a different model
+			// (handoffActions) overwrite this with an explicit updateDraft
+			// patch after createDraft returns.
+			model: appDefaultModel(),
 		};
 		set({ draft });
 		return draft;

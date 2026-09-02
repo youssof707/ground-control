@@ -146,8 +146,10 @@ import type {
 } from "../../shared/schemas/claude_session";
 import {
 	isInjectedUserProse,
+	isSubagentContent,
 	isSubagentProse,
 } from "../../shared/claude-sessions/transcript";
+import { transcriptHasUuid, waitForUuid } from "./transcriptIndex";
 import {
 	assistantStreamModel,
 	identityMatches,
@@ -233,6 +235,31 @@ function extractSdkSessionId(msg: SDKMessage): string | undefined {
 	return typeof sid === "string" ? sid : undefined;
 }
 
+/**
+ * `terminal_reason` values that mean "this turn was cut off by a usage
+ * limit," as opposed to actually finishing (`completed`), hitting a turn
+ * cap (`max_turns`), or any other non-limit stop. Read off the `result`
+ * message that closes a turn — see `extractTerminalReason` and its call
+ * site in `runLoop`.
+ */
+const USAGE_LIMIT_TERMINAL_REASONS = new Set<string>([
+	"blocking_limit",
+	"rapid_refill_breaker",
+]);
+
+/**
+ * Read `terminal_reason` off a `result` message defensively, as a plain
+ * string — same rationale as `extractSdkSessionId`: we spawn the user's
+ * global `claude` binary, which routinely runs ahead of the `sdk.d.ts` this
+ * app compiles against, so this must tolerate values the local SDK types
+ * don't know about yet.
+ */
+function extractTerminalReason(msg: SDKMessage): string | undefined {
+	if (msg.type !== "result") return undefined;
+	const reason = (msg as { terminal_reason?: unknown }).terminal_reason;
+	return typeof reason === "string" ? reason : undefined;
+}
+
 function logSdkErrors(sessionId: string, msg: SDKMessage): void {
 	if (msg.type === "result") {
 		const r = msg as unknown as {
@@ -250,6 +277,31 @@ function logSdkErrors(sessionId: string, msg: SDKMessage): void {
 	// tool_result errors are intentionally not logged — they fire constantly
 	// during normal use (permission denials, <tool_use_error>, InputValidationError)
 	// and drowned out genuine errors.
+}
+
+/**
+ * Did this message announce that the CLI rejected our `model` option?
+ *
+ * The CLI does NOT validate `--model` at spawn: `system:init` echoes the
+ * bad id verbatim and the process comes up healthy. The first API call
+ * then returns 404 and the CLI emits a synthetic assistant message —
+ * `message.model === "<synthetic>"`, `is_api_error_message: true`,
+ * `error: "model_not_found"` — followed by a `result` with
+ * `is_error: true`, `api_error_status: 404`, `terminal_reason: "api_error"`.
+ * Verified against claude 2.1.250.
+ *
+ * `error` is read as an unknown string on purpose: the bundled SDK's
+ * `SDKAssistantMessageError` union does not list "model_not_found" yet.
+ * The CLI is ahead of our types — the same asymmetry that produced the
+ * "fable" incident (see resolveClaudeBinary above). Widening this to any
+ * 404 or any `terminal_reason: "api_error"` would swallow unrelated
+ * failures, so it is deliberately narrow: a false negative just leaves
+ * today's behaviour (the session errors/shows the CLI's message), a false
+ * positive would silently discard the user's model choice.
+ */
+function isModelRejection(msg: SDKMessage): boolean {
+	if (msg.type !== "assistant") return false;
+	return (msg as unknown as { error?: unknown }).error === "model_not_found";
 }
 
 function sdkPermissionModeFor(mode: SessionMode): "plan" | "acceptEdits" {
@@ -499,6 +551,13 @@ export class SessionManager {
 			// in StartSessionInput if it ever wants to.
 			mode: input.mode ?? "plan",
 			worktreeId: input.worktreeId,
+			// Authoritative as-is — deliberately NOT `?? appSettings.get()
+			// .defaultModel`. The app-wide default is applied when the DRAFT
+			// is created (useDraftSessionsStore.createDraft), so it is
+			// already baked into `input.model` by the time we get here.
+			// Re-applying it here would make `undefined` unrepresentable and
+			// silently override a user who explicitly picked "Default" in
+			// the draft header on top of a non-default app setting.
 			model: input.model,
 			// Sidebar group. Membership lives only on this field (no reverse
 			// index, nothing to attach), so this single assignment is the
@@ -578,6 +637,16 @@ export class SessionManager {
 		if (targetMsg.role !== "assistant") {
 			throw new Error("Can only fork from an assistant message");
 		}
+		// Subagent traffic carries the *subagent's* uuid, which never appears in
+		// the parent transcript — branching it always fails with "No message
+		// found with message.uuid". The renderer already filters these out in
+		// `isForkableAssistant`, but this is the re-validation point, and every
+		// other invariant that predicate relies on is checked here too.
+		if (isSubagentContent(targetMsg.content)) {
+			throw new Error(
+				"Can't fork from a subagent message — pick a top-level reply",
+			);
+		}
 		const sdkMeta = targetMsg.content as {
 			uuid?: unknown;
 			session_id?: unknown;
@@ -594,6 +663,71 @@ export class SessionManager {
 				? messageSdkId
 				: parent.sdkSessionId;
 		return { sdkUuid, sourceSdkId };
+	}
+
+	/**
+	 * Like `resolveForkSource`, but guaranteed (as far as the disk can tell) to
+	 * name a uuid the resuming CLI will actually find.
+	 *
+	 * `resolveForkSource` reads our *in-memory* copy of the SDK stream, while
+	 * the CLI resolves `--resume-session-at` against the JSONL it writes
+	 * asynchronously. The sidequest panel branches at the newest assistant
+	 * reply, so those two views disagree for a beat after every message lands —
+	 * and the CLI's response to a miss is to exit 1, leaving a dead sidequest.
+	 *
+	 * So: wait briefly for the flush, and if the uuid still isn't there, walk
+	 * back to the newest message that *is*. Branching one reply earlier costs
+	 * the user nothing they can see; an error banner costs them their draft.
+	 *
+	 * Only used by `startSidequest`. `forkFrom` races the same flush but can
+	 * guard it with a plain `retryOnce` around `sdkForkSession`, because there
+	 * the failure is a rejected promise rather than a CLI that exits inside the
+	 * SDK loop.
+	 */
+	private async resolveViableForkSource(
+		parent: ClaudeSessionFull,
+		wrapperMessageId: string,
+	): Promise<{ sdkUuid: string; sourceSdkId: string }> {
+		// Throws with a user-facing message when the parent has no SDK session
+		// id yet or the target isn't a forkable assistant message.
+		const preferred = this.resolveForkSource(parent, wrapperMessageId);
+
+		if (await waitForUuid(preferred.sourceSdkId, preferred.sdkUuid)) {
+			return preferred;
+		}
+
+		// One read per transcript for the whole walk — these files run to
+		// megabytes, and ancestor routing means the candidates may span more
+		// than one of them.
+		const cache = new Map<string, Set<string> | null>();
+		const idx = parent.messages.findIndex((m) => m.id === wrapperMessageId);
+		for (let i = idx - 1; i >= 0; i--) {
+			const m = parent.messages[i];
+			if (m.role !== "assistant") continue;
+			if (isSubagentContent(m.content)) continue;
+			let candidate: { sdkUuid: string; sourceSdkId: string };
+			try {
+				candidate = this.resolveForkSource(parent, m.id);
+			} catch {
+				continue; // no uuid on this one — keep walking back
+			}
+			if (
+				(await transcriptHasUuid(
+					candidate.sourceSdkId,
+					candidate.sdkUuid,
+					cache,
+				)) !== false
+			) {
+				console.warn(
+					`[ccw] sidequest fork point ${preferred.sdkUuid} not in transcript ${preferred.sourceSdkId}; branching at ${candidate.sdkUuid} instead`,
+				);
+				return candidate;
+			}
+		}
+
+		throw new Error(
+			"Couldn't find a branch point in this session's Claude transcript yet — wait for the current reply to finish and try again.",
+		);
 	}
 
 	/**
@@ -825,9 +959,11 @@ export class SessionManager {
 
 		const parent = sessionStore.getSession(parentSessionId);
 		if (!parent) throw new Error("Parent session not found");
-		// Throws with a user-facing message when the parent has no SDK session
-		// id yet or the target message isn't a forkable assistant message.
-		const { sdkUuid, sourceSdkId } = this.resolveForkSource(
+		// Preflighted against the on-disk transcript: the CLI we're about to
+		// spawn exits 1 if it can't find this uuid, and that failure arrives
+		// asynchronously (see the `void this.runLoop` below), so it can't be
+		// reported back to the caller — only as a dead panel a second later.
+		const { sdkUuid, sourceSdkId } = await this.resolveViableForkSource(
 			parent,
 			forkMessageId,
 		);
@@ -1212,12 +1348,27 @@ export class SessionManager {
 		// Seeded to "now" because the spawn itself applied `session.model`.
 		let turnStartedAt = Date.now();
 
+		// The blocks most recently handed to the SDK. `userStream` SHIFTS
+		// turns off `turns`, so a turn killed by a model rejection (see the
+		// fallback below) is otherwise unrecoverable — this copy is what
+		// gets re-sent.
+		let lastTurnBlocks: UserContentBlock[] | null = null;
+		// Model id that was rejected, latched between the assistant error
+		// message and the `result` that closes that turn (where the
+		// fallback actually acts).
+		let rejectedModel: string | null = null;
+		// One automatic fallback per run. If the CLI's own default ALSO
+		// fails (expired auth, org policy), a second attempt would just
+		// re-push the turn forever.
+		let modelFallbackUsed = false;
+
 		async function* userStream(): AsyncIterable<SDKUserMessage> {
 			while (true) {
 				while (turns.length > 0) {
 					const blocks = turns.shift();
 					if (!blocks) continue;
 					turnStartedAt = Date.now();
+					lastTurnBlocks = blocks;
 					yield {
 						type: "user",
 						message: { role: "user", content: blocks },
@@ -1258,6 +1409,11 @@ export class SessionManager {
 		let sdkIdCaptured = !!session.sdkSessionId;
 		let cliVersionLogged = false;
 		let sweepTimer: NodeJS.Timeout | null = null;
+		// `terminal_reason` off the most recent `result` message, used only
+		// when the loop exits cleanly (no abort, no thrown error) to tell a
+		// usage-limit cutoff apart from an actual finish. See `syncStatus`'s
+		// sibling decision below and `USAGE_LIMIT_TERMINAL_REASONS`.
+		let lastTerminalReason: string | undefined;
 
 		try {
 			// Armed inside the try so the finally below is guaranteed to clear
@@ -1344,10 +1500,94 @@ export class SessionManager {
 
 				logSdkErrors(id, msg);
 
+				const terminalReason = extractTerminalReason(msg);
+				if (terminalReason) lastTerminalReason = terminalReason;
+
 				// Fold into the running/idle model before anything else — the
 				// status flip should not wait on the persist/broadcast path,
 				// and some of the messages that drive it are dropped below.
 				activity.apply(msg);
+
+				// ── Model rejection → fall back to the CLI default ──────────
+				// Detect on the synthetic assistant error, ACT on the `result`
+				// that closes the turn: acting immediately would queue the
+				// retry while the CLI is still winding down the failed turn.
+				// Placed here (before every `continue` below) so no filter can
+				// eat the detection, and after `activity.apply` so the
+				// `result` has already parked activity at idle before this
+				// flips it back to running.
+				if (
+					!modelFallbackUsed &&
+					rejectedModel === null &&
+					session.model !== undefined &&
+					isModelRejection(msg)
+				) {
+					rejectedModel = session.model;
+				}
+
+				if (rejectedModel !== null && msg.type === "result") {
+					const rejected = rejectedModel;
+					rejectedModel = null;
+					// Latch before any await: no second attempt, ever, in this run.
+					modelFallbackUsed = true;
+
+					// The user may have re-picked a model between the failure
+					// and this result. Their choice outranks our recovery —
+					// only clear the value we actually saw rejected.
+					if (session.model === rejected) {
+						console.warn(
+							`[session ${id}] model "${rejected}" rejected by the CLI — falling back to the CLI default`,
+						);
+						session.model = undefined;
+						session.modelChangedAt = Date.now();
+						if (persist) {
+							void sessionStore.updateSession(id, {
+								model: undefined,
+								modelChangedAt: session.modelChangedAt,
+							});
+						}
+						// Patch so the footer chip and picker both read
+						// "Default" instead of a model that never ran. `ch()`
+						// keeps a sidequest on `sidequest:patch` — a
+						// `session:patch` would mint a ghost sidebar row.
+						this.send(ch("patch"), {
+							sessionId: id,
+							model: undefined,
+							modelChangedAt: session.modelChangedAt,
+						});
+						// Re-point the LIVE query. The CLI process is healthy
+						// (only the API call 404'd), so this is a control
+						// request, not a respawn: sdkSessionId, the
+						// transcript, and `session:started` are all untouched.
+						try {
+							await queryRef.current?.setModel(undefined);
+						} catch (err) {
+							console.error(
+								"[ccw] model fallback setModel failed:",
+								err,
+							);
+						}
+						// Re-send the turn the rejection ate. The `WithStatus`
+						// variant so `activity.noteUserTurn()` flips the
+						// session back to "running" — the result just
+						// processed parked it at idle with an unanswered user
+						// message. Nothing is persisted or broadcast here:
+						// the user's turn is already in the transcript from
+						// the original send.
+						if (lastTurnBlocks) pushTurnWithStatus(lastTurnBlocks);
+						// Deliberately does NOT clear the saved app-wide
+						// default (settings.defaultModel): a transient
+						// binary-resolution miss (resolveClaudeBinary falling
+						// back to a stale bundled binary) must not silently
+						// wipe a preference that's valid against the user's
+						// normal binary. The console warning above and the
+						// flipped chip are the whole signal; the next new
+						// session tries the saved default again.
+					}
+					// Fall through — the CLI's own error message still
+					// persists and renders, so the transcript explains why
+					// the chip flipped.
+				}
 
 				// Which CLI build are we actually talking to? The background-task
 				// messages this session's status depends on vary between builds,
@@ -1521,14 +1761,22 @@ export class SessionManager {
 					});
 				}
 			} else {
-				session.status = "done";
+				// A clean loop exit still might not mean the turn actually
+				// finished — the SDK reports a usage-limit cutoff as a normal
+				// (non-thrown) `result`, distinguishable only by
+				// `terminal_reason`. Route that case to its own status so it
+				// gets its own badge instead of reading as "done".
+				const hitUsageLimit =
+					lastTerminalReason !== undefined &&
+					USAGE_LIMIT_TERMINAL_REASONS.has(lastTerminalReason);
+				session.status = hitUsageLimit ? "usage_limit" : "done";
 				session.finishedAt = Date.now();
-				this.send(ch("done"), {
+				this.send(ch(hitUsageLimit ? "usage_limit" : "done"), {
 					sessionId: id,
 				});
 				if (persist) {
 					void sessionStore.updateSession(id, {
-						status: "done",
+						status: session.status,
 						finishedAt: session.finishedAt,
 					});
 				}
@@ -1836,9 +2084,15 @@ export class SessionManager {
 	 *
 	 * Throws on error rather than returning null/empty — the picker surfaces
 	 * the error message instead of quietly showing a stale list.
+	 *
+	 * `sessionId` is optional so the app-settings "Default model" picker
+	 * (which has no session to ask) can go straight to the probe — same
+	 * path a draft or an idle session already takes.
 	 */
-	async supportedModels(sessionId: string): Promise<ModelInfo[]> {
-		const live = this.sessions.get(sessionId)?.queryRef.current;
+	async supportedModels(sessionId?: string): Promise<ModelInfo[]> {
+		const live = sessionId
+			? this.sessions.get(sessionId)?.queryRef.current
+			: undefined;
 		if (live) {
 			return await live.supportedModels();
 		}

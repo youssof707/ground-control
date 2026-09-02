@@ -58,6 +58,13 @@ const STATUS_MAP: Record<string, StatusStyle> = {
 		bg: T.dangerSoft,
 		border: T.dangerBorder,
 	},
+	usage_limit: {
+		dot: T.warn,
+		label: "usage limit",
+		color: T.warn,
+		bg: T.warnSoft,
+		border: T.warnBorder,
+	},
 };
 
 export function StatusPill({ status }: { status: string }) {

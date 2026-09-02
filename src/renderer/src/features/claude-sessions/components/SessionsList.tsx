@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useReadStore } from "../stores/useReadStore";
-import { useSettingsStore } from "../stores/useSettingsStore";
+import { appDefaultModel, useSettingsStore } from "../stores/useSettingsStore";
 import {
 	useDraftSessionsStore,
 	type DraftSession,
@@ -14,9 +14,13 @@ import { useSessionGroupsStore } from "../stores/useSessionGroupsStore";
 import { useSidequestsStore } from "../stores/useSidequestsStore";
 import { ConfirmModal } from "../../../components/ConfirmModal";
 import { runBackgroundTask } from "../../background-tasks/stores/useBackgroundTasksStore";
-import { appendPromptBlock } from "../lib/composerActions";
+import {
+	startSessionFromShortcut,
+	startSessionFromSkill,
+} from "../lib/sessionStartActions";
 import { AddToGroupModal } from "./AddToGroupModal";
 import { RenameGroupModal } from "./RenameGroupModal";
+import { SettingsModal } from "./SettingsModal";
 import { ShortcutsMenuButton } from "./ShortcutsMenu";
 import { T } from "../../../design/tokens";
 import { BranchChipWithDelta, ModeLabel, StatusPill } from "../../../design/Atoms";
@@ -97,6 +101,8 @@ export function SessionsList({
 	// workspace filter). Resets to false on reload — mirrors how
 	// workspaceFilter behaves.
 	const [showArchived, setShowArchived] = useState(false);
+	// Read-only settings modal, opened from the view-options dropdown.
+	const [settingsOpen, setSettingsOpen] = useState(false);
 	// Collapsed ungrouped buckets. Keys are cwd paths for cwd buckets and
 	// `wt:<worktreeId>` for worktree buckets (cwds are absolute paths or "",
 	// so the prefix can't collide). Non-persistent view state — resets on
@@ -354,11 +360,12 @@ export function SessionsList({
 		if (draft) {
 			// This repurposes the shared draft slot for a plain "new session
 			// here" intent, distinct from whatever it was doing before —
-			// clear the model override and any pending handoff-delete so
-			// neither rides along onto an unrelated session. (See
-			// DraftSession.handoffDeleteSessionId doc: every retarget site
-			// must disown it explicitly or an abandoned "Handoff & delete"
-			// can later delete the wrong session.)
+			// reset the model override to the app default and clear any
+			// pending handoff-delete so neither rides along onto an
+			// unrelated session. (See DraftSession.handoffDeleteSessionId
+			// doc: every retarget site must disown it explicitly or an
+			// abandoned "Handoff & delete" can later delete the wrong
+			// session.)
 			//
 			// `groupId` is disowned UNCONDITIONALLY, not inside the cwd
 			// guard below: "new session in this folder" is an inherently
@@ -374,7 +381,7 @@ export function SessionsList({
 				model?: string;
 				handoffDeleteSessionId?: string;
 			} = {
-				model: undefined,
+				model: appDefaultModel(),
 				handoffDeleteSessionId: undefined,
 				groupId: undefined,
 			};
@@ -404,10 +411,11 @@ export function SessionsList({
 			// Same disowning rule as startInCwd: this is a fresh "new session
 			// on this worktree" intent, so any leftover model override or
 			// pending handoff-delete from whatever the draft was doing before
-			// must not carry forward. `groupId` is disowned unconditionally
-			// for the same reason as startInCwd: targeting a worktree
-			// bucket is an ungrouped intent, and a stale groupId would keep
-			// the row rendering inside the group box instead.
+			// must not carry forward — the model resets to the app default,
+			// not to nothing. `groupId` is disowned unconditionally for the
+			// same reason as startInCwd: targeting a worktree bucket is an
+			// ungrouped intent, and a stale groupId would keep the row
+			// rendering inside the group box instead.
 			const patch: {
 				cwd?: string;
 				worktreeId?: string;
@@ -415,7 +423,7 @@ export function SessionsList({
 				model?: string;
 				handoffDeleteSessionId?: string;
 			} = {
-				model: undefined,
+				model: appDefaultModel(),
 				handoffDeleteSessionId: undefined,
 				groupId: undefined,
 			};
@@ -467,14 +475,15 @@ export function SessionsList({
 		if (draft) {
 			// Same disowning rule as startInCwd/startInWorktree: a fresh "new
 			// session in this group" intent must not carry a stale model
-			// override or a pending handoff-delete.
+			// override or a pending handoff-delete — reset the model to the
+			// app default rather than to nothing.
 			const patch: {
 				cwd?: string;
 				worktreeId?: string;
 				groupId?: string;
 				model?: string;
 				handoffDeleteSessionId?: string;
-			} = { model: undefined, handoffDeleteSessionId: undefined };
+			} = { model: appDefaultModel(), handoffDeleteSessionId: undefined };
 			// Guarded like startInCwd: a draft ALREADY in this group on this
 			// folder keeps a worktree the user attached by hand in the draft
 			// header. Only a genuine retarget clears the binding.
@@ -493,91 +502,32 @@ export function SessionsList({
 		createDraftAndNavigate(cwd, undefined, group.id);
 	};
 
-	// One-click shortcut launch. A shortcut carries no cwd, so this behaves
-	// like `start()`: reuse the existing draft in place if there is one
-	// (same single-slot rule as startInCwd — an existing draft is RETARGETED,
-	// not replaced, and since it already has a cwd there's nothing to
-	// resolve), otherwise resolve a folder exactly like `start()` does
-	// (targetCwd, else the native picker) before creating one. The prompt is
-	// appended to the composer rather than overwriting it, and the composer
-	// textarea autofocuses on navigation (ImagePasteTextarea's
-	// sessionId-keyed focus effect).
-	const startFromShortcut = async (sc: Shortcut) => {
+	// One-click shortcut/skill launch — the actual draft-slot logic lives in
+	// `lib/sessionStartActions.ts` (shared with the global Cmd+K palette,
+	// which triggers the same flow from outside this component). This
+	// wrapper only supplies what's local to this component: the resolved
+	// `targetCwd`, the "keep the new draft visible" workspace-filter
+	// reveal, and clearing the sidebar's own error banner.
+	const startFromShortcut = (sc: Shortcut) => {
 		setStartError(null);
-		const drafts = useDraftSessionsStore.getState();
-		let id: string;
-		let cwd: string;
-		if (draft) {
-			// Same disowning rule as startInCwd/startInWorktree — a shortcut
-			// launch is a fresh intent for the shared draft slot.
-			drafts.updateDraft({
-				mode: sc.mode,
-				title: sc.title,
-				model: undefined,
-				handoffDeleteSessionId: undefined,
-			});
-			id = draft.id;
-			cwd = draft.cwd;
-		} else {
-			const resolved = targetCwd ?? (await window.claude.pickFolder());
-			if (!resolved) return;
-			useSettingsStore.getState().setLastUsedWorkspace(resolved);
-			const d = drafts.createDraft({
-				cwd: resolved,
-				defaultTitle: `Session ${order.length + 1}`,
-				mode: sc.mode,
-			});
-			// createDraft always starts untitled; the shortcut title is an
-			// updateDraft patch.
-			drafts.updateDraft({ title: sc.title });
-			id = d.id;
-			cwd = resolved;
-		}
-		appendPromptBlock(id, sc.prompt);
-		// Keep the new draft visible if the workspace filter is narrowed
-		// (same reasoning as createDraftAndNavigate).
-		setWorkspaceFilter((prev) =>
-			prev.length === 0 || prev.includes(cwd) ? prev : [...prev, cwd],
-		);
-		navigate(`/sessions/${id}`);
+		return startSessionFromShortcut(sc, navigate, {
+			targetCwd,
+			onWorkspaceRevealed: (cwd) =>
+				setWorkspaceFilter((prev) =>
+					prev.length === 0 || prev.includes(cwd) ? prev : [...prev, cwd],
+				),
+		});
 	};
 
-	// One-click skill launch — same draft-slot rules as startFromShortcut,
-	// but a skill carries no mode or title: an existing draft keeps both,
-	// a fresh draft gets the store defaults. The skill's slash command is
-	// what gets appended to the composer.
-	const startFromSkill = async (skill: Skill) => {
+	const startFromSkill = (skill: Skill) => {
 		setStartError(null);
-		const drafts = useDraftSessionsStore.getState();
-		let id: string;
-		let cwd: string;
-		if (draft) {
-			// Same disowning rule as startFromShortcut — a skill launch is a
-			// fresh intent for the shared draft slot.
-			drafts.updateDraft({
-				model: undefined,
-				handoffDeleteSessionId: undefined,
-			});
-			id = draft.id;
-			cwd = draft.cwd;
-		} else {
-			const resolved = targetCwd ?? (await window.claude.pickFolder());
-			if (!resolved) return;
-			useSettingsStore.getState().setLastUsedWorkspace(resolved);
-			const d = drafts.createDraft({
-				cwd: resolved,
-				defaultTitle: `Session ${order.length + 1}`,
-			});
-			id = d.id;
-			cwd = resolved;
-		}
-		appendPromptBlock(id, `/${skill.name}`);
-		// Keep the new draft visible if the workspace filter is narrowed
-		// (same reasoning as createDraftAndNavigate).
-		setWorkspaceFilter((prev) =>
-			prev.length === 0 || prev.includes(cwd) ? prev : [...prev, cwd],
-		);
-		navigate(`/sessions/${id}`);
+		return startSessionFromSkill(skill, navigate, {
+			targetCwd,
+			onWorkspaceRevealed: (cwd) =>
+				setWorkspaceFilter((prev) =>
+					prev.length === 0 || prev.includes(cwd) ? prev : [...prev, cwd],
+				),
+		});
 	};
 
 	const discardDraft = (id: string) => {
@@ -1087,6 +1037,7 @@ export function SessionsList({
 							onToggleArchived={() =>
 								setShowArchived((v) => !v)
 							}
+							onOpenSettings={() => setSettingsOpen(true)}
 							alignRight={workspaces.length === 0}
 						/>
 					</div>
@@ -1307,6 +1258,10 @@ export function SessionsList({
 			<RenameGroupModal
 				groupId={pendingRenameGroupId}
 				onClose={() => setPendingRenameGroupId(null)}
+			/>
+			<SettingsModal
+				open={settingsOpen}
+				onClose={() => setSettingsOpen(false)}
 			/>
 		</div>
 	);
@@ -2725,13 +2680,13 @@ function MenuItem({
 }
 
 /**
- * Sidebar view-options dropdown. Visually a 32×32 icon button matching
+ * Sidebar overflow-options dropdown. Visually a 32×32 icon button matching
  * FolderButton — stacks below it as the right-edge control of the second
  * header row, with the WorkspaceFilter taking the remaining width on the
- * left. Currently exposes one option: a toggle for "Show archived
- * sessions" / "Hide archived sessions". Sized as a dropdown rather than
- * an inline button so future view controls can land here without
- * crowding the header.
+ * left. Exposes a toggle for "Show archived sessions" / "Hide archived
+ * sessions" plus "Settings". Sized as a dropdown rather than an inline
+ * button so future view controls can land here without crowding the
+ * header.
  *
  * `alignRight` pushes the button to the right edge when there's no
  * WorkspaceFilter sharing the row — keeps it stacked under FolderButton
@@ -2740,10 +2695,12 @@ function MenuItem({
 function ViewOptionsButton({
 	showArchived,
 	onToggleArchived,
+	onOpenSettings,
 	alignRight,
 }: {
 	showArchived: boolean;
 	onToggleArchived: () => void;
+	onOpenSettings: () => void;
 	alignRight?: boolean;
 }) {
 	const [open, setOpen] = useState(false);
@@ -2784,22 +2741,15 @@ function ViewOptionsButton({
 				aria-label="View options"
 				style={{ width: 32, padding: 0, color: T.textDim }}
 			>
-				{/* Eye icon — the only option today controls visibility. */}
+				{/* Kebab (more options) icon — the menu now mixes an archived-
+				    visibility toggle with unrelated items (Settings), so an
+				    eye (which implied "the only option here is visibility")
+				    no longer fits. Three dots reads as a generic overflow
+				    menu regardless of what lands in it next. */}
 				<svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-					<path
-						d="M1 7s2-4 6-4 6 4 6 4-2 4-6 4-6-4-6-4z"
-						stroke="currentColor"
-						strokeWidth="1.2"
-						fill="none"
-					/>
-					<circle
-						cx="7"
-						cy="7"
-						r="1.6"
-						stroke="currentColor"
-						strokeWidth="1.2"
-						fill="none"
-					/>
+					<circle cx="7" cy="2.5" r="1.15" fill="currentColor" />
+					<circle cx="7" cy="7" r="1.15" fill="currentColor" />
+					<circle cx="7" cy="11.5" r="1.15" fill="currentColor" />
 				</svg>
 			</button>
 			{open ? (
@@ -2828,6 +2778,14 @@ function ViewOptionsButton({
 						onClick={() => {
 							setOpen(false);
 							onToggleArchived();
+						}}
+					/>
+					<MenuItem
+						active={false}
+						label="Settings"
+						onClick={() => {
+							setOpen(false);
+							onOpenSettings();
 						}}
 					/>
 				</div>

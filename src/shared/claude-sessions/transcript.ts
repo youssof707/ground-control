@@ -105,6 +105,28 @@ export function interruptMarkerText(content: unknown): string | null {
 	return match ? match[1] : null;
 }
 
+/** Fixed text `switchModelAndResume` (lib/modelSwitchActions.ts) sends as the
+ * resume turn when a model switch mid-run has nothing queued to resume with.
+ * Unlike the interrupt marker above, this is a real, human-provenance turn
+ * (sent through the normal `sendUserMessage` path, so it omits
+ * `parent_tool_use_id` just like anything the user types) — it can't be
+ * distinguished by provenance, only by exact content, the same way a human
+ * typing this string verbatim would just render as a normal bubble. Bracket
+ * style matches the SDK's own synthesized markers so it reads as a system
+ * aside rather than a sentence. */
+export const AUTO_RESUME_TEXT = "[Continuing after switching model]";
+
+const AUTO_RESUME_RE = /^\[(Continuing after switching model)\]$/;
+
+/** True when `content` is exactly the auto-resume marker text above.
+ * Returns the label with the square brackets stripped, or null — same shape
+ * as `interruptMarkerText`, and rendered through the same dim system-note
+ * component in MessageView.tsx. */
+export function autoResumeMarkerText(content: unknown): string | null {
+	const match = userTextOf(content).trim().match(AUTO_RESUME_RE);
+	return match ? match[1] : null;
+}
+
 /** Machine-injected user prose: a `user` message that arrived through the
  * SDK stream (the `parent_tool_use_id` key is present — locally-echoed human
  * turns omit it entirely) carrying no tool-like blocks and no interrupt

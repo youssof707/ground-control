@@ -3,7 +3,23 @@ import { useMatch } from "react-router-dom";
 import { appendQuotedInline, focusComposer } from "../lib/composerActions";
 import { openSidequestPanelAndFocus } from "../lib/sidequestActions";
 import { selectionStartElement, selectionText } from "../lib/selection";
+import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useSidequestsStore } from "../stores/useSidequestsStore";
+
+// A pending permission request (plan-mode's ExitPlanMode card, an
+// AskUserQuestion card, etc.) disables the composer's `<textarea>` — see
+// `SessionChat.tsx`'s `pending.length > 0` → `ImagePasteTextarea disabled`.
+// That's a plain HTML `disabled` attribute, so it blocks keystrokes but does
+// nothing to stop imperative store writes like `appendQuotedInline`/
+// `focusComposer`, which bypass the DOM entirely. Without this guard, Cmd+R
+// would still shove quoted text into a composer the user can't then edit or
+// clear, since the disabled textarea swallows every keystroke including
+// Backspace.
+function hasPendingRequest(sessionId: string): boolean {
+	return usePermissionsStore
+		.getState()
+		.queue.some((q) => q.sessionId === sessionId);
+}
 
 /**
  * Global Cmd+R — quote the current selection into a composer and focus it.
@@ -69,6 +85,11 @@ export function useComposerFocusHotkey(): void {
 			// of the panel. Falls through to the main composer when no sidequest
 			// is registered (e.g. a selection in the panel header pre-fork).
 			if (inPanel && sq) {
+				// Sidequest's composer is disabled while it has its own pending
+				// permission request (plan mode / AskUserQuestion) — see
+				// `hasPendingRequest`'s comment. Swallow the key but don't touch
+				// the store; there's nothing sane to focus/insert into.
+				if (hasPendingRequest(sq.sidequestId)) return;
 				// Deliberately `appendQuotedInline`, not sidequestActions'
 				// `appendQuotedToDraft`: Cmd+R quotes into the sentence you're
 				// already writing, so it stays inline. Cmd+S appends a trailing
@@ -78,6 +99,9 @@ export function useComposerFocusHotkey(): void {
 				openSidequestPanelAndFocus();
 				return;
 			}
+
+			// Same guard for the main composer — see `hasPendingRequest`.
+			if (hasPendingRequest(sessionId)) return;
 
 			if (selText) appendQuotedInline(sessionId, selText);
 			focusComposer();

@@ -27,6 +27,7 @@ import { useComposerImages } from "../../hooks/useComposerImages";
 import {
 	openSidequestPanelAndFocus,
 	recreateSidequest,
+	sendToSidequest,
 } from "../../lib/sidequestActions";
 import { MessageView } from "../MessageView";
 import { ActivityChip } from "../ActivityChip";
@@ -144,8 +145,13 @@ export function SidequestPanel({
 		setClearing(true);
 		try {
 			// Discards (aborting mid-stream if needed) and re-forks at the very
-			// last Claude reply in the main thread.
-			await recreateSidequest(sessionId, forkMessageId);
+			// last Claude reply in the main thread. The draft rides along:
+			// Clear is about throwing away the *conversation*, and taking a
+			// half-typed question and its pasted screenshots with it was never
+			// the point.
+			await recreateSidequest(sessionId, forkMessageId, {
+				preserveDraft: true,
+			});
 			openSidequestPanelAndFocus();
 		} finally {
 			setClearing(false);
@@ -706,14 +712,28 @@ function SidequestComposer({
 		setSending(true);
 		setError(null);
 		try {
-			await window.claude.sendUserMessage({ sessionId: sidequestId, blocks });
+			// Heals a dead sidequest rather than failing: an errored SDK loop is
+			// unrecoverable and would otherwise force the user through Clear,
+			// which used to take their message with it. Returns the id the turn
+			// actually landed in — a fresh one if it had to re-fork.
+			const landedIn = await sendToSidequest(
+				sq.parentSessionId,
+				sidequestId,
+				blocks,
+			);
+			if (!landedIn) throw new Error("Couldn't start a sidequest to send to");
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
 			// Put the whole draft back so nothing is lost — losing a multi-MB
 			// pasted screenshot to a transient IPC failure is not recoverable.
 			// Both setters re-read the current draft, so the order is safe.
-			useDraftStore.getState().setDraftImages(sidequestId, sentImages);
-			useDraftStore.getState().setDraftText(sidequestId, trimmed);
+			// Restored under the *current* sidequest id: a failed recovery leaves
+			// the store pointing at whichever sidequest the panel is showing now.
+			const current =
+				useSidequestsStore.getState().byParent[sq.parentSessionId]
+					?.sidequestId ?? sidequestId;
+			useDraftStore.getState().setDraftImages(current, sentImages);
+			useDraftStore.getState().setDraftText(current, trimmed);
 		} finally {
 			setSending(false);
 		}

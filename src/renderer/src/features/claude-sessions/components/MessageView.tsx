@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { SessionMessage } from "@shared/claude-sessions/types";
 import {
+	autoResumeMarkerText,
 	interruptMarkerText,
 	isInjectedUserProse,
 	isSubagentContent,
@@ -63,6 +64,11 @@ export const MessageView = memo(function MessageView({
 		// a dim centered line, brackets stripped, instead of a user bubble.
 		const interrupt = interruptMarkerText(m.content);
 		if (interrupt) return <InterruptMarker text={interrupt} />;
+		// The fallback resume turn `switchModelAndResume` sends when a model
+		// switch mid-run had nothing queued to resume with — same dim
+		// treatment, so switching models doesn't leave a "continue" bubble.
+		const autoResume = autoResumeMarkerText(m.content);
+		if (autoResume) return <InterruptMarker text={autoResume} />;
 		// Machine-injected prose (Skill expansions, command expansions,
 		// compaction summaries) must never wear the user bubble. Normally
 		// filtered upstream in groupMessages; kept as a guard here too.

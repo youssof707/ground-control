@@ -9,6 +9,11 @@ export const SessionStatusSchema = z.enum([
 	"done",
 	"errored",
 	"cancelled",
+	// The SDK's turn ended cleanly (no thrown error) but its `result` message
+	// carried a `terminal_reason` of "blocking_limit" / "rapid_refill_breaker" —
+	// i.e. the run was cut off by a usage limit rather than actually finishing.
+	// Set in `SessionManager.runLoop`; see `USAGE_LIMIT_TERMINAL_REASONS`.
+	"usage_limit",
 ]);
 export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 

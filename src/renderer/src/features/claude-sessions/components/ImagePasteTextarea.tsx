@@ -1,13 +1,19 @@
 import {
 	useEffect,
 	useLayoutEffect,
+	useMemo,
 	useRef,
 	useState,
 	type KeyboardEvent,
 } from "react";
 import { useNavigate } from "react-router-dom";
 import type { SessionMode } from "@shared/claude-sessions/types";
+import {
+	deriveDisplayedModel,
+	formatModelName,
+} from "@shared/claude-sessions/sessionModel";
 import { useSessionsStore } from "../stores/useSessionsStore";
+import { useModelPickerStore } from "../stores/useModelPickerStore";
 import { useDraftStore } from "../stores/useDraftStore";
 import {
 	isDraftId,
@@ -175,6 +181,30 @@ export function ImagePasteTextarea({
 		: realMode;
 	const status = useSessionsStore((s) => s.sessions[sessionId]?.status);
 	const isRunning = status === "running";
+	// Model label for the chip next to the Stop pill (opens the same picker
+	// as the footer's model button / Cmd+Shift+M). Selected as the three
+	// underlying fields, not the whole session, so this component doesn't
+	// re-render on every unrelated session-store update — same shape as
+	// SessionTokenBar's own `displayed` memo.
+	const modelMessages = useSessionsStore(
+		(s) => s.sessions[sessionId]?.messages,
+	);
+	const modelOverride = useSessionsStore((s) => s.sessions[sessionId]?.model);
+	const modelChangedAt = useSessionsStore(
+		(s) => s.sessions[sessionId]?.modelChangedAt,
+	);
+	const displayedModel = useMemo(
+		() =>
+			deriveDisplayedModel({
+				messages: modelMessages ?? [],
+				model: modelOverride,
+				modelChangedAt,
+			}),
+		[modelMessages, modelOverride, modelChangedAt],
+	);
+	const modelChipLabel = displayedModel.model
+		? formatModelName(displayedModel.model)
+		: "Default";
 	// Subscribe to the two branch fields so the send button mirrors the
 	// BranchChip's stale (red) state — extra visibility for "you're about
 	// to send on a different branch than your last message."
@@ -589,39 +619,81 @@ export function ImagePasteTextarea({
 					boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
 				}}
 			>
-				{isRunning && onStop ? (
-					<button
-						type="button"
-						onClick={onStop}
-						disabled={interrupting}
-						aria-label="Stop"
+				{isRunning ? (
+					// Model chip + Stop, grouped together top-right of the composer.
+					// Today these lived far apart (Stop here, model switch buried in
+					// the footer bar) — grouping them shortens the distance between
+					// "I want to stop" and "I want to switch models", which is the
+					// same gesture most of the time. Clicking the chip opens the same
+					// picker as the footer button / Cmd+Shift+M; picking a model
+					// while running interrupts, switches, and resumes automatically
+					// (see ModelPickerModal's onSwitchAndResume wiring).
+					<div
 						style={{
 							position: "absolute",
 							top: 8,
 							right: 8,
 							zIndex: 1,
-							height: 22,
-							display: "inline-flex",
+							display: "flex",
 							alignItems: "center",
-							gap: 5,
-							padding: "0 8px",
-							borderRadius: 5,
-							border: `0.5px solid ${T.border}`,
-							background: T.surfaceHi,
-							color: T.text,
-							fontFamily: "inherit",
-							fontSize: 11.5,
-							fontWeight: 500,
-							lineHeight: 1,
-							cursor: interrupting ? "default" : "pointer",
-							opacity: interrupting ? 0.55 : 1,
+							gap: 6,
 						}}
 					>
-						<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
-							<rect x="1" y="1" width="8" height="8" rx="1" fill="currentColor" />
-						</svg>
-						<span>{interrupting ? "Stopping…" : "Stop"}</span>
-					</button>
+						<button
+							type="button"
+							onClick={() =>
+								useModelPickerStore.getState().open(sessionId)
+							}
+							aria-label={`Switch model — currently ${modelChipLabel}`}
+							style={{
+								height: 22,
+								display: "inline-flex",
+								alignItems: "center",
+								padding: "0 8px",
+								borderRadius: 5,
+								border: `0.5px solid ${T.border}`,
+								background: T.surfaceHi,
+								color: T.textMute,
+								fontFamily: "inherit",
+								fontSize: 11.5,
+								fontWeight: 500,
+								lineHeight: 1,
+								cursor: "pointer",
+							}}
+						>
+							{modelChipLabel}
+						</button>
+						{onStop ? (
+							<button
+								type="button"
+								onClick={onStop}
+								disabled={interrupting}
+								aria-label="Stop"
+								style={{
+									height: 22,
+									display: "inline-flex",
+									alignItems: "center",
+									gap: 5,
+									padding: "0 8px",
+									borderRadius: 5,
+									border: `0.5px solid ${T.border}`,
+									background: T.surfaceHi,
+									color: T.text,
+									fontFamily: "inherit",
+									fontSize: 11.5,
+									fontWeight: 500,
+									lineHeight: 1,
+									cursor: interrupting ? "default" : "pointer",
+									opacity: interrupting ? 0.55 : 1,
+								}}
+							>
+								<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+									<rect x="1" y="1" width="8" height="8" rx="1" fill="currentColor" />
+								</svg>
+								<span>{interrupting ? "Stopping…" : "Stop"}</span>
+							</button>
+						) : null}
+					</div>
 				) : null}
 
 				{queuedMessages.length > 0 ? (
@@ -675,6 +747,10 @@ export function ImagePasteTextarea({
 
 				<textarea
 					ref={textareaRef}
+					// Read by the global Cmd+K handler (`useCommandPaletteHotkey`) to
+					// know which session's composer is focused, without threading
+					// route state into that hook.
+					data-composer-session-id={sessionId}
 					autoFocus
 					value={text}
 					onChange={(e) => setText(e.target.value)}

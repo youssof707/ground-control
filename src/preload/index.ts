@@ -49,7 +49,7 @@ const claude = {
 		ipcRenderer.invoke("session:setMode", { sessionId, mode }),
 	setSessionModel: (sessionId: string, model?: string) =>
 		ipcRenderer.invoke("session:setModel", { sessionId, model }),
-	getSupportedModels: (sessionId: string) =>
+	getSupportedModels: (sessionId?: string) =>
 		ipcRenderer.invoke("session:supportedModels", sessionId),
 	respondPermission: (decision: PermissionDecision) =>
 		ipcRenderer.send("permission:respond", decision),
@@ -79,6 +79,8 @@ const claude = {
 	getSettings: () => ipcRenderer.invoke("settings:get"),
 	setLastUsedWorkspace: (cwd: string) =>
 		ipcRenderer.invoke("settings:setLastUsedWorkspace", { cwd }),
+	setDefaultModel: (model?: string) =>
+		ipcRenderer.invoke("settings:setDefaultModel", { model }),
 	setSessionsSidebarWidth: (width: number) =>
 		ipcRenderer.invoke("settings:setSessionsSidebarWidth", { width }),
 	setNotesSidebarWidth: (width: number) =>

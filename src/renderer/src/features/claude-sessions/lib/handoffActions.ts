@@ -68,6 +68,8 @@ export function startHandoff(input: {
 		title: handoffTitle(session.title),
 		mode: session.mode,
 		worktreeId: session.worktreeId,
+		// A handoff inherits the source session's model, same rule as
+		// fork/sidequest/resume — deliberately NOT the app-wide default.
 		model: session.model,
 		groupId: session.groupId,
 		handoffDeleteSessionId: deleteOld ? session.id : undefined,

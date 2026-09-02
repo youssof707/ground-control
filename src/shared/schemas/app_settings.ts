@@ -22,6 +22,19 @@ const sidebarWidth = (min: number, max: number) =>
 
 export const AppSettingsFileSchema = z.object({
 	lastUsedWorkspace: z.string().optional(),
+	/**
+	 * App-wide default model for brand-new sessions. Same string space as
+	 * `ClaudeSession.model`: the CLI's own id or alias, verbatim ("sonnet",
+	 * "sonnet[1m]", "claude-sonnet-4-5-20250929"). Deliberately unvalidated
+	 * beyond non-empty — which ids are legal is a property of the user's
+	 * binary AND their account, so the only honest validator is the CLI
+	 * itself (see SessionManager's model-rejection fallback). `min(1)` only
+	 * guards a hand-edited "" becoming a poison `--model ""`.
+	 *
+	 * Absent = no app default; new sessions omit the `model` key entirely
+	 * and the CLI resolves its own default — the pre-existing behaviour.
+	 */
+	defaultModel: z.string().min(1).optional(),
 	sessionsSidebarWidth: sidebarWidth(200, 800),
 	notesSidebarWidth: sidebarWidth(280, 900),
 	sidequestSidebarWidth: sidebarWidth(280, 900),

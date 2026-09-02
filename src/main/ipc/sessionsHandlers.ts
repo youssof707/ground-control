@@ -236,7 +236,7 @@ export function registerSessionsHandlers(): SessionManager {
 	// binary that would run the real session — so the picker never shows a
 	// model the binary can't actually spawn. Rejects on error; the renderer
 	// surfaces the message in the picker's error slot.
-	ipcMain.handle("session:supportedModels", (_e, sessionId: string) =>
+	ipcMain.handle("session:supportedModels", (_e, sessionId?: string) =>
 		manager.supportedModels(sessionId),
 	);
 	ipcMain.handle("sessions:list", () => sessionStore.listSessions());

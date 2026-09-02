@@ -169,6 +169,10 @@ export function useSessionsBootstrap() {
 				const { sessionId } = p as { sessionId: string };
 				setStatus(sessionId, "done");
 			}),
+			window.claude.on("session:usage_limit", (p) => {
+				const { sessionId } = p as { sessionId: string };
+				setStatus(sessionId, "usage_limit");
+			}),
 			window.claude.on("session:errored", (p) => {
 				const { sessionId } = p as {
 					sessionId: string;
@@ -236,6 +240,10 @@ export function useSessionsBootstrap() {
 			window.claude.on("sidequest:done", (p) => {
 				const { sessionId } = p as { sessionId: string };
 				useSidequestsStore.getState().setStatus(sessionId, "done");
+			}),
+			window.claude.on("sidequest:usage_limit", (p) => {
+				const { sessionId } = p as { sessionId: string };
+				useSidequestsStore.getState().setStatus(sessionId, "usage_limit");
 			}),
 			window.claude.on("sidequest:cancelled", (p) => {
 				const { sessionId } = p as { sessionId: string };

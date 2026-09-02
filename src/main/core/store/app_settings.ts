@@ -64,6 +64,23 @@ export async function setLastUsedWorkspace(cwd: string): Promise<void> {
 	});
 }
 
+/**
+ * Set — or clear, with `undefined` — the app-wide default model.
+ *
+ * The only setter in this file that accepts a clearing `undefined`.
+ * `JSON.stringify` drops undefined-valued keys, so `persist()` writes the
+ * key out of existence rather than emitting `"defaultModel": null` (which
+ * the schema would reject on the next boot).
+ */
+export async function setDefaultModel(model: string | undefined): Promise<void> {
+	assertInitialized();
+	return enqueue(async () => {
+		if (db.defaultModel === model) return;
+		db = { ...db, defaultModel: model };
+		await persist();
+	});
+}
+
 export async function setSessionsSidebarWidth(width: number): Promise<void> {
 	assertInitialized();
 	// Pointer events on high-DPI displays produce fractional clientX values,

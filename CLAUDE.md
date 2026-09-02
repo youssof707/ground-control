@@ -11,6 +11,21 @@ the single source of truth so shortcuts are easy to find.
 
 - `Cmd+S` — open a side quest
 - `Cmd+K` — open the shortcut menu
+- `Cmd+Shift+M` — open the model picker for the active session (picking a
+  model while a turn is running interrupts it, switches, and resumes
+  automatically)
+
+## Verification rules
+
+**NEVER use Playwright. Ever.** No `playwright`, no `playwright-core`, no
+`_electron.launch`, no driver scripts that wrap it. Don't install it, don't script it,
+don't suggest it.
+
+**Don't test it yourself. At all.** Don't run `npm run dev`, don't launch the app, don't
+run typecheck/lint/build as a self-check, don't `git stash` to diff behavior, don't invent
+manual click-through scripts and execute them. Make the change, then stop and hand it to
+me — I run the app and verify it myself. If you genuinely need a command run to unblock
+implementation (not to convince yourself the change works), ask first.
 
 ## UI rules
 

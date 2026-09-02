@@ -1,4 +1,7 @@
+import type { SessionMode } from "@shared/claude-sessions/types";
 import { useDraftStore } from "../stores/useDraftStore";
+import { isDraftId, useDraftSessionsStore } from "../stores/useDraftSessionsStore";
+import { useSessionsStore } from "../stores/useSessionsStore";
 
 /**
  * Imperative main-composer operations, shared by the global Cmd+R handler.
@@ -55,4 +58,34 @@ export function appendPromptBlock(sessionId: string, prompt: string): void {
 		"",
 	);
 	setDraftText(sessionId, trimmed ? `${trimmed}\n${prompt}` : prompt);
+}
+
+/**
+ * Apply a shortcut's mode to a session, store-only equivalent of
+ * `ImagePasteTextarea`'s local `changeMode` (draft vs. real-session branch,
+ * optimistic flip with revert-on-failure for real sessions). Used by the
+ * global Cmd+K "insert" path, which runs outside that component and has no
+ * `modeSwitching` loading state to thread through — this deliberately drops
+ * it; it only ever disabled the composer's own `ModeToggle` mid-request,
+ * which doesn't apply to a fire-and-forget hotkey action.
+ */
+export async function applyShortcutMode(
+	sessionId: string,
+	mode: SessionMode,
+): Promise<void> {
+	if (isDraftId(sessionId)) {
+		useDraftSessionsStore.getState().updateDraft({ mode });
+		return;
+	}
+	const current = useSessionsStore.getState().sessions[sessionId]?.mode;
+	if (current === mode) return;
+	useSessionsStore.getState().upsertSession({ id: sessionId, mode });
+	try {
+		await window.claude.setSessionMode(sessionId, mode);
+	} catch (err) {
+		useSessionsStore
+			.getState()
+			.upsertSession({ id: sessionId, mode: current ?? "plan" });
+		console.error("[ccw] applyShortcutMode failed", err);
+	}
 }

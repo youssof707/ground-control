@@ -125,7 +125,16 @@ export const useSidequestsStore = create<State>((set, get) => ({
 				return {
 					byParent: {
 						...s.byParent,
-						[parentSessionId]: { ...prev, status: "idle", mode, model },
+						[parentSessionId]: {
+							...prev,
+							status: "idle",
+							mode,
+							model,
+							// A sidequest that just started successfully has no
+							// error — without this the banner from a previous
+							// failed start outlives the fork that fixed it.
+							error: undefined,
+						},
 					},
 				};
 			}

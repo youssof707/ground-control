@@ -99,7 +99,13 @@ export function useSidequestHotkey(): void {
 					return;
 				}
 				void (async () => {
-					const newId = await recreateSidequest(sessionId, forkMessageId);
+					// preserveDraft so `appendQuotedToDraft` can actually append.
+					// Re-forking used to clear the draft first, which silently
+					// defeated that function's whole point: selecting more
+					// evidence mid-question threw the question away.
+					const newId = await recreateSidequest(sessionId, forkMessageId, {
+						preserveDraft: true,
+					});
 					if (newId) appendQuotedToDraft(newId, selText);
 					// Open regardless: on failure the panel shows the error.
 					openSidequestPanelAndFocus();

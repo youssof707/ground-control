@@ -1,7 +1,6 @@
 import { Link, useMatch } from "react-router-dom";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
-import { useReadStore } from "../stores/useReadStore";
 import { isSidequestId, useSidequestsStore } from "../stores/useSidequestsStore";
 import { lastForkableMessageId } from "../lib/sidequestForkPoint";
 import {
@@ -9,20 +8,7 @@ import {
 	recreateSidequest,
 } from "../lib/sidequestActions";
 import { T } from "../../../design/tokens";
-import type { ClaudeSessionFull } from "@shared/claude-sessions/types";
-import { isConversationSkipped } from "@shared/claude-sessions/transcript";
 import type { RightPanel } from "../../../MainApp";
-
-function lastIncomingMessageTs(session: ClaudeSessionFull): number {
-	for (let i = session.messages.length - 1; i >= 0; i--) {
-		const m = session.messages[i];
-		// Skip hidden subagent traffic (old stores) — see SessionsList's copy.
-		if (m.role === "assistant" && !isConversationSkipped(m.role, m.content)) {
-			return m.ts;
-		}
-	}
-	return 0;
-}
 
 export function AppNav({
 	rightPanel,
@@ -34,7 +20,6 @@ export function AppNav({
 	const queue = usePermissionsStore((s) => s.queue);
 	const sessionsMap = useSessionsStore((s) => s.sessions);
 	const sessionsOrder = useSessionsStore((s) => s.order);
-	const lastReadAt = useReadStore((s) => s.lastReadAt);
 	const sessionMatch = useMatch("/sessions/:id/*");
 	const inSession = !!sessionMatch;
 	const activeSessionId = sessionMatch?.params.id;
@@ -46,8 +31,8 @@ export function AppNav({
 	);
 
 	// Archive must vanish from every attention-grabbing count: the
-	// AppNav "unread" / "waiting" stats, the Inbox toggle badge, and
-	// (downstream) the dock badge. Archived sessions get filtered out
+	// AppNav "running" / "editing" / "waiting" stats, the Inbox toggle badge,
+	// and (downstream) the dock badge. Archived sessions get filtered out
 	// at every derivation that produces a number for the user to
 	// glance at, so an unreplied archived session doesn't keep
 	// glowing in the corner of their screen.
@@ -56,6 +41,13 @@ export function AppNav({
 	const runningCount = sessionsOrder.filter(
 		(id) => sessionsMap[id]?.status === "running" && !isArchived(id),
 	).length;
+
+	// Running sessions that are *not* in plan mode — i.e. actually touching the
+	// filesystem rather than doing read-only research. A subset of runningCount.
+	const editingCount = sessionsOrder.filter((id) => {
+		const s = sessionsMap[id];
+		return s?.status === "running" && s.mode !== "plan" && !isArchived(id);
+	}).length;
 
 	// Sidequests are a side conversation the user is already looking at in the
 	// panel — they must not drive the global attention counters, and they have
@@ -108,18 +100,6 @@ export function AppNav({
 			openSidequestPanelAndFocus();
 		})();
 	};
-
-	const unreadCount = sessionsOrder.reduce((acc, id) => {
-		const sess = sessionsMap[id];
-		if (!sess) return acc;
-		if (sess.archivedAt != null) return acc;
-		if (sess.status === "running") return acc;
-		const lastIncoming = lastIncomingMessageTs(sess);
-		if (lastIncoming > 0 && lastIncoming > (lastReadAt[id] ?? 0)) {
-			return acc + 1;
-		}
-		return acc;
-	}, 0);
 
 	return (
 		<nav
@@ -180,9 +160,9 @@ export function AppNav({
 				/>
 				<Sep />
 				<Stat
-					n={unreadCount}
-					label="unread"
-					dot={unreadCount > 0 ? T.accent : undefined}
+					n={editingCount}
+					label="editing"
+					dot={editingCount > 0 ? T.accent : undefined}
 				/>
 				<Sep />
 				<Stat
