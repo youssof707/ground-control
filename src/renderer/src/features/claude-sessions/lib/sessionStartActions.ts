@@ -5,6 +5,7 @@ import { appendPromptBlock } from "./composerActions";
 import { useDraftSessionsStore } from "../stores/useDraftSessionsStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { appDefaultModel, useSettingsStore } from "../stores/useSettingsStore";
+import { useWorktreesStore } from "../stores/useWorktreesStore";
 
 /**
  * Imperative "start a new session from a shortcut/skill" operations,
@@ -32,6 +33,59 @@ async function resolveDraftCwd(targetCwd: string | null): Promise<string | null>
 	if (!resolved) return null;
 	useSettingsStore.getState().setLastUsedWorkspace(resolved);
 	return resolved;
+}
+
+/**
+ * The worktree a new session in `cwd` should be pre-attached to: whichever
+ * one was last actually used there (see `setLastUsedWorktree`'s write site in
+ * `ImagePasteTextarea`), or undefined.
+ *
+ * Both validations matter. The worktree may have been deleted since it was
+ * remembered — the settings file has no visibility into worktree lifecycle,
+ * so pruning happens here on read instead. And the `baseDir === cwd` check
+ * mirrors the guard `session:start` applies in `sessionsHandlers`: main drops
+ * any worktreeId whose baseDir doesn't match the session cwd, so a mismatched
+ * pairing would silently vanish at send time. Better to never show the chip
+ * than to show one that disappears.
+ */
+function resolveSeedWorktreeId(cwd: string): string | undefined {
+	const remembered =
+		useSettingsStore.getState().lastUsedWorktreeByWorkspace?.[cwd];
+	if (!remembered) return undefined;
+	const wt = useWorktreesStore.getState().worktrees[remembered];
+	return wt && wt.baseDir === cwd ? wt.id : undefined;
+}
+
+/**
+ * Plain "New Session" — the shared implementation behind both the sidebar
+ * button and the global Cmd+N hotkey, so the two can't drift on worktree
+ * seeding.
+ *
+ * Same single-slot rule as the rest of New Session: an existing draft is
+ * navigated to, not replaced. Unlike `startInCwd`'s retarget branch this
+ * doesn't disown the draft's model/group/handoff state, because it isn't
+ * retargeting anything — there's no new folder being asserted, so the draft
+ * is left exactly as the user left it.
+ */
+export async function startNewSessionDraft(
+	navigate: NavigateFunction,
+	{ targetCwd, onWorkspaceRevealed }: StartOptions,
+): Promise<void> {
+	const drafts = useDraftSessionsStore.getState();
+	if (drafts.draft) {
+		navigate(`/sessions/${drafts.draft.id}`);
+		return;
+	}
+	const cwd = await resolveDraftCwd(targetCwd);
+	if (!cwd) return;
+	const order = useSessionsStore.getState().order;
+	const d = drafts.createDraft({
+		cwd,
+		defaultTitle: `Session ${order.length + 1}`,
+		worktreeId: resolveSeedWorktreeId(cwd),
+	});
+	onWorkspaceRevealed?.(cwd);
+	navigate(`/sessions/${d.id}`);
 }
 
 /**

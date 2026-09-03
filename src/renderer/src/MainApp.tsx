@@ -12,6 +12,8 @@ import { useQueuedMessageFlusher } from "./features/claude-sessions/hooks/useQue
 import { useUpdater } from "./features/updater/hooks/useUpdater";
 import { UpdateModal } from "./features/updater/components/UpdateModal";
 import { BackgroundTasksIndicator } from "./features/background-tasks/components/BackgroundTasksIndicator";
+import { AmbientStack } from "./components/AmbientStack";
+import { UndoToast } from "./features/claude-sessions/components/UndoToast";
 import { SessionsList } from "./features/claude-sessions/components/SessionsList";
 import { SessionChat } from "./features/claude-sessions/components/SessionChat";
 import { InboxSidebar } from "./features/claude-sessions/components/InboxSidebar";
@@ -28,6 +30,10 @@ import { useSidequestHotkey } from "./features/claude-sessions/hooks/useSideques
 import { useComposerFocusHotkey } from "./features/claude-sessions/hooks/useComposerFocusHotkey";
 import { useCommandPaletteHotkey } from "./features/claude-sessions/hooks/useCommandPaletteHotkey";
 import { useModelPickerHotkey } from "./features/claude-sessions/hooks/useModelPickerHotkey";
+import { useStopSessionHotkey } from "./features/claude-sessions/hooks/useStopSessionHotkey";
+import { useNewSessionHotkey } from "./features/claude-sessions/hooks/useNewSessionHotkey";
+import { usePlanModeHotkey } from "./features/claude-sessions/hooks/usePlanModeHotkey";
+import { useUndoHotkey } from "./features/claude-sessions/hooks/useUndoHotkey";
 import { CommandPaletteModal } from "./features/claude-sessions/components/CommandPaletteModal";
 import { T } from "./design/tokens";
 
@@ -61,6 +67,19 @@ export default function MainApp() {
 	// model while a turn is running interrupts it, switches, and resumes
 	// automatically (see useModelPickerHotkey.ts / modelSwitchActions.ts).
 	useModelPickerHotkey();
+	// Global ⌘. — interrupts the active session's running turn (the macOS
+	// "cancel" idiom). No-op unless that session is actually running.
+	useStopSessionHotkey();
+	// Global ⌘N — opens a new session draft, pre-attached to the worktree
+	// last used in the target workspace.
+	useNewSessionHotkey();
+	// ⌘P — toggles Plan ⇄ Auto-edit, but only while a session composer has
+	// focus (scoped via the composer's data-composer-session-id attribute).
+	usePlanModeHotkey();
+	// ⇧⌘Z — restores the most recently deleted/handed-off/archived session.
+	// Skips editable targets so native text redo is untouched, and falls
+	// through entirely when there's nothing buffered.
+	useUndoHotkey();
 	const rightPanel = useRightPanelStore((s) => s.rightPanel);
 	const setRightPanel = useRightPanelStore((s) => s.setRightPanel);
 	return (
@@ -81,9 +100,13 @@ export default function MainApp() {
 			<MainBody rightPanel={rightPanel} setRightPanel={setRightPanel} />
 			<UpdateModal />
 			<CommandPaletteModal />
-			{/* Ambient bottom-right chip for fire-and-forget work (worktree
-			    deletion today). Self-hides when nothing is running. */}
-			<BackgroundTasksIndicator />
+			{/* One ambient bottom-right column, ordered by urgency: the undo
+			    prompt sits above the background-task chip. Both self-hide, so
+			    the corner is empty in the common case. */}
+			<AmbientStack>
+				<UndoToast />
+				<BackgroundTasksIndicator />
+			</AmbientStack>
 		</div>
 	);
 }

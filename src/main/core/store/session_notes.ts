@@ -108,6 +108,28 @@ export async function remove(id: string): Promise<void> {
 }
 
 /**
+ * Put back a batch of notes wholesale, ids and timestamps intact. The inverse
+ * of `deleteAllForSession`, used by `session:restore` to undo the note cascade
+ * a session delete performed.
+ *
+ * Writes by id rather than appending, so a double-restore is idempotent rather
+ * than duplicating every note. Existing notes with the same id are
+ * overwritten, which is the correct outcome: the only way an id collides here
+ * is if this exact note was already restored.
+ */
+export async function restoreMany(notes: Note[]): Promise<void> {
+	assertInitialized();
+	if (notes.length === 0) return;
+	return enqueue(async () => {
+		for (const n of notes) {
+			const validated = NoteSchema.parse(n);
+			db.notes[validated.id] = validated;
+		}
+		await persist();
+	});
+}
+
+/**
  * Cascade-delete all notes belonging to a session. Called from
  * `session:delete` so the session record and its notes are removed
  * atomically (the shared write queue serializes both writes).

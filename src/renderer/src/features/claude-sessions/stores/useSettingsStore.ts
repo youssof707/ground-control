@@ -14,12 +14,14 @@ import type { AppSettingsFile } from "@shared/schemas/app_settings";
  */
 interface State {
 	lastUsedWorkspace?: string;
+	lastUsedWorktreeByWorkspace?: Record<string, string>;
 	defaultModel?: string;
 	sessionsSidebarWidth?: number;
 	notesSidebarWidth?: number;
 	sidequestSidebarWidth?: number;
 	hydrate: (settings: AppSettingsFile) => void;
 	setLastUsedWorkspace: (cwd: string) => void;
+	setLastUsedWorktree: (cwd: string, worktreeId: string | undefined) => void;
 	setDefaultModel: (model: string | undefined) => void;
 	setSessionsSidebarWidth: (width: number) => void;
 	setNotesSidebarWidth: (width: number) => void;
@@ -28,6 +30,7 @@ interface State {
 
 export const useSettingsStore = create<State>((set, get) => ({
 	lastUsedWorkspace: undefined,
+	lastUsedWorktreeByWorkspace: undefined,
 	defaultModel: undefined,
 	sessionsSidebarWidth: undefined,
 	notesSidebarWidth: undefined,
@@ -35,6 +38,7 @@ export const useSettingsStore = create<State>((set, get) => ({
 	hydrate: (settings) =>
 		set({
 			lastUsedWorkspace: settings.lastUsedWorkspace,
+			lastUsedWorktreeByWorkspace: settings.lastUsedWorktreeByWorkspace,
 			defaultModel: settings.defaultModel,
 			sessionsSidebarWidth: settings.sessionsSidebarWidth,
 			notesSidebarWidth: settings.notesSidebarWidth,
@@ -48,6 +52,18 @@ export const useSettingsStore = create<State>((set, get) => ({
 		// to every other window (skip-self) which triggers their refetch.
 		void window.claude?.setLastUsedWorkspace(cwd);
 		set({ lastUsedWorkspace: cwd });
+	},
+	setLastUsedWorktree: (cwd, worktreeId) => {
+		// Same no-op / optimistic / fire-and-forget shape as
+		// setLastUsedWorkspace. `undefined` is a meaningful value here — it
+		// forgets the pairing — so the key is deleted rather than stored.
+		const map = get().lastUsedWorktreeByWorkspace ?? {};
+		if (map[cwd] === worktreeId) return;
+		const next = { ...map };
+		if (worktreeId === undefined) delete next[cwd];
+		else next[cwd] = worktreeId;
+		void window.claude?.setLastUsedWorktree(cwd, worktreeId);
+		set({ lastUsedWorktreeByWorkspace: next });
 	},
 	setDefaultModel: (model) => {
 		if (get().defaultModel === model) return;

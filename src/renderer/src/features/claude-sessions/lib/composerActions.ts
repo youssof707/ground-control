@@ -61,15 +61,22 @@ export function appendPromptBlock(sessionId: string, prompt: string): void {
 }
 
 /**
- * Apply a shortcut's mode to a session, store-only equivalent of
- * `ImagePasteTextarea`'s local `changeMode` (draft vs. real-session branch,
- * optimistic flip with revert-on-failure for real sessions). Used by the
- * global Cmd+K "insert" path, which runs outside that component and has no
- * `modeSwitching` loading state to thread through — this deliberately drops
- * it; it only ever disabled the composer's own `ModeToggle` mid-request,
- * which doesn't apply to a fire-and-forget hotkey action.
+ * Set a session's mode, store-only equivalent of `ImagePasteTextarea`'s local
+ * `changeMode` (draft vs. real-session branch, optimistic flip with
+ * revert-on-failure for real sessions).
+ *
+ * Two callers, both running outside that component: the global Cmd+K "insert"
+ * path applying a saved shortcut's mode, and the global Cmd+P plan-mode
+ * toggle. Neither has a `modeSwitching` loading state to thread through —
+ * this deliberately drops it; it only ever disabled the composer's own
+ * `ModeToggle` mid-request, which doesn't apply to a fire-and-forget hotkey
+ * action.
+ *
+ * Only models real sessions and drafts. Sidequests take a different path
+ * (`SidequestPanel`'s local `changeMode` → `sidequest:patch`) and must not be
+ * routed here — the `useSessionsStore` lookup below would miss them entirely.
  */
-export async function applyShortcutMode(
+export async function applySessionMode(
 	sessionId: string,
 	mode: SessionMode,
 ): Promise<void> {
@@ -86,6 +93,6 @@ export async function applyShortcutMode(
 		useSessionsStore
 			.getState()
 			.upsertSession({ id: sessionId, mode: current ?? "plan" });
-		console.error("[ccw] applyShortcutMode failed", err);
+		console.error("[ccw] applySessionMode failed", err);
 	}
 }

@@ -65,6 +65,32 @@ export async function setLastUsedWorkspace(cwd: string): Promise<void> {
 }
 
 /**
+ * Remember — or forget, with an `undefined` `worktreeId` — which worktree was
+ * last used in `cwd`.
+ *
+ * Forgetting is a real signal, not a no-op: starting a plain non-worktree
+ * session in a folder means "I'm working on the base checkout now", and the
+ * next New Session there should not resurrect a worktree the user moved away
+ * from. Deletes the key rather than storing `undefined` so `persist()` can't
+ * emit a `null` the schema would reject on next boot.
+ */
+export async function setLastUsedWorktree(
+	cwd: string,
+	worktreeId: string | undefined,
+): Promise<void> {
+	assertInitialized();
+	return enqueue(async () => {
+		const map = db.lastUsedWorktreeByWorkspace ?? {};
+		if (map[cwd] === worktreeId) return;
+		const next = { ...map };
+		if (worktreeId === undefined) delete next[cwd];
+		else next[cwd] = worktreeId;
+		db = { ...db, lastUsedWorktreeByWorkspace: next };
+		await persist();
+	});
+}
+
+/**
  * Set — or clear, with `undefined` — the app-wide default model.
  *
  * The only setter in this file that accepts a clearing `undefined`.

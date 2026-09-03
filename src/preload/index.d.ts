@@ -7,6 +7,7 @@ import type {
 	StartSessionInput,
 	UserTurn,
 } from "../shared/schemas/claude_session";
+import type { DeletedSessionSnapshot } from "../shared/claude-sessions/undo";
 import type { ReadStateFile } from "../shared/schemas/read_state";
 import type { AppSettingsFile } from "../shared/schemas/app_settings";
 import type { Note } from "../shared/schemas/session_notes";
@@ -73,7 +74,17 @@ declare global {
 			getSupportedModels: (sessionId?: string) => Promise<ModelInfo[]>;
 			respondPermission: (decision: PermissionDecision) => void;
 			listSessions: () => Promise<ClaudeSessionFull[]>;
-			deleteSession: (sessionId: string) => Promise<void>;
+			/**
+			 * Resolves to a snapshot of everything the delete destroyed
+			 * (session + notes + auto-pruned group), for `restoreSession` to
+			 * put back. Null when the session didn't exist.
+			 */
+			deleteSession: (
+				sessionId: string,
+			) => Promise<DeletedSessionSnapshot | null>;
+			restoreSession: (
+				snapshot: DeletedSessionSnapshot,
+			) => Promise<ClaudeSessionFull>;
 			archiveSession: (sessionId: string) => Promise<void>;
 			unarchiveSession: (sessionId: string) => Promise<void>;
 			renameSession: (sessionId: string, title: string) => Promise<void>;
@@ -93,6 +104,10 @@ declare global {
 			markUnread: (sessionId: string) => Promise<void>;
 			getSettings: () => Promise<AppSettingsFile>;
 			setLastUsedWorkspace: (cwd: string) => Promise<void>;
+			setLastUsedWorktree: (
+				cwd: string,
+				worktreeId?: string,
+			) => Promise<void>;
 			setDefaultModel: (model?: string) => Promise<void>;
 			setSessionsSidebarWidth: (width: number) => Promise<void>;
 			setNotesSidebarWidth: (width: number) => Promise<void>;

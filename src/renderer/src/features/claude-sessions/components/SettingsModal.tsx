@@ -14,9 +14,13 @@ import { ModelPickerModal } from "./ModelPickerModal";
  * that list changes, update both.
  */
 const SHORTCUTS: { keys: string[]; label: string }[] = [
+	{ keys: ["⌘", "N"], label: "New session" },
 	{ keys: ["⌘", "S"], label: "Open a side quest" },
 	{ keys: ["⌘", "K"], label: "Open the shortcut menu" },
 	{ keys: ["⌘", "R"], label: "Quote selection into the composer" },
+	{ keys: ["⌘", "."], label: "Stop the running session" },
+	{ keys: ["⌘", "P"], label: "Toggle plan mode (in the composer)" },
+	{ keys: ["⌘", "⇧", "M"], label: "Open the model picker" },
 ];
 
 /**

@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { useNavigate } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
-import { useQueuedMessagesStore } from "../stores/useQueuedMessagesStore";
+import { useInterruptStore } from "../stores/useInterruptStore";
 import { useReadStore } from "../stores/useReadStore";
 import { isDraftId, useDraftSessionsStore } from "../stores/useDraftSessionsStore";
 import { useDraftStore } from "../stores/useDraftStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { focusComposer } from "../lib/composerActions";
+import { stopSession } from "../lib/sessionControlActions";
 import { startHandoff } from "../lib/handoffActions";
 import { PermissionCard } from "./PermissionCard";
 import { ActivityChip } from "./ActivityChip";
@@ -39,7 +40,9 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	);
 	const queue = usePermissionsStore((s) => s.queue);
 	const pending = queue.filter((q) => q.sessionId === sessionId);
-	const [interrupting, setInterrupting] = useState(false);
+	// Lives in a store, not local state, so the Stop pill and the global ⌘.
+	// hotkey share one in-flight guard — see `stopSession`.
+	const interrupting = useInterruptStore((s) => !!s.interrupting[sessionId]);
 	const [forkingId, setForkingId] = useState<string | null>(null);
 	const [forkError, setForkError] = useState<string | null>(null);
 	const [pendingForkMessageId, setPendingForkMessageId] = useState<
@@ -173,20 +176,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 		if (!el) return;
 		const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
 		stickToBottom.current = distance < 80;
-	};
-
-	const stop = async () => {
-		if (interrupting) return;
-		setInterrupting(true);
-		// Interrupting drives status to `idle` too, but that's the user saying
-		// "wait", not "the turn finished" — latch any queued pre-move shut so
-		// useQueuedMessageFlusher doesn't mistake this idle edge for one.
-		useQueuedMessagesStore.getState().hold(sessionId);
-		try {
-			await window.claude.interruptSession(sessionId);
-		} finally {
-			setInterrupting(false);
-		}
 	};
 
 	const beginEditTitle = () => {
@@ -640,7 +629,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					textareaHeight={inputHeight}
 					onContentHeightChange={onContentHeightChange}
 					disabled={pending.length > 0}
-					onStop={stop}
+					onStop={() => void stopSession(sessionId)}
 					interrupting={interrupting}
 				/>
 			) : null}

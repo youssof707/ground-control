@@ -35,6 +35,23 @@ export const AppSettingsFileSchema = z.object({
 	 * and the CLI resolves its own default — the pre-existing behaviour.
 	 */
 	defaultModel: z.string().min(1).optional(),
+	/**
+	 * cwd → id of the worktree a session was last started on in that
+	 * workspace. Read by the ⌘N / "New Session" path to pre-attach the
+	 * worktree you were last working in, so returning to a repo resumes on
+	 * the same branch checkout instead of the bare base dir.
+	 *
+	 * Keyed per workspace rather than as a single global "last worktree"
+	 * because a worktree is bound to a `baseDir`: `session:start` drops any
+	 * `worktreeId` whose `wt.baseDir !== cwd`, so one global value would be
+	 * silently discarded the moment you switch repos.
+	 *
+	 * Entries are written (and cleared, by starting a plain non-worktree
+	 * session in the same folder) at draft→real promotion. Never pruned on
+	 * worktree deletion — readers re-validate against the live worktree list
+	 * instead, since this file has no visibility into worktree lifecycle.
+	 */
+	lastUsedWorktreeByWorkspace: z.record(z.string(), z.string()).optional(),
 	sessionsSidebarWidth: sidebarWidth(200, 800),
 	notesSidebarWidth: sidebarWidth(280, 900),
 	sidequestSidebarWidth: sidebarWidth(280, 900),

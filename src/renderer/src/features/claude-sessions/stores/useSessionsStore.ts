@@ -19,6 +19,7 @@ interface State {
 	appendMessage: (sessionId: string, msg: SessionMessage) => void;
 	setStatus: (sessionId: string, status: SessionStatus) => void;
 	removeSession: (sessionId: string) => void;
+	restoreSession: (session: ClaudeSessionFull) => void;
 	hydrate: (sessions: ClaudeSessionFull[]) => void;
 }
 
@@ -80,6 +81,29 @@ export const useSessionsStore = create<State>((set) => ({
 			return {
 				sessions: rest,
 				order: st.order.filter((id) => id !== sessionId),
+				deletedIds: nextDeleted,
+			};
+		}),
+	// Inverse of removeSession, for undoing a delete. The tombstone MUST be
+	// lifted before (or with) the row going back in: every write path here —
+	// upsertSession, appendMessage, setStatus, and hydrate — refuses ids in
+	// `deletedIds`, so a restore that skipped this would insert a row that
+	// immediately went inert, never updating again and vanishing on the next
+	// refetch.
+	//
+	// Order matters within the set() too: this writes `sessions`/`order` and
+	// `deletedIds` in one atomic update rather than calling upsertSession
+	// after a separate untombstone, so no subscriber can observe the
+	// half-restored intermediate state.
+	restoreSession: (session) =>
+		set((st) => {
+			const nextDeleted = new Set(st.deletedIds);
+			nextDeleted.delete(session.id);
+			return {
+				sessions: { ...st.sessions, [session.id]: session },
+				order: st.order.includes(session.id)
+					? st.order
+					: [...st.order, session.id],
 				deletedIds: nextDeleted,
 			};
 		}),

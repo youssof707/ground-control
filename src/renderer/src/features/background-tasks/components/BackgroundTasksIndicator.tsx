@@ -3,12 +3,14 @@ import { useBackgroundTasksStore } from "../stores/useBackgroundTasksStore";
 import { T } from "../../../design/tokens";
 
 /**
- * Ambient, app-global status chip pinned to the bottom-right of the window.
- * Renders nothing when there's no background work and nothing failed, so it
- * stays out of the way entirely in the common case.
+ * Ambient, app-global status chip. Renders nothing when there's no background
+ * work and nothing failed, so it stays out of the way entirely in the common
+ * case.
  *
- * Sits at z-index 90 — below `.modal-backdrop` (100) so a modal always wins,
- * and far below context menus (1000) and the image lightbox (10000).
+ * Positioning lives in `components/AmbientStack`, which this renders inside
+ * (see `MainApp`) — it used to own the fixed bottom-right corner itself, until
+ * the undo toast needed the same space. The stack sits below `.modal-backdrop`
+ * so a modal always wins; the reasoning is documented there.
  *
  * NOTE: this repo has a hard no-tooltip rule. Every label here is visibly
  * rendered text; do not add `title` attributes or hover-reveal bubbles.
@@ -58,27 +60,14 @@ export function BackgroundTasksIndicator() {
 	return (
 		<div
 			style={{
-				position: "fixed",
-				right: 16,
-				// 48, not 16. SessionChat parks an absolutely-positioned
-				// control strip along the chat pane's bottom edge (the
-				// ActivityChip: bottom 0, ~26px tall). It's right-aligned
-				// inside a centred 760px column, so it only nears the window
-				// edge on narrow windows — but there it would collide. A
-				// vertical offset clears it at every width; a horizontal
-				// dodge wouldn't.
-				bottom: 48,
-				// Above in-document layers (SidebarFooter 2, sticky group
-				// headers 50) but deliberately BELOW `.modal-backdrop` (100)
-				// and the sidebar context menus (1000) — a modal is a focus
-				// trap and an open menu is transient; neither should have a
-				// floating chip punched through it.
-				zIndex: 90,
 				display: "flex",
 				flexDirection: "column",
 				alignItems: "flex-end",
 				gap: 8,
-				userSelect: "none",
+				// AmbientStack disables pointer events on the column so its
+				// empty space never swallows clicks; re-enable them here,
+				// where there's something real to click.
+				pointerEvents: "auto",
 			}}
 		>
 			{expanded && hasErrors ? (

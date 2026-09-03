@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import type { Shortcut } from "@shared/schemas/shortcuts";
 import type { Skill } from "@shared/schemas/skills";
 import { useCommandPaletteStore } from "../stores/useCommandPaletteStore";
-import { appendPromptBlock, applyShortcutMode, focusComposer } from "../lib/composerActions";
+import { appendPromptBlock, applySessionMode, focusComposer } from "../lib/composerActions";
 import {
 	startSessionFromShortcut,
 	startSessionFromSkill,
@@ -34,7 +34,7 @@ export function CommandPaletteModal() {
 	const handleRun = (sc: Shortcut) => {
 		if (target.kind === "insert") {
 			appendPromptBlock(target.sessionId, sc.prompt);
-			void applyShortcutMode(target.sessionId, sc.mode);
+			void applySessionMode(target.sessionId, sc.mode);
 			focusComposer();
 			return;
 		}

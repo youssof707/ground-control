@@ -9,11 +9,20 @@ this file so the next session inherits it.
 **Whenever a keyboard shortcut is added, changed, or removed, update this list.** This is
 the single source of truth so shortcuts are easy to find.
 
+- `Cmd+N` — new session, pre-attached to the worktree last used in that
+  workspace
 - `Cmd+S` — open a side quest
 - `Cmd+K` — open the shortcut menu
+- `Cmd+R` — quote the current selection into the composer and focus it
+- `Cmd+.` — stop/interrupt the active session's running turn
+- `Cmd+P` — toggle plan ⇄ auto-edit, only while a session composer is focused
 - `Cmd+Shift+M` — open the model picker for the active session (picking a
   model while a turn is running interrupts it, switches, and resumes
   automatically)
+- `Cmd+Shift+Z` — restore the most recently deleted / handed-off / archived
+  session. Ignored while a text field has focus (native redo wins) and when
+  nothing is buffered. Not `Cmd+Z`: that's the most-used text shortcut in the
+  app, and claiming it would mean hand-rebuilding the native Edit menu
 
 ## Verification rules
 
@@ -21,11 +30,14 @@ the single source of truth so shortcuts are easy to find.
 `_electron.launch`, no driver scripts that wrap it. Don't install it, don't script it,
 don't suggest it.
 
-**Don't test it yourself. At all.** Don't run `npm run dev`, don't launch the app, don't
-run typecheck/lint/build as a self-check, don't `git stash` to diff behavior, don't invent
-manual click-through scripts and execute them. Make the change, then stop and hand it to
-me — I run the app and verify it myself. If you genuinely need a command run to unblock
-implementation (not to convince yourself the change works), ask first.
+**Never run the app.** No `npm run dev`, no `npm start`, no launching Electron, no
+driving it with a script. Don't web-scrape, don't spin up browsers, don't invent manual
+click-through scripts and execute them, don't `git stash` to diff behavior. I run the app
+and verify behavior myself — make the change and hand it to me.
+
+**Static checks are fine — run them, don't ask.** `npm run typecheck`, `npm run lint`,
+and builds are expected after any non-trivial change. They don't launch anything, and
+handing over code that doesn't compile wastes my time. Fix what they report.
 
 ## UI rules
 

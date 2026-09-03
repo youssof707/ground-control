@@ -6,6 +6,7 @@ import type {
 	StartSessionInput,
 	UserTurn,
 } from "../shared/schemas/claude_session";
+import type { DeletedSessionSnapshot } from "../shared/claude-sessions/undo";
 import type { CreateWorktreeInput } from "../shared/schemas/worktrees";
 import type { CreateSessionGroupInput } from "../shared/schemas/session_groups";
 import type {
@@ -56,6 +57,8 @@ const claude = {
 	listSessions: () => ipcRenderer.invoke("sessions:list"),
 	deleteSession: (sessionId: string) =>
 		ipcRenderer.invoke("session:delete", sessionId),
+	restoreSession: (snapshot: DeletedSessionSnapshot) =>
+		ipcRenderer.invoke("session:restore", snapshot),
 	archiveSession: (sessionId: string) =>
 		ipcRenderer.invoke("session:archive", sessionId),
 	unarchiveSession: (sessionId: string) =>
@@ -79,6 +82,8 @@ const claude = {
 	getSettings: () => ipcRenderer.invoke("settings:get"),
 	setLastUsedWorkspace: (cwd: string) =>
 		ipcRenderer.invoke("settings:setLastUsedWorkspace", { cwd }),
+	setLastUsedWorktree: (cwd: string, worktreeId?: string) =>
+		ipcRenderer.invoke("settings:setLastUsedWorktree", { cwd, worktreeId }),
 	setDefaultModel: (model?: string) =>
 		ipcRenderer.invoke("settings:setDefaultModel", { model }),
 	setSessionsSidebarWidth: (width: number) =>

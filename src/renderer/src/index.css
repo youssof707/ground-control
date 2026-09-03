@@ -395,6 +395,52 @@ input::placeholder {
 	}
 }
 
+/* ─── Undo toast ─────────────────────────────────────────────────────────── */
+
+/* Countdown hairline along the bottom edge of `UndoToast`, draining
+   left→right so the deadline is visible rather than a surprise. Duration
+   comes from an inline `--undo-ms` custom property, the same way
+   `firework-particle` takes `--fx-tx` / `--fx-ty` from `ActivityChip` — the
+   component owns the timing, the stylesheet owns the motion.
+
+   `animation-play-state` is set inline to pause the drain on hover; the
+   component also remounts this element (via `key`) to restart it. */
+.undo-toast-drain {
+	height: 1px;
+	width: 100%;
+	transform-origin: left center;
+	animation: undo-toast-drain var(--undo-ms, 8000ms) linear forwards;
+}
+
+@keyframes undo-toast-drain {
+	from {
+		transform: scaleX(1);
+	}
+	to {
+		transform: scaleX(0);
+	}
+}
+
+/* One-shot wash on a sidebar row that was just restored by undo. Answers
+   "where did it land?" — the row returns to its original recency slot, which
+   in a long sidebar is easily off-screen or lost among neighbours.
+
+   Reads unambiguously because sidebar rows have NO hover background (only the
+   active row is tinted), so a transient tint can't be mistaken for a pointer
+   artifact. */
+.session-row-restored {
+	animation: session-row-restored 1200ms ease-out forwards;
+}
+
+@keyframes session-row-restored {
+	0% {
+		background: oklch(0.76 0.1 250 / 0.22);
+	}
+	100% {
+		background: transparent;
+	}
+}
+
 /* ─── Markdown body ──────────────────────────────────────────────────────── */
 
 .md {

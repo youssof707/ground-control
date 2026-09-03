@@ -9,6 +9,7 @@ import type {
 	StartSessionInput,
 	UserTurn,
 } from "../../shared/schemas/claude_session";
+import type { DeletedSessionSnapshot } from "../../shared/claude-sessions/undo";
 import * as sessionStore from "../core/store/claude_session";
 import * as notesStore from "../core/store/session_notes";
 import * as readStore from "../core/store/read_state";
@@ -350,6 +351,15 @@ export function registerSessionsHandlers(): SessionManager {
 		// record is gone, and we still need to auto-delete the group if this
 		// was its last member.
 		const groupIdToPrune = preDeleteSession?.groupId;
+		// Undo snapshot, captured here for the same reason as the two lines
+		// above: everything below this point destroys one of these, and after
+		// that the data is unrecoverable. Notes are read now because
+		// `deleteAllForSession` is about to drop them; the group record is read
+		// now because `pruneGroupIfEmpty` may remove it.
+		const preDeleteNotes = notesStore.listForSession(sessionId);
+		const preDeleteGroup = groupIdToPrune
+			? (groupsStore.get(groupIdToPrune) ?? null)
+			: null;
 		// Tombstone first — synchronous. Any subsequent SDK event for this
 		// session id is dropped by SessionManager.send, so leaked status /
 		// cancelled / message / patch broadcasts from the still-winding-down
@@ -407,7 +417,108 @@ export function registerSessionsHandlers(): SessionManager {
 		void manager.cancelAndWait(sessionId).catch((err) => {
 			console.error("[ccw] background cancelAndWait failed:", err);
 		});
+
+		// Hand the renderer everything it needs to put this back. Returning
+		// null (rather than throwing) when the session didn't exist keeps
+		// delete idempotent — the caller just gets no undo entry.
+		if (!preDeleteSession) return null;
+		const snapshot: DeletedSessionSnapshot = {
+			session: preDeleteSession,
+			notes: preDeleteNotes,
+			// Only report the group if the prune actually took it. If it
+			// survived (other members remain), `session.groupId` still points
+			// at a live record and there's nothing to re-create.
+			prunedGroup:
+				preDeleteGroup && !groupsStore.get(preDeleteGroup.id)
+					? preDeleteGroup
+					: null,
+		};
+		return snapshot;
 	});
+
+	ipcMain.handle(
+		"session:restore",
+		async (e, snapshot: DeletedSessionSnapshot) => {
+			const { session, notes, prunedGroup, worktreeDeleted } = snapshot;
+
+			// Lift the runtime tombstone first, so the broadcasts below (and
+			// any future status the restored row reports) aren't dropped by
+			// `SessionManager.send`.
+			manager.unmarkDeleted(session.id);
+
+			// Re-create the auto-pruned group BEFORE the session row lands, so
+			// `groupId` never points at a group that doesn't exist yet — even
+			// for the instant between the two writes.
+			if (prunedGroup && !groupsStore.get(prunedGroup.id)) {
+				try {
+					await groupsStore.create(prunedGroup);
+				} catch (err) {
+					console.error("[ccw] restore group create failed:", err);
+				}
+			}
+			// Whatever happened above, never restore a dangling membership:
+			// the group may have been deleted for unrelated reasons while the
+			// undo sat in the buffer.
+			const groupId =
+				session.groupId && groupsStore.get(session.groupId)
+					? session.groupId
+					: undefined;
+
+			// The worktree is the one thing undo genuinely cannot bring back.
+			// Drop the binding when the cascade destroyed it on disk, and also
+			// when the registry no longer knows it (deleted separately while
+			// the undo waited) — either way, restoring the reference would
+			// render a `WorktreeChip` pointing at nothing.
+			const worktreeId =
+				!worktreeDeleted &&
+				session.worktreeId &&
+				worktreesStore.get(session.worktreeId)
+					? session.worktreeId
+					: undefined;
+
+			// A session that was mid-turn when it was deleted must not come
+			// back wearing a spinner: `session:delete` cancelled and drained
+			// its SDK loop, so there is nothing left to resume. Same
+			// normalization (and same reasoning) as the orphaned-by-a-crash
+			// sweep in `claude_session.initialize`.
+			const status =
+				session.status === "running" ||
+				session.status === "idle" ||
+				session.status === "awaiting_permission"
+					? "cancelled"
+					: session.status;
+
+			// `createSession` is exactly the write we need — it parses, clears
+			// the store-level tombstone for the id, and upserts the record —
+			// so restore reuses it rather than adding a near-identical twin.
+			const restored = await sessionStore.createSession({
+				...session,
+				status,
+				finishedAt: session.finishedAt ?? Date.now(),
+				groupId,
+				worktreeId,
+			});
+
+			// Re-attach to the worktree registry, undoing the delete's detach.
+			// Best-effort and idempotent, mirroring the detach it reverses.
+			if (worktreeId) {
+				try {
+					await worktreesStore.attachSession(worktreeId, session.id);
+				} catch (err) {
+					console.error("[ccw] restore worktree attach failed:", err);
+				}
+			}
+
+			// Notes last: they're the least structural part, and the session
+			// row they hang off now exists.
+			await notesStore.restoreMany(notes);
+
+			// Skip-self — the originating window upserts from this invoke's
+			// return value, same contract as `groups:create` / `worktrees:create`.
+			broadcast("state:changed", undefined, e.sender.id);
+			return restored;
+		},
+	);
 
 	return manager;
 }

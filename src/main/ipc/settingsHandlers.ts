@@ -14,6 +14,13 @@ export function registerSettingsHandlers(): void {
 		},
 	);
 	ipcMain.handle(
+		"settings:setLastUsedWorktree",
+		async (e, payload: { cwd: string; worktreeId?: string }) => {
+			await appSettings.setLastUsedWorktree(payload.cwd, payload.worktreeId);
+			broadcast("state:changed", undefined, e.sender.id);
+		},
+	);
+	ipcMain.handle(
 		"settings:setDefaultModel",
 		async (e, payload: { model?: string }) => {
 			await appSettings.setDefaultModel(payload.model);

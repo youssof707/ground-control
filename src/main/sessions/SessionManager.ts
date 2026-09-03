@@ -470,6 +470,22 @@ export class SessionManager {
 		this.deletedIds.add(id);
 	}
 
+	/**
+	 * Lift a delete tombstone so `send()` stops dropping broadcasts for the id.
+	 * The inverse of `markDeleted`, called by `session:restore` when a deleted
+	 * session is undone.
+	 *
+	 * Safe because the SDK loop that the delete tore down is genuinely gone by
+	 * now — `session:delete` awaited the store write and fired
+	 * `cancelAndWait` — so lifting the tombstone can't let a stale event from
+	 * the *old* loop through. It only re-enables broadcasts for the restored
+	 * row, which is exactly what we want: without this, a restored session
+	 * would sit in the sidebar unable to ever report status again.
+	 */
+	unmarkDeleted(id: string): void {
+		this.deletedIds.delete(id);
+	}
+
 	getSession(id: string): ClaudeSession | undefined {
 		return this.sessions.get(id)?.session;
 	}

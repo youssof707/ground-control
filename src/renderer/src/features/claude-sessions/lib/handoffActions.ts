@@ -1,4 +1,6 @@
 import type { ClaudeSessionFull } from "@shared/claude-sessions/types";
+import type { DeletedSessionSnapshot } from "@shared/claude-sessions/undo";
+import { pushUndo } from "../stores/useUndoStore";
 import { useDraftStore } from "../stores/useDraftStore";
 import { useDraftSessionsStore } from "../stores/useDraftSessionsStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
@@ -113,10 +115,35 @@ export function startHandoff(input: {
 export function runHandoffDelete(oldSessionId: string): void {
 	const title =
 		useSessionsStore.getState().sessions[oldSessionId]?.title ?? "session";
+	// Captured out of `run` because runBackgroundTask's onSuccess takes no
+	// value. This is the snapshot that makes the delete undoable.
+	let snapshot: DeletedSessionSnapshot | null = null;
 	runBackgroundTask({
 		label: `Deleting ${title}`,
-		run: () => window.claude.deleteSession(oldSessionId),
+		run: async () => {
+			snapshot = await window.claude.deleteSession(oldSessionId);
+		},
 		onSuccess: () => {
+			// Buffer the undo only once the delete has actually landed — NOT
+			// when the user clicked "Handoff & delete". The delete is deferred
+			// until the successor's first turn sends, so offering to undo it
+			// any earlier would be offering to undo something that hasn't
+			// happened. `kind: "handoff"` gives the toast its own wording: by
+			// now the user is looking at a brand-new session, where a bare
+			// "Deleted …" would read as an error.
+			//
+			// No worktree cascade here (the successor shares the checkout), so
+			// `worktreeDeleted` is false and the restored session keeps its
+			// worktree binding.
+			if (snapshot) {
+				pushUndo({
+					kind: "handoff",
+					sessionId: oldSessionId,
+					title,
+					snapshot,
+					worktreeDeleted: false,
+				});
+			}
 			// Same local cleanup confirmDelete does (removeSession also
 			// writes the deletedIds tombstone), plus the two stores
 			// confirmDelete doesn't touch but that would otherwise leak a

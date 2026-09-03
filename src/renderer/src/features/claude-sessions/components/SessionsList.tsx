@@ -12,9 +12,12 @@ import { useDraftStore } from "../stores/useDraftStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { useSessionGroupsStore } from "../stores/useSessionGroupsStore";
 import { useSidequestsStore } from "../stores/useSidequestsStore";
+import { pushUndo, useUndoStore } from "../stores/useUndoStore";
 import { ConfirmModal } from "../../../components/ConfirmModal";
+import { RecentlyDeletedModal } from "./RecentlyDeletedModal";
 import { runBackgroundTask } from "../../background-tasks/stores/useBackgroundTasksStore";
 import {
+	startNewSessionDraft,
 	startSessionFromShortcut,
 	startSessionFromSkill,
 } from "../lib/sessionStartActions";
@@ -103,6 +106,10 @@ export function SessionsList({
 	const [showArchived, setShowArchived] = useState(false);
 	// Read-only settings modal, opened from the view-options dropdown.
 	const [settingsOpen, setSettingsOpen] = useState(false);
+	// "Recently deleted" list, also opened from the view-options dropdown —
+	// the durable surface for undo once the toast has expired.
+	const [recentlyDeletedOpen, setRecentlyDeletedOpen] = useState(false);
+	const undoEntries = useUndoStore((s) => s.entries);
 	// Collapsed ungrouped buckets. Keys are cwd paths for cwd buckets and
 	// `wt:<worktreeId>` for worktree buckets (cwds are absolute paths or "",
 	// so the prefix can't collide). Non-persistent view state — resets on
@@ -173,6 +180,14 @@ export function SessionsList({
 		}
 		return n;
 	}, [sortedOrder, sessions]);
+
+	// Whether to render the filter/view-options row under the New Session
+	// button. `undoEntries.length` counts because that row holds the kebab,
+	// which is the ONLY way to reach "Recently deleted" — without it a fresh
+	// install (no workspaces, nothing archived) would hide the kebab and
+	// strand the undo buffer behind a hotkey nobody can discover.
+	const showFilterRow =
+		workspaces.length > 0 || archivedCount > 0 || undoEntries.length > 0;
 
 	// Prune selected workspaces that no longer have any sessions (e.g. last
 	// session in that workspace was deleted). Empty array means "All", so it's
@@ -335,18 +350,21 @@ export function SessionsList({
 		navigate(`/sessions/${d.id}`);
 	};
 
+	// Shares `startNewSessionDraft` with the global Cmd+N hotkey so the button
+	// and the shortcut can't drift on worktree seeding. The helper handles the
+	// draft-reuse rule, the folder picker fallback, and pre-attaching the
+	// worktree last used in the target workspace; `onWorkspaceRevealed` keeps
+	// the new draft visible under a narrowed filter, the same reconciliation
+	// `createDraftAndNavigate` does inline.
 	const start = async () => {
-		if (draft) {
-			navigate(`/sessions/${draft.id}`);
-			return;
-		}
 		setStartError(null);
-		if (targetCwd) {
-			createDraftAndNavigate(targetCwd);
-			return;
-		}
-		const picked = await window.claude.pickFolder();
-		if (picked) createDraftAndNavigate(picked);
+		await startNewSessionDraft(navigate, {
+			targetCwd,
+			onWorkspaceRevealed: (cwd) =>
+				setWorkspaceFilter((prev) =>
+					prev.length === 0 || prev.includes(cwd) ? prev : [...prev, cwd],
+				),
+		});
 	};
 
 	// Per-bucket New Session. Unlike `start`, the target folder is explicit,
@@ -541,59 +559,103 @@ export function SessionsList({
 		? sessions[pendingDeleteId]
 		: null;
 
-	// Worktree attached to the session about to be deleted (if any).
-	// Drives both the "Also delete worktree" checkbox visibility and
-	// the cascade in confirmDelete.
-	const pendingDeleteWorktree =
-		pendingDeleteSession?.worktreeId
-			? worktrees[pendingDeleteSession.worktreeId]
-			: undefined;
-
-	// True when the session being deleted is the sole occupant of its
-	// worktree. We can't trust `pendingDeleteWorktree.sessionIds` — main
-	// broadcasts `state:changed` skip-self when it mutates the reverse
-	// index (attach/detach), so the ORIGINATING window's copy stays
-	// stale until another push. Count from the sessions store instead,
-	// which the same window keeps authoritative via `session:started` /
-	// `session:patch` broadcasts (both delivered even to originator).
-	const isLastOnWorktree = useMemo(() => {
-		if (!pendingDeleteWorktree || !pendingDeleteId) return false;
+	/**
+	 * Is `sessionId` the sole occupant of its worktree?
+	 *
+	 * We can't trust `worktree.sessionIds` — main broadcasts `state:changed`
+	 * skip-self when it mutates the reverse index (attach/detach), so the
+	 * ORIGINATING window's copy stays stale until another push. Count from the
+	 * sessions store instead, which the same window keeps authoritative via
+	 * `session:started` / `session:patch` broadcasts (both delivered even to
+	 * the originator).
+	 *
+	 * Takes an id rather than reading `pendingDeleteId` because it now runs at
+	 * CLICK time, before any modal exists — it's what decides whether a modal
+	 * is needed at all.
+	 */
+	const lastOnWorktreeId = (sessionId: string): string | undefined => {
+		const worktreeId = sessions[sessionId]?.worktreeId;
+		if (!worktreeId || !worktrees[worktreeId]) return undefined;
 		let count = 0;
 		for (const id of order) {
-			if (sessions[id]?.worktreeId === pendingDeleteWorktree.id) {
+			if (sessions[id]?.worktreeId === worktreeId) {
 				count++;
-				if (count > 1) return false;
+				if (count > 1) return undefined;
 			}
 		}
-		// count === 1 AND that one is the pending-delete session.
-		return (
-			count === 1 &&
-			sessions[pendingDeleteId]?.worktreeId === pendingDeleteWorktree.id
-		);
-	}, [pendingDeleteWorktree, pendingDeleteId, order, sessions]);
+		return count === 1 ? worktreeId : undefined;
+	};
 
-	const confirmDelete = async () => {
-		if (!pendingDeleteId || deleting) return;
-		// Capture before the async work — pendingDeleteId may be cleared
-		// by the time we want to make the routing decision.
-		const wasActive = pendingDeleteId === activeSessionId;
-		// Capture the cascade target before the awaits — after
-		// `removeSession` runs, pendingDeleteSession dereferences to
-		// undefined and we lose the worktree id.
-		const cascadeWorktreeId =
-			alsoDeleteWorktree && isLastOnWorktree
-				? pendingDeleteWorktree?.id
-				: undefined;
-		// Same reason as above — read the display name for the background
-		// task label before `removeSession` invalidates the deref.
-		const cascadeWorktreeName =
-			pendingDeleteWorktree?.displayName ?? "worktree";
+	const pendingDeleteWorktreeId = pendingDeleteId
+		? lastOnWorktreeId(pendingDeleteId)
+		: undefined;
+	const pendingDeleteWorktree = pendingDeleteWorktreeId
+		? worktrees[pendingDeleteWorktreeId]
+		: undefined;
+
+	/**
+	 * Entry point for the ⋯ menu's Delete item.
+	 *
+	 * Delete is undoable now, so the blanket "are you sure?" is gone — the undo
+	 * toast is a better net than a dialog people click through on reflex, and
+	 * keeping the modal would have contradicted dropping archive's for exactly
+	 * the same reason.
+	 *
+	 * The modal survives in one case, and it isn't about the session: when this
+	 * is the LAST session on a worktree, deleting it offers to destroy that
+	 * checkout too. `worktreeRemove` shells out to git and then does a recursive
+	 * `fs.rm`, which no in-memory buffer can undo — so that choice still gets
+	 * asked about. Exactly parallel to `startArchive`, which only stops to ask
+	 * when a turn is mid-flight.
+	 */
+	const startDelete = (sessionId: string) => {
+		if (lastOnWorktreeId(sessionId)) {
+			setPendingDeleteId(sessionId);
+			setDeleteError(null);
+			setAlsoDeleteWorktree(false);
+			return;
+		}
+		void runDelete(sessionId, false, false);
+	};
+
+	const runDelete = async (
+		targetId: string,
+		cascadeWorktree: boolean,
+		viaModal: boolean,
+	) => {
+		if (deleting) return;
+		// Everything below reads from the store, which this delete is about to
+		// invalidate — capture first. After `removeSession` runs, the session
+		// dereferences to undefined and we lose the title and the worktree id.
+		const deletedTitle = sessions[targetId]?.title ?? "session";
+		const wasActive = targetId === activeSessionId;
+		const cascadeWorktreeId = cascadeWorktree
+			? lastOnWorktreeId(targetId)
+			: undefined;
+		const cascadeWorktreeName = cascadeWorktreeId
+			? (worktrees[cascadeWorktreeId]?.displayName ?? "worktree")
+			: "worktree";
 		setDeleting(true);
 		setDeleteError(null);
 		try {
-			await window.claude.deleteSession(pendingDeleteId);
-			removeSession(pendingDeleteId);
-			usePermissionsStore.getState().removeBySessionId(pendingDeleteId);
+			const snapshot = await window.claude.deleteSession(targetId);
+			removeSession(targetId);
+			usePermissionsStore.getState().removeBySessionId(targetId);
+			// Buffer the undo. `cascadeWorktreeId` is the honest signal for
+			// `worktreeDeleted`: the checkout only dies when the user ticked
+			// the box AND this was its last session, which is exactly the
+			// condition that computed it. Restore uses the flag to drop the
+			// worktree binding rather than hand back a chip pointing at a
+			// directory that a recursive `fs.rm` already removed.
+			if (snapshot) {
+				pushUndo({
+					kind: "delete",
+					sessionId: targetId,
+					title: deletedTitle,
+					snapshot,
+					worktreeDeleted: !!cascadeWorktreeId,
+				});
+			}
 			// Cascade AFTER session delete: `session:delete` detaches the
 			// session from `worktree.sessionIds` before returning, so by
 			// the time this runs `sessionIds` is empty and the
@@ -605,8 +667,7 @@ export function SessionsList({
 			// Handed to the background-task store rather than awaited:
 			// `worktreeRemove` (main/sessions/worktrees.ts) escalates
 			// through up to four git subprocesses plus a recursive rm,
-			// which held this modal open for seconds. The ordering above
-			// is unaffected — we're already past the session delete.
+			// which held this modal open for seconds.
 			if (cascadeWorktreeId) {
 				runBackgroundTask({
 					label: `Deleting worktree ${cascadeWorktreeName}`,
@@ -625,13 +686,23 @@ export function SessionsList({
 			// SessionChat would render its "Session not found." state.
 			if (wasActive) navigate("/");
 		} catch (err) {
-			// Only the session delete can land here now — the worktree
-			// cascade reports its own failures through the background-task
-			// indicator. The modal stays open with this error visible.
-			setDeleteError(err instanceof Error ? err.message : String(err));
+			// Only the session delete can land here — the worktree cascade
+			// reports its own failures through the background-task indicator.
+			// Route to whichever surface the user is looking at; `viaModal` is
+			// passed explicitly rather than inferred from `pendingDeleteId`,
+			// which comes from the render closure and would make this depend on
+			// when the function was created.
+			const message = err instanceof Error ? err.message : String(err);
+			if (viaModal) setDeleteError(message);
+			else setStartError(`Couldn't delete: ${message}`);
 		} finally {
 			setDeleting(false);
 		}
+	};
+
+	const confirmDelete = () => {
+		if (!pendingDeleteId) return;
+		void runDelete(pendingDeleteId, alsoDeleteWorktree, true);
 	};
 
 	const cancelDelete = () => {
@@ -641,16 +712,22 @@ export function SessionsList({
 		setAlsoDeleteWorktree(false);
 	};
 
+	const worktreeName = pendingDeleteWorktree?.displayName ?? "this worktree";
+
+	// Only ever open when the session is the LAST one on a worktree —
+	// `startDelete` deletes anything else outright. So the copy is about the
+	// worktree decision, not about the session: the session half is undoable
+	// and no longer worth a dialog, while a destroyed checkout is gone.
 	const deleteModal = (
 		<ConfirmModal
 			open={!!pendingDeleteId}
 			title="Delete session?"
 			message={
 				<>
-					Remove <strong>{pendingDeleteSession?.title ?? "this session"}</strong>{" "}
-					from this app. Claude Code's own session history (in{" "}
-					<code>~/.claude</code>) is not affected.
-					{isLastOnWorktree && pendingDeleteWorktree ? (
+					Deleting{" "}
+					<strong>{pendingDeleteSession?.title ?? "this session"}</strong>{" "}
+					leaves worktree <strong>{worktreeName}</strong> with no sessions.
+					{pendingDeleteWorktree ? (
 						<label
 							style={{
 								display: "flex",
@@ -721,6 +798,26 @@ export function SessionsList({
 							</span>
 						</label>
 					) : null}
+					{/* The session itself is undoable; the worktree is not —
+					    `worktreeRemove` shells out to git and then does a
+					    recursive `fs.rm`. Shown only once the box is actually
+					    ticked, so the modal isn't shouting at someone who just
+					    wants the session gone. Deliberately does NOT advertise
+					    that the session half is undoable: a confirm dialog that
+					    reassures you is a confirm dialog people stop reading. */}
+					{pendingDeleteWorktree && alsoDeleteWorktree ? (
+						<div
+							style={{
+								marginTop: 6,
+								marginLeft: 22,
+								fontSize: 12,
+								lineHeight: 1.45,
+								color: T.textMute,
+							}}
+						>
+							The worktree is deleted from disk and can't be restored.
+						</div>
+					) : null}
 				</>
 			}
 			confirmLabel="Delete"
@@ -733,16 +830,26 @@ export function SessionsList({
 		/>
 	);
 
-	const confirmArchive = async () => {
-		if (!pendingArchiveId || archiving) return;
-		// Capture before the async work — pendingArchiveId may be cleared
-		// by the time we want to make the routing decision.
-		const wasActive = pendingArchiveId === activeSessionId;
-		const targetId = pendingArchiveId;
+	const runArchive = async (targetId: string, viaModal: boolean) => {
+		if (archiving) return;
+		// Capture before the async work — the routing decision below has to be
+		// made against the session that was active when we started.
+		const wasActive = targetId === activeSessionId;
+		const archivedTitle = sessions[targetId]?.title ?? "session";
 		setArchiving(true);
 		setArchiveError(null);
 		try {
 			await window.claude.archiveSession(targetId);
+			// Archive needs no snapshot: the record never leaves disk, so
+			// undoing it is a plain `unarchiveSession` call. `kind: "archive"`
+			// is what tells `restoreEntry` to take that cheaper path.
+			pushUndo({
+				kind: "archive",
+				sessionId: targetId,
+				title: archivedTitle,
+				snapshot: null,
+				worktreeDeleted: false,
+			});
 			// Intentionally do NOT call removeSession or
 			// permissions.removeBySessionId here. Archive is reversible and
 			// the session must remain in the renderer store so URL access
@@ -767,10 +874,47 @@ export function SessionsList({
 			// the sidebar after archiving (matches Delete's UX).
 			if (wasActive) navigate("/");
 		} catch (err) {
-			setArchiveError(err instanceof Error ? err.message : String(err));
+			const message = err instanceof Error ? err.message : String(err);
+			// Route the failure to whichever surface the user is actually
+			// looking at. `viaModal` is passed explicitly rather than inferred
+			// from `pendingArchiveId`: that value comes from the render
+			// closure, so reading it here would silently depend on when this
+			// async function was created.
+			if (viaModal) setArchiveError(message);
+			else setStartError(`Couldn't archive: ${message}`);
 		} finally {
 			setArchiving(false);
 		}
+	};
+
+	/**
+	 * Entry point for the ⋯ menu's Archive item.
+	 *
+	 * Archive used to always raise a confirm modal, which had the safety
+	 * backwards: archiving is fully reversible (unarchive just clears
+	 * `archivedAt`, and already runs with no confirmation at all), while the
+	 * genuinely destructive action next to it in the same menu is the one that
+	 * needed a net. So archive is now immediate, and the undo toast is what
+	 * catches a misclick.
+	 *
+	 * The one surviving confirm has nothing to do with reversibility: archiving
+	 * a session mid-turn CANCELS that turn and rejects its pending permission
+	 * prompts, and unarchiving does not resume it. That's real work thrown
+	 * away, so it still gets asked about.
+	 */
+	const startArchive = (sessionId: string) => {
+		const status = sessions[sessionId]?.status;
+		if (status === "running" || status === "awaiting_permission") {
+			setPendingArchiveId(sessionId);
+			setArchiveError(null);
+			return;
+		}
+		void runArchive(sessionId, false);
+	};
+
+	const confirmArchive = () => {
+		if (!pendingArchiveId) return;
+		void runArchive(pendingArchiveId, true);
 	};
 
 	const unarchive = async (sessionId: string) => {
@@ -915,15 +1059,8 @@ export function SessionsList({
 				hideCwd
 				pending={sessionPending}
 				active={id === activeSessionId}
-				onDelete={() => {
-					setPendingDeleteId(id);
-					setDeleteError(null);
-					setAlsoDeleteWorktree(false);
-				}}
-				onArchive={() => {
-					setPendingArchiveId(id);
-					setArchiveError(null);
-				}}
+				onDelete={() => startDelete(id)}
+				onArchive={() => startArchive(id)}
 				onUnarchive={() => void unarchive(id)}
 				onAddToGroup={() => setPendingGroupSessionId(id)}
 				onRemoveFromGroup={() => void removeFromGroup(id)}
@@ -947,18 +1084,21 @@ export function SessionsList({
 		? sessions[pendingArchiveId]
 		: null;
 
+	// Only ever open for a session that's mid-turn — `startArchive` archives
+	// idle sessions outright. So the copy is about the turn being thrown away,
+	// not about hiding a row: hiding is reversible and needs no dialog, while
+	// a cancelled turn is not resumed by unarchiving.
 	const archiveModal = (
 		<ConfirmModal
 			open={!!pendingArchiveId}
 			title="Archive session?"
 			message={
 				<>
-					Hide{" "}
 					<strong>
-						{pendingArchiveSession?.title ?? "this session"}
+						{pendingArchiveSession?.title ?? "This session"}
 					</strong>{" "}
-					from the sidebar. The session is preserved and can be reopened
-					by URL.
+					is still working. Archiving stops the turn in progress and
+					unarchiving won't resume it.
 				</>
 			}
 			confirmLabel="Archive"
@@ -1014,7 +1154,7 @@ export function SessionsList({
 						onRunSkill={(skill) => void startFromSkill(skill)}
 					/>
 				</div>
-				{workspaces.length > 0 || archivedCount > 0 ? (
+				{showFilterRow ? (
 					<div
 						style={{
 							display: "flex",
@@ -1034,10 +1174,10 @@ export function SessionsList({
 						) : null}
 						<ViewOptionsButton
 							showArchived={showArchived}
-							onToggleArchived={() =>
-								setShowArchived((v) => !v)
-							}
+							onToggleArchived={() => setShowArchived((v) => !v)}
 							onOpenSettings={() => setSettingsOpen(true)}
+							onOpenRecentlyDeleted={() => setRecentlyDeletedOpen(true)}
+							recentlyDeletedCount={undoEntries.length}
 							alignRight={workspaces.length === 0}
 						/>
 					</div>
@@ -1226,15 +1366,8 @@ export function SessionsList({
 									onRename={(id) =>
 										setPendingRenameGroupId(id)
 									}
-									onDelete={(id) => {
-										setPendingDeleteId(id);
-										setDeleteError(null);
-										setAlsoDeleteWorktree(false);
-									}}
-									onArchive={(id) => {
-										setPendingArchiveId(id);
-										setArchiveError(null);
-									}}
+									onDelete={(id) => startDelete(id)}
+									onArchive={(id) => startArchive(id)}
 									onUnarchive={(id) => void unarchive(id)}
 									onAddToGroup={(id) =>
 										setPendingGroupSessionId(id)
@@ -1262,6 +1395,10 @@ export function SessionsList({
 			<SettingsModal
 				open={settingsOpen}
 				onClose={() => setSettingsOpen(false)}
+			/>
+			<RecentlyDeletedModal
+				open={recentlyDeletedOpen}
+				onClose={() => setRecentlyDeletedOpen(false)}
 			/>
 		</div>
 	);
@@ -1384,8 +1521,21 @@ function SessionRowSidebar({
 	);
 	const markUnread = useReadStore((s) => s.markUnread);
 	const archived = session.archivedAt != null;
+	// One-shot accent wash right after this row was restored by undo. The row
+	// returns to its original recency slot, which in a long sidebar is easily
+	// off-screen or lost among neighbours — navigation proves the restore
+	// worked, this shows WHERE it landed. Reads unambiguously because rows have
+	// no hover background, so a transient tint can't be a pointer artifact.
+	const restored = useUndoStore((s) => s.flashSessionId) === session.id;
+	const rowRef = useRef<HTMLDivElement | null>(null);
+	useEffect(() => {
+		if (!restored) return;
+		rowRef.current?.scrollIntoView({ block: "nearest" });
+	}, [restored]);
 	return (
 		<div
+			ref={rowRef}
+			className={restored ? "session-row-restored" : undefined}
 			style={{
 				borderBottom: last ? "none" : `0.5px solid ${T.borderSoft}`,
 				// Only highlight the active row. Pending state is conveyed by the
@@ -2696,11 +2846,15 @@ function ViewOptionsButton({
 	showArchived,
 	onToggleArchived,
 	onOpenSettings,
+	onOpenRecentlyDeleted,
+	recentlyDeletedCount,
 	alignRight,
 }: {
 	showArchived: boolean;
 	onToggleArchived: () => void;
 	onOpenSettings: () => void;
+	onOpenRecentlyDeleted: () => void;
+	recentlyDeletedCount: number;
 	alignRight?: boolean;
 }) {
 	const [open, setOpen] = useState(false);
@@ -2780,6 +2934,20 @@ function ViewOptionsButton({
 							onToggleArchived();
 						}}
 					/>
+					{/* The undo toast is gone in 8s and Shift+Cmd+Z is invisible,
+					    so without this nothing on screen would ever suggest a
+					    deleted session is still recoverable. Hidden entirely at
+					    zero, so it only appears when it has something to offer. */}
+					{recentlyDeletedCount > 0 ? (
+						<MenuItem
+							active={false}
+							label={`Recently deleted (${recentlyDeletedCount})`}
+							onClick={() => {
+								setOpen(false);
+								onOpenRecentlyDeleted();
+							}}
+						/>
+					) : null}
 					<MenuItem
 						active={false}
 						label="Settings"
