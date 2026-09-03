@@ -34,6 +34,7 @@ import { useStopSessionHotkey } from "./features/claude-sessions/hooks/useStopSe
 import { useNewSessionHotkey } from "./features/claude-sessions/hooks/useNewSessionHotkey";
 import { usePlanModeHotkey } from "./features/claude-sessions/hooks/usePlanModeHotkey";
 import { useUndoHotkey } from "./features/claude-sessions/hooks/useUndoHotkey";
+import { useDictationHotkey } from "./features/claude-sessions/hooks/useDictationHotkey";
 import { CommandPaletteModal } from "./features/claude-sessions/components/CommandPaletteModal";
 import { T } from "./design/tokens";
 
@@ -80,6 +81,9 @@ export default function MainApp() {
 	// Skips editable targets so native text redo is untouched, and falls
 	// through entirely when there's nothing buffered.
 	useUndoHotkey();
+	// Global ⌘D — starts/stops voice dictation in the focused composer, or
+	// stops whichever take is already running. No-op unless a session is open.
+	useDictationHotkey();
 	const rightPanel = useRightPanelStore((s) => s.rightPanel);
 	const setRightPanel = useRightPanelStore((s) => s.setRightPanel);
 	return (
@@ -100,9 +104,10 @@ export default function MainApp() {
 			<MainBody rightPanel={rightPanel} setRightPanel={setRightPanel} />
 			<UpdateModal />
 			<CommandPaletteModal />
-			{/* One ambient bottom-right column, ordered by urgency: the undo
-			    prompt sits above the background-task chip. Both self-hide, so
-			    the corner is empty in the common case. */}
+			{/* One ambient bottom-left column, above the sidebar footer and
+			    ordered by urgency: the undo prompt sits above the
+			    background-task chip. Both self-hide, so the corner is empty in
+			    the common case. */}
 			<AmbientStack>
 				<UndoToast />
 				<BackgroundTasksIndicator />

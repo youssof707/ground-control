@@ -91,13 +91,16 @@ export const ToolRunGroup = memo(function ToolRunGroup({
 							color: T.textFaint,
 							padding: "2px 0",
 							userSelect: "none",
+							overflow: "hidden",
 						}}
 					>
 						<Chevron />
-						<span>{label}</span>
+						<span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
+							{label}
+						</span>
 						{namePreview ? (
 							<>
-								<span style={{ color: T.textFaint }}>·</span>
+								<span style={{ color: T.textFaint, flexShrink: 0 }}>·</span>
 								<span
 									style={{
 										color: T.textMute,
@@ -105,6 +108,7 @@ export const ToolRunGroup = memo(function ToolRunGroup({
 										textOverflow: "ellipsis",
 										whiteSpace: "nowrap",
 										minWidth: 0,
+										flex: "1 1 auto",
 									}}
 								>
 									{namePreview}

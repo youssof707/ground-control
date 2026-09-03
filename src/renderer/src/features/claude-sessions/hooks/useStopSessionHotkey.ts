@@ -20,8 +20,8 @@ import { useSessionsStore } from "../stores/useSessionsStore";
  *
  * Sidequests are out of scope. They're separate sessions that live in
  * `useSidequestsStore` (patched via `sidequest:patch`, never in
- * `useSessionsStore`), so the running-check below can't see them, and their
- * panel owns its own Stop button and `interrupting` state. Targeting only the
+ * `useSessionsStore`), so the running-check below can't see them; their panel
+ * stops through `stopSidequest` off its own working chip. Targeting only the
  * route session keeps "what does Cmd+. stop?" unambiguous rather than making
  * it depend on where focus happens to be — left as a deliberate gap, the way
  * `useCommandPaletteHotkey` documents its own.

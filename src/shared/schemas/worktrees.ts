@@ -13,8 +13,11 @@ import { z } from "zod";
  * branch name. It's the only thing shown on the badge.
  *
  * `color` is the badge's tint. Chosen at creation, immutable, same
- * lifecycle as `displayName`. Scoped to a two-value palette that maps to
- * existing design tokens (info/danger).
+ * lifecycle as `displayName`. Scoped to a small palette that maps to
+ * existing design tokens (info/danger/neutral). "gray" is the neutral
+ * entry — its `fg` is `T.textMute`, the exact color of a cwd/worktree
+ * bucket's header label, so a session group can be made to match an
+ * ungrouped folder section exactly instead of only approximating it.
  *
  * Two schemas, deliberately: `WorktreeColorSchema` is the *selectable*
  * palette (what the picker offers, what creation inputs accept), while
@@ -30,7 +33,7 @@ import { z } from "zod";
  * this worktree. Used to enforce "no delete while attached" and to
  * cascade-detach on session delete.
  */
-export const WorktreeColorSchema = z.enum(["blue", "red"]);
+export const WorktreeColorSchema = z.enum(["blue", "red", "gray"]);
 export type WorktreeColor = z.infer<typeof WorktreeColorSchema>;
 
 /**
@@ -38,10 +41,14 @@ export type WorktreeColor = z.infer<typeof WorktreeColorSchema>;
  * values and unknown junk both flow through the same lookup; the `??`
  * is the catch-all. Values map by semantics: green was "ok" (→ blue,
  * the neutral/info tint), yellow was "warn" (→ red, the alert tint).
+ * Live palette members (blue/red/gray) map to themselves — without an
+ * identity entry here, `normalizeWorktreeColor` would silently fold a
+ * persisted "gray" back to "blue" on every read.
  */
 const LEGACY_COLOR_ALIASES: Record<string, WorktreeColor | undefined> = {
 	blue: "blue",
 	red: "red",
+	gray: "gray",
 	green: "blue",
 	yellow: "red",
 };

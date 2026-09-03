@@ -8,9 +8,10 @@ import { T } from "../../../design/tokens";
  * case.
  *
  * Positioning lives in `components/AmbientStack`, which this renders inside
- * (see `MainApp`) — it used to own the fixed bottom-right corner itself, until
- * the undo toast needed the same space. The stack sits below `.modal-backdrop`
- * so a modal always wins; the reasoning is documented there.
+ * (see `MainApp`) — it used to own a fixed window corner itself, until the undo
+ * toast needed the same space. That column is bottom-LEFT, above the sidebar
+ * footer, and sits below `.modal-backdrop` so a modal always wins; the
+ * reasoning is documented there.
  *
  * NOTE: this repo has a hard no-tooltip rule. Every label here is visibly
  * rendered text; do not add `title` attributes or hover-reveal bubbles.
@@ -62,7 +63,7 @@ export function BackgroundTasksIndicator() {
 			style={{
 				display: "flex",
 				flexDirection: "column",
-				alignItems: "flex-end",
+				alignItems: "flex-start",
 				gap: 8,
 				// AmbientStack disables pointer events on the column so its
 				// empty space never swallows clicks; re-enable them here,

@@ -67,8 +67,32 @@ const STATUS_MAP: Record<string, StatusStyle> = {
 	},
 };
 
-export function StatusPill({ status }: { status: string }) {
+export function StatusPill({
+	status,
+	mode,
+	pendingToolName,
+}: {
+	status: string;
+	/** When the session is "running" and in read-only Plan mode, the badge
+	 * reads "planning" instead — same color/dot/pulse, just a more accurate
+	 * word for what's actually happening. Omit to keep the default "running"
+	 * label (e.g. call sites that don't track mode). */
+	mode?: SessionMode;
+	/** `toolName` of the pending permission request driving an
+	 * "awaiting_permission" status, e.g. "ExitPlanMode" or "AskUserQuestion".
+	 * When it's "ExitPlanMode" the badge reads "planning complete" instead of
+	 * the generic "waiting for input" — same color/dot, just a more accurate
+	 * word for what's actually being waited on. Omit to keep the generic
+	 * label. */
+	pendingToolName?: string;
+}) {
 	const map = STATUS_MAP[status] ?? STATUS_MAP.idle;
+	const label =
+		status === "running" && mode === "plan"
+			? "planning"
+			: status === "awaiting_permission" && pendingToolName === "ExitPlanMode"
+				? "planning complete"
+				: map.label;
 	return (
 		<div
 			style={{
@@ -96,7 +120,7 @@ export function StatusPill({ status }: { status: string }) {
 					boxShadow: map.pulse ? `0 0 0 3px ${T.okSoft}` : "none",
 				}}
 			/>
-			{map.label}
+			{label}
 		</div>
 	);
 }

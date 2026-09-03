@@ -85,9 +85,8 @@ export function SessionTokenBar({
 		[session.messages, session.model, session.modelChangedAt],
 	);
 	// Lifted to a store rather than local state so the global Cmd+Shift+M
-	// hotkey and the composer's model chip (next to the Stop pill) can open
-	// this same modal instance from outside this component's subtree — see
-	// useModelPickerStore.ts.
+	// hotkey can open this same modal instance from outside this component's
+	// subtree — see useModelPickerStore.ts.
 	const pickerOpen = useModelPickerStore(
 		(s) => s.openForSessionId === session.id,
 	);

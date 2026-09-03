@@ -20,7 +20,9 @@ const SHORTCUTS: { keys: string[]; label: string }[] = [
 	{ keys: ["⌘", "R"], label: "Quote selection into the composer" },
 	{ keys: ["⌘", "."], label: "Stop the running session" },
 	{ keys: ["⌘", "P"], label: "Toggle plan mode (in the composer)" },
+	{ keys: ["⌘", "D"], label: "Start / stop voice dictation" },
 	{ keys: ["⌘", "⇧", "M"], label: "Open the model picker" },
+	{ keys: ["⌘", "⇧", "Z"], label: "Restore the most recently deleted session" },
 ];
 
 /**

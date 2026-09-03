@@ -16,6 +16,11 @@ the single source of truth so shortcuts are easy to find.
 - `Cmd+R` — quote the current selection into the composer and focus it
 - `Cmd+.` — stop/interrupt the active session's running turn
 - `Cmd+P` — toggle plan ⇄ auto-edit, only while a session composer is focused
+- `Cmd+D` — start/stop voice dictation. Works from anywhere while a session
+  is open: starts in whichever composer has focus (main or side quest),
+  stops whichever take is already running regardless of focus, and is a
+  no-op in any other text field (rename box, notes editor) or with no
+  session open
 - `Cmd+Shift+M` — open the model picker for the active session (picking a
   model while a turn is running interrupts it, switches, and resumes
   automatically)

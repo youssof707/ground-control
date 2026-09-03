@@ -1,6 +1,6 @@
-import { useState } from "react";
 import type { PermissionRequest } from "@shared/claude-sessions/types";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
+import { stopSession } from "../lib/sessionControlActions";
 import { MarkdownText } from "./MarkdownText";
 import { T } from "../../../design/tokens";
 
@@ -24,8 +24,6 @@ export function PlanApprovalCard({
 	naked?: boolean;
 }) {
 	const remove = usePermissionsStore((s) => s.remove);
-	const [showDenyReason, setShowDenyReason] = useState(false);
-	const [denyReason, setDenyReason] = useState("");
 
 	const input = req.input as { plan?: unknown; allowedPrompts?: unknown };
 	const planText = typeof input.plan === "string" ? input.plan.trim() : "";
@@ -48,13 +46,14 @@ export function PlanApprovalCard({
 		});
 		remove(req.requestId);
 	};
-	const denyWithReason = (message: string) => {
+	const stopAndDeny = () => {
 		window.claude.respondPermission({
 			requestId: req.requestId,
 			behavior: "deny",
-			message,
+			message: "Stopped by user.",
 		});
 		remove(req.requestId);
+		void stopSession(req.sessionId);
 	};
 
 	return (
@@ -154,85 +153,25 @@ export function PlanApprovalCard({
 				) : null}
 			</div>
 
-			{showDenyReason ? (
-				<div
-					style={{
-						padding: "12px 16px",
-						borderTop: `0.5px solid ${T.borderSoft}`,
-						display: "flex",
-						flexDirection: "column",
-						gap: 8,
-					}}
-				>
-					<input
-						autoFocus
-						value={denyReason}
-						onChange={(e) => setDenyReason(e.target.value)}
-						placeholder="Reason for denying the plan (sent to Claude)…"
-						onKeyDown={(e) => {
-							if (e.key === "Enter" && denyReason.trim()) {
-								denyWithReason(denyReason.trim());
-							}
-							if (e.key === "Escape") setShowDenyReason(false);
-						}}
-						style={{
-							fontSize: 13,
-							padding: "8px 12px",
-							borderRadius: 8,
-							background: T.surfaceLow,
-							border: `0.5px solid ${T.border}`,
-							outline: "none",
-							color: T.text,
-							fontFamily: "inherit",
-						}}
-					/>
-					<div
-						style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}
-					>
-						<button
-							className="btn"
-							onClick={() => {
-								setShowDenyReason(false);
-								setDenyReason("");
-							}}
-						>
-							Cancel
-						</button>
-						<button
-							className="btn btn-destructive"
-							onClick={() =>
-								denyReason.trim() && denyWithReason(denyReason.trim())
-							}
-							disabled={!denyReason.trim()}
-						>
-							Send denial
-						</button>
-					</div>
-				</div>
-			) : (
-				<div
-					style={{
-						padding: "12px 16px",
-						display: "flex",
-						justifyContent: "flex-end",
-						gap: 8,
-						borderTop: `0.5px solid ${T.borderSoft}`,
-					}}
-				>
-					<button
-						className="btn"
-						onClick={() => setShowDenyReason(true)}
-					>
-						Deny…
-					</button>
-					<button className="btn" onClick={keepPlanning}>
-						Keep planning
-					</button>
-					<button className="btn btn-warn" onClick={approve}>
-						Approve & start editing
-					</button>
-				</div>
-			)}
+			<div
+				style={{
+					padding: "12px 16px",
+					display: "flex",
+					justifyContent: "flex-end",
+					gap: 8,
+					borderTop: `0.5px solid ${T.borderSoft}`,
+				}}
+			>
+				<button className="btn" onClick={stopAndDeny}>
+					Stop
+				</button>
+				<button className="btn" onClick={keepPlanning}>
+					Keep planning
+				</button>
+				<button className="btn btn-warn" onClick={approve}>
+					Approve & start editing
+				</button>
+			</div>
 		</div>
 	);
 }

@@ -615,6 +615,8 @@ export function ToolUsePill({ block }: { block: ContentBlock }) {
 						letterSpacing: 0.4,
 						textTransform: "uppercase",
 						fontFamily: T.sans,
+						whiteSpace: "nowrap",
+						flexShrink: 0,
 					}}
 				>
 					{block.name ?? "tool"}
@@ -689,6 +691,8 @@ export function ToolResultPill({ block }: { block: ContentBlock }) {
 						letterSpacing: 0.4,
 						textTransform: "uppercase",
 						fontFamily: T.sans,
+						whiteSpace: "nowrap",
+						flexShrink: 0,
 					}}
 				>
 					{isError ? "error" : "result"}

@@ -388,10 +388,12 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 							}}
 						>
 							<span
+								onClick={beginEditTitle}
 								style={{
 									overflow: "hidden",
 									textOverflow: "ellipsis",
 									whiteSpace: "nowrap",
+									cursor: "pointer",
 								}}
 							>
 								{session.title}
@@ -483,7 +485,11 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 						flexWrap: "wrap",
 					}}
 				>
-					<StatusPill status={effectiveStatus} />
+					<StatusPill
+						status={effectiveStatus}
+						mode={session.mode}
+						pendingToolName={pending[0]?.toolName}
+					/>
 					<BranchChipWithDelta
 						branch={session.branch}
 						lastUserMessageBranch={session.lastUserMessageBranch}
@@ -582,6 +588,15 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 									<ActivityChip
 										session={session}
 										hasPending={pending.length > 0}
+										// The chip renders for any non-idle status, but only a
+										// running turn can be interrupted — same guard as
+										// `useStopSessionHotkey`. No `onStop` ⇒ no "×", inert chip.
+										onStop={
+											session.status === "running"
+												? () => void stopSession(sessionId)
+												: undefined
+										}
+										interrupting={interrupting}
 									/>
 								) : null}
 							</div>
@@ -629,8 +644,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					textareaHeight={inputHeight}
 					onContentHeightChange={onContentHeightChange}
 					disabled={pending.length > 0}
-					onStop={() => void stopSession(sessionId)}
-					interrupting={interrupting}
 				/>
 			) : null}
 
@@ -704,5 +717,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	);
 }
 
-// ActivityChip — the floating "working ⟳ 12s" indicator — moved to
-// ./ActivityChip so the sidequest panel can render the identical chip.
+// ActivityChip — the floating "working ⟳ 12s" indicator, and also the stop
+// control (whole pill clicks to interrupt) — moved to ./ActivityChip so the
+// sidequest panel can render the identical chip.

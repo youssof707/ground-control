@@ -24,14 +24,14 @@ export function registerSkillsHandlers(): void {
 }
 
 /**
- * Opens `~/.claude/skills` in Finder. Creates the directory first if it
- * doesn't exist yet (fresh machine, no skills written) so the entry point
- * always lands somewhere real instead of erroring.
+ * Reveals `~/.claude/skills` in Finder: opens the enclosing `~/.claude`
+ * folder with `skills` selected/highlighted, rather than navigating into
+ * it. Creates the directory first if it doesn't exist yet (fresh machine,
+ * no skills written) so there's always something real to select.
  */
 async function openSkillsFolder(): Promise<void> {
 	await mkdir(SKILLS_DIR, { recursive: true });
-	const message = await shell.openPath(SKILLS_DIR);
-	if (message) throw new Error(message);
+	shell.showItemInFolder(SKILLS_DIR);
 }
 
 async function listSkills(): Promise<Skill[]> {

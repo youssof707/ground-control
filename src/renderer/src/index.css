@@ -368,56 +368,30 @@ input::placeholder {
 	}
 }
 
-@keyframes firework-particle {
-	0% {
-		transform: translate(-50%, -50%) scale(1);
-		opacity: 1;
-	}
-	70% {
-		opacity: 1;
-	}
-	100% {
-		transform: translate(calc(-50% + var(--fx-tx)), calc(-50% + var(--fx-ty)))
-			scale(0.35);
-		opacity: 0;
-	}
-}
-
-@keyframes chip-pop {
-	0% {
-		transform: scale(1);
-	}
-	40% {
-		transform: scale(1.12);
-	}
-	100% {
-		transform: scale(1);
-	}
-}
-
 /* ─── Undo toast ─────────────────────────────────────────────────────────── */
 
-/* Countdown hairline along the bottom edge of `UndoToast`, draining
-   left→right so the deadline is visible rather than a surprise. Duration
-   comes from an inline `--undo-ms` custom property, the same way
-   `firework-particle` takes `--fx-tx` / `--fx-ty` from `ActivityChip` — the
-   component owns the timing, the stylesheet owns the motion.
+/* The toast's own lifetime, expressed as opacity on the card itself. This
+   replaced a draining hairline along the bottom edge: a countdown bar reads as
+   a loading bar, which is far too much attention for a notice whose whole job
+   is to be ignorable. The card now holds full strength long enough to be read,
+   then dissolves — the fade IS the deadline indicator, no extra chrome.
 
-   `animation-play-state` is set inline to pause the drain on hover; the
-   component also remounts this element (via `key`) to restart it. */
-.undo-toast-drain {
-	height: 1px;
-	width: 100%;
-	transform-origin: left center;
-	animation: undo-toast-drain var(--undo-ms, 8000ms) linear forwards;
-}
+   The hold is in the keyframe stops (62% of 8000ms ≈ 5s solid, then a ~3s
+   ramp to nothing), not in the easing, so the element keeps `linear` timing
+   and the ramp stays even.
 
-@keyframes undo-toast-drain {
-	from {
-		transform: scaleX(1);
+   Duration and play/pause are applied inline by the component — the component
+   owns the timing, the stylesheet owns the motion. Pausing is done by setting
+   `animation-name: none` rather than
+   `animation-play-state: paused`, so a hovered toast returns to full opacity
+   instead of freezing half-faded. */
+@keyframes undo-toast-life {
+	0%,
+	62% {
+		opacity: 1;
 	}
-	to {
-		transform: scaleX(0);
+	100% {
+		opacity: 0;
 	}
 }
 

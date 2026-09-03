@@ -14,6 +14,7 @@ import {
 	formatModelName,
 } from "@shared/claude-sessions/sessionModel";
 import { useSessionsStore } from "../../stores/useSessionsStore";
+import { useInterruptStore } from "../../stores/useInterruptStore";
 import { usePermissionsStore } from "../../stores/usePermissionsStore";
 import { useDraftStore } from "../../stores/useDraftStore";
 import {
@@ -29,6 +30,7 @@ import {
 	recreateSidequest,
 	sendToSidequest,
 } from "../../lib/sidequestActions";
+import { stopSidequest } from "../../lib/sessionControlActions";
 import { MessageView } from "../MessageView";
 import { ActivityChip } from "../ActivityChip";
 import { ToolRunGroup } from "../ToolRunGroup";
@@ -75,6 +77,12 @@ export function SidequestPanel({
 	// sidequest ids out.
 	const pending = usePermissionsStore((s) => s.queue).filter(
 		(p) => p.sessionId === sq?.sidequestId,
+	);
+
+	// Shared with the main chat's chip via `useInterruptStore`, which is keyed
+	// by plain id — a sidequest id works there even though it has no store row.
+	const interrupting = useInterruptStore((s) =>
+		sq ? !!s.interrupting[sq.sidequestId] : false,
 	);
 
 	// Stick to bottom as the reply streams in, same approach as SessionChat.
@@ -272,6 +280,8 @@ export function SidequestPanel({
 										? "running"
 										: sq.status
 							}
+							mode={sq.mode}
+							pendingToolName={pending[0]?.toolName}
 						/>
 					</div>
 				) : null}
@@ -404,10 +414,12 @@ export function SidequestPanel({
 				</div>
 
 				{/* Same working indicator as the main thread — identical chip,
-			    identical bottom-right float. "starting" shows it too: branching
-			    is activity, and the chip's elapsed clock runs off `createdAt`
-			    until the first message lands. Hidden while a permission card is
-			    up (the chip nulls itself on `hasPending`), matching SessionChat. */}
+			    identical bottom-right float, and (once running) the same stop
+			    control: the whole pill is clickable. "starting" shows it too:
+			    branching is activity, and the chip's elapsed clock runs off
+			    `createdAt` until the first message lands. Hidden while a
+			    permission card is up (the chip nulls itself on `hasPending`),
+			    matching SessionChat. */}
 				{sq && (sq.status === "running" || sq.status === "starting") ? (
 					<div
 						style={{
@@ -429,6 +441,14 @@ export function SidequestPanel({
 									status: sq.status,
 								}}
 								hasPending={pending.length > 0}
+								// "starting" deliberately gets no "×": there's no live
+								// query to interrupt until the fork lands.
+								onStop={
+									sq.status === "running"
+										? () => void stopSidequest(sq.sidequestId)
+										: undefined
+								}
+								interrupting={interrupting}
 							/>
 						</div>
 					</div>
@@ -461,7 +481,6 @@ function SidequestComposer({
 	focusNonce: number;
 }) {
 	const sidequestId = sq.sidequestId;
-	const running = sq.status === "running";
 	// The fork is still being handed to the SDK — there's no live query yet to
 	// accept a mode/model change, and nothing to send to.
 	const starting = sq.status === "starting";
@@ -474,7 +493,6 @@ function SidequestComposer({
 	const [modeSwitching, setModeSwitching] = useState(false);
 	const [pickerOpen, setPickerOpen] = useState(false);
 	const [modelHover, setModelHover] = useState(false);
-	const [interrupting, setInterrupting] = useState(false);
 	// Paste-to-attach, the same hook (and therefore the same draft-store
 	// backing) the main composer uses — keyed by the sidequest id.
 	const { images, onPaste, removeImage } = useComposerImages(
@@ -538,15 +556,6 @@ function SidequestComposer({
 		});
 	};
 
-	const stop = async () => {
-		if (interrupting) return;
-		setInterrupting(true);
-		try {
-			await window.claude.interruptSession(sidequestId);
-		} finally {
-			setInterrupting(false);
-		}
-	};
 
 	// Enter commits an in-progress recording wherever focus is, so you don't
 	// have to click back into the panel to finish dictating. Capture phase to
@@ -820,50 +829,10 @@ function SidequestComposer({
 						background: T.surfaceLow,
 					}}
 				>
-					{/* Same corner placement as the main composer's Stop button
-					    (`ImagePasteTextarea`) — top-right of the input box, not
-					    inline with Send. */}
-					{running ? (
-						<button
-							type="button"
-							onClick={() => void stop()}
-							disabled={interrupting}
-							aria-label="Stop"
-							style={{
-								position: "absolute",
-								top: 8,
-								right: 8,
-								zIndex: 1,
-								height: 22,
-								display: "inline-flex",
-								alignItems: "center",
-								gap: 5,
-								padding: "0 8px",
-								borderRadius: 5,
-								border: `0.5px solid ${T.border}`,
-								background: T.surfaceHi,
-								color: T.text,
-								fontFamily: "inherit",
-								fontSize: 11.5,
-								fontWeight: 500,
-								lineHeight: 1,
-								cursor: interrupting ? "default" : "pointer",
-								opacity: interrupting ? 0.55 : 1,
-							}}
-						>
-							<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
-								<rect x="1" y="1" width="8" height="8" rx="1" fill="currentColor" />
-							</svg>
-							<span>{interrupting ? "Stopping…" : "Stop"}</span>
-						</button>
-					) : null}
 					{/* Same placement as the main composer: thumbnails sit above
 					    the textarea, inside the input box. Smaller here because
-					    the panel goes as narrow as SIDEQUEST_MIN_WIDTH (280px).
-					    The right inset keeps the last thumbnail's "×" clear of
-					    the Stop button floating in that corner — staging a
-					    follow-up while Claude is still working is normal here. */}
-					<div style={{ paddingRight: running ? 64 : 0 }}>
+					    the panel goes as narrow as SIDEQUEST_MIN_WIDTH (280px). */}
+					<div>
 						<PendingImageStrip
 							images={images}
 							size={48}
@@ -921,6 +890,7 @@ function SidequestComposer({
 						onRecordingChange={setDictating}
 						onInsert={insertDictation}
 						onError={setError}
+						scope={sidequestId}
 					/>
 					<ModeToggle
 						mode={sq.mode}

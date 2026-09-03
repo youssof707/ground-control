@@ -10,7 +10,8 @@ import { StoredWorktreeColorSchema, WorktreeColorSchema } from "./worktrees";
  * archived, or deleted).
  *
  * `color` reuses the worktree palette so both features draw from the same
- * two design tokens (info/danger).
+ * design tokens (info/danger/neutral). The neutral entry ("gray") lets a
+ * group's header match an ungrouped folder section's label exactly.
  *
  * `collapsed` is persisted on the record (not per-window UI state) so a
  * collapse survives restarts and syncs across windows via `state:changed`.

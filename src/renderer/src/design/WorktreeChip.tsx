@@ -15,6 +15,15 @@ import { T } from "./tokens";
  * them here without also widening `WorktreeColorSchema` in
  * `shared/schemas/worktrees.ts` — `StoredWorktreeColorSchema` folds
  * legacy green/yellow records onto blue/red on read.
+ *
+ * `gray` is the deliberate odd one out: its `fg` is `T.textMute`, not a
+ * `T.*Soft`/`T.*Border` semantic pair, because its whole purpose is to
+ * equal the exact color `CwdHeaderRow` and `GroupHeaderRow` (SessionsList)
+ * use for a folder section's label — picking it for a session group makes
+ * that group's header indistinguishable from an ungrouped folder section.
+ * `bg`/`border` borrow the existing `T.neutral*` tokens (already the
+ * app's generic "no particular hue" pair, otherwise unused in the
+ * sidebar) for the chip fill/stroke and the color-picker swatch ring.
  */
 export const WORKTREE_COLOR_MAP: Record<
 	WorktreeColor,
@@ -22,6 +31,7 @@ export const WORKTREE_COLOR_MAP: Record<
 > = {
 	blue: { fg: T.info, bg: T.infoSoft, border: T.infoBorder },
 	red: { fg: T.danger, bg: T.dangerSoft, border: T.dangerBorder },
+	gray: { fg: T.textMute, bg: T.neutralSoft, border: T.neutralBorder },
 };
 
 /**

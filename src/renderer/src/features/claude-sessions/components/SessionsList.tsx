@@ -26,7 +26,7 @@ import { RenameGroupModal } from "./RenameGroupModal";
 import { SettingsModal } from "./SettingsModal";
 import { ShortcutsMenuButton } from "./ShortcutsMenu";
 import { T } from "../../../design/tokens";
-import { BranchChipWithDelta, ModeLabel, StatusPill } from "../../../design/Atoms";
+import { BranchChipWithDelta, StatusPill } from "../../../design/Atoms";
 import { WorktreeChip, WORKTREE_COLOR_MAP } from "../../../design/WorktreeChip";
 import type {
 	ClaudeSessionFull,
@@ -95,9 +95,6 @@ export function SessionsList({
 		string | null
 	>(null);
 	const groups = useSessionGroupsStore((s) => s.groups);
-	// Whole map (not per-row selector): needed to compute aggregate unread
-	// counts for collapsed group headers without calling hooks in a loop.
-	const lastReadAtMap = useReadStore((s) => s.lastReadAt);
 	const [workspaceFilter, setWorkspaceFilter] = useState<string[]>([]);
 	// Non-persistent view toggle: when true, archived sessions are no longer
 	// filtered out of the sidebar list (and their cwds appear in the
@@ -1029,15 +1026,11 @@ export function SessionsList({
 		return { kind: "top" };
 	}, [draft, sidebarRows]);
 
-	const renderDraftRow = (
-		last: boolean,
-		groupColor?: { fg: string; bg: string; border: string },
-	) =>
+	const renderDraftRow = (last: boolean) =>
 		draft ? (
 			<DraftRowSidebar
 				key={draft.id}
 				draft={draft}
-				groupColor={groupColor}
 				active={draft.id === activeSessionId}
 				last={last}
 				onDiscard={() => discardDraft(draft.id)}
@@ -1340,7 +1333,6 @@ export function SessionsList({
 									ids={ids}
 									sessions={sessions}
 									queue={queue}
-									lastReadAtMap={lastReadAtMap}
 									activeSessionId={activeSessionId}
 									onToggleCollapsed={() =>
 										toggleGroupCollapsed(group)
@@ -1355,12 +1347,7 @@ export function SessionsList({
 									draftSlot={
 										draftHost.kind === "group" &&
 										draftHost.id === group.id
-											? renderDraftRow(
-												false,
-												WORKTREE_COLOR_MAP[
-													group.color
-												],
-											)
+											? renderDraftRow(false)
 											: null
 									}
 									onRename={(id) =>
@@ -1483,7 +1470,6 @@ function SessionRowSidebar({
 	pending,
 	active,
 	inGroup = false,
-	groupColor,
 	hideCwd = false,
 	onDelete,
 	onArchive,
@@ -1498,24 +1484,18 @@ function SessionRowSidebar({
 	/** True when the row sits under a CwdHeaderRow — the header already
 	 * names the folder, so the per-row cwd footer would be redundant. */
 	hideCwd?: boolean;
-	/** True when the row renders inside a group's bordered section — the
-	 * container owns the color border, so the row itself just adopts the
-	 * raised surface + indent + grouped ⋯ menu options. Also the source of
-	 * truth for the menu's grouped state: a dangling groupId renders (and
-	 * behaves) as ungrouped. */
+	/** True when the row renders inside a group's section — same recessed
+	 * chassis as a cwd/worktree bucket row, plus the grouped ⋯ menu options.
+	 * Also the source of truth for the menu's grouped state: a dangling
+	 * groupId renders (and behaves) as ungrouped. */
 	inGroup?: boolean;
-	/** Resolved color spec of the enclosing group, if any. When set, the
-	 * active-row background and left stripe tint to this hue instead of the
-	 * neutral `T.surfaceHi` + `T.accent` — otherwise a selected row inside
-	 * a colored group reads as a foreign grey block over the group's wash. */
-	groupColor?: { fg: string; bg: string; border: string };
 	onDelete: () => void;
 	onArchive: () => void;
 	onUnarchive: () => void;
 	onAddToGroup: () => void;
 	onRemoveFromGroup: () => void;
 }) {
-	const { hasPending, summary, unread, status } = useRowDerived(
+	const { summary, unread, status } = useRowDerived(
 		session,
 		pending,
 	);
@@ -1540,23 +1520,14 @@ function SessionRowSidebar({
 				borderBottom: last ? "none" : `0.5px solid ${T.borderSoft}`,
 				// Only highlight the active row. Pending state is conveyed by the
 				// "waiting for input" StatusPill and the count badge below.
-				// Grouped members render transparent so the parent group
-				// section's subtle color wash shows through the whole width
-				// — one continuous tint instead of just a header strip.
-				// Both highlight fills are translucent color-mixes, never a
-				// fixed surface token: a row can sit on the pane (T.win), on a
-				// recessed cwd/worktree bucket (T.bg), or on a group's wash, and
-				// the selection has to lift *relative* to whichever is behind it.
-				// A flat T.surfaceHi over-shot inside the dark bucket and came
-				// out lighter than the pane framing it, so the highlight read as
+				// The fill is a translucent color-mix, never a fixed surface
+				// token: a row can sit on the pane (T.win) or on a recessed
+				// cwd/worktree/group bucket (T.bg), and the selection has to
+				// lift *relative* to whichever is behind it. A flat
+				// T.surfaceHi over-shot inside the dark bucket and came out
+				// lighter than the pane framing it, so the highlight read as
 				// a foreign grey block floating out of its own box.
-				// Inside a group the mix uses the group's own hue so the
-				// selection stays part of that color family.
-				background: active
-					? groupColor
-						? `color-mix(in oklab, ${groupColor.fg} 7%, transparent)`
-						: ROW_SELECTED_BG
-					: "transparent",
+				background: active ? ROW_SELECTED_BG : "transparent",
 				position: "relative",
 				// Archived rows dim heavily so they read as "set aside"
 				// against the active list. The full row dims — including
@@ -1576,7 +1547,7 @@ function SessionRowSidebar({
 						top: 0,
 						bottom: 0,
 						width: 3,
-						background: groupColor ? groupColor.fg : T.accent,
+						background: T.accent,
 					}}
 				/>
 			) : null}
@@ -1668,7 +1639,11 @@ function SessionRowSidebar({
 					>
 						{/* `status` folds in sidequest activity (running / waiting)
 						    on top of the session's own state — see useRowDerived. */}
-						<StatusPill status={status} />
+						<StatusPill
+							status={status}
+							mode={session.mode}
+							pendingToolName={pending[0]?.toolName}
+						/>
 						{session.branch ? (
 							<BranchChipWithDelta
 								branch={session.branch}
@@ -1677,10 +1652,6 @@ function SessionRowSidebar({
 								suppressStale
 							/>
 						) : null}
-						{session.mode === "plan" &&
-						(hasPending || session.status === "running") ? (
-								<ModeLabel mode="plan" />
-							) : null}
 					</div>
 					{session.cwd && !hideCwd ? (
 						<div
@@ -1703,18 +1674,18 @@ function SessionRowSidebar({
 }
 
 /**
- * Framed container for a single group: colored border on every side (the
- * group's `border` token), raised `surfaceLow` fill, and a hairline
- * bottom-margin so successive groups don't fuse. Header sits at the top,
- * followed by member rows (when expanded). No rounding — matches the
- * app's square-cornered vocabulary.
+ * Framed container for a single custom group. Deliberately the same
+ * recessed-well chassis as the cwd/worktree buckets below (T.bg fill, one
+ * top hairline, no rounding) — the two section kinds should read as one
+ * component family. The only place group identity shows is the header's
+ * title color; see `GroupHeaderRow`. Header sits at the top, followed by
+ * member rows (when expanded).
  */
 function GroupSection({
 	group,
 	ids,
 	sessions,
 	queue,
-	lastReadAtMap,
 	activeSessionId,
 	onToggleCollapsed,
 	onNewSession,
@@ -1730,7 +1701,6 @@ function GroupSection({
 	ids: string[];
 	sessions: Record<string, ClaudeSessionFull>;
 	queue: PermissionRequest[];
-	lastReadAtMap: Record<string, number>;
 	activeSessionId?: string;
 	onToggleCollapsed: () => void;
 	/** New Session in this group. The folder is resolved HERE rather than by
@@ -1749,7 +1719,6 @@ function GroupSection({
 	onAddToGroup: (id: string) => void;
 	onRemoveFromGroup: (id: string) => void;
 }) {
-	const c = WORKTREE_COLOR_MAP[group.color];
 	// Folder the header's "+" targets: the newest member's cwd. The walk past
 	// a member with no cwd is belt-and-braces — a group can never be empty
 	// (main auto-deletes at zero members via pruneGroupIfEmpty), so this all
@@ -1758,33 +1727,21 @@ function GroupSection({
 	const newSessionCwd = ids
 		.map((id) => sessions[id]?.cwd)
 		.find((cwd): cwd is string => !!cwd);
-	// Only draw aggregate indicators when the section is folded — expanded
-	// members show their own dots/pills; doubling up would be noise.
-	const aggregates = group.collapsed
-		? deriveGroupAggregates(ids, sessions, queue, lastReadAtMap)
-		: null;
 	return (
 		<div
 			style={{
-				// Horizontal rules only (top + bottom) in the group's color.
-				// A very subtle wash of the group hue tints the entire section
-				// (header + rows) — the rows themselves render transparent
-				// when `inGroup` so this fill shows through the full width.
-				// 2% of `c.fg` keeps the wash whisper-quiet against `T.win`.
-				borderTop: `1px solid ${c.border}`,
-				borderBottom: `1px solid ${c.border}`,
-				// Breathing room above/below so consecutive groups (or a
-				// group next to a top-level row) don't butt up against each
-				// other — the colored borders read as their own object.
+				// Same recessed dark box as the cwd/worktree buckets — see
+				// the comment on those wrapping divs in the sidebar's
+				// render map. Rows render transparent, so T.bg shows
+				// through the full section.
 				margin: "8px 0",
-				background: `color-mix(in oklab, ${c.fg} 2%, transparent)`,
+				background: T.bg,
+				borderTop: `1px solid ${T.borderSoft}`,
 				overflow: "hidden",
 			}}
 		>
 			<GroupHeaderRow
 				group={group}
-				count={ids.length}
-				aggregates={aggregates}
 				onToggle={onToggleCollapsed}
 				onNewSession={
 					newSessionCwd
@@ -1809,7 +1766,6 @@ function GroupSection({
 							pending={sessionPending}
 							active={id === activeSessionId}
 							inGroup
-							groupColor={c}
 							onDelete={() => onDelete(id)}
 							onArchive={() => onArchive(id)}
 							onUnarchive={() => onUnarchive(id)}
@@ -1989,15 +1945,11 @@ function CwdHeaderRow({
 
 function GroupHeaderRow({
 	group,
-	count,
-	aggregates,
 	onToggle,
 	onNewSession,
 	onRename,
 }: {
 	group: SessionGroup;
-	count: number;
-	aggregates: { waiting: number; unread: number } | null;
 	onToggle: () => void;
 	/** Omitted when no member has a cwd — the header then renders no "+" at
 	 * all rather than a button with nothing to target. */
@@ -2054,7 +2006,7 @@ function GroupHeaderRow({
 						display: "flex",
 						alignItems: "center",
 						gap: 7,
-						padding: "8px 12px",
+						padding: "9px 12px",
 						border: "none",
 						background: "transparent",
 						cursor: "pointer",
@@ -2085,15 +2037,22 @@ function GroupHeaderRow({
 							strokeLinejoin="round"
 						/>
 					</svg>
-					{/* Group color lives on the name itself (no separate dot) —
-				    one fewer element, and the label doubles as the swatch. */}
+					{/* Group color lives on the name itself (no separate dot,
+					    no count, no aggregate pills — otherwise identical to
+					    CwdHeaderRow's label). Muted to header weight (mixed
+					    toward T.textMute, landing near T.textDim) rather than
+					    the raw palette color: a container label should read
+					    quieter than the session titles inside it, and full
+					    saturation right next to a neutral folder label read
+					    as a louder, unrelated widget. Don't put this back to
+					    c.fg. */}
 					<span
 						style={{
 							fontSize: 11,
 							fontWeight: 600,
 							letterSpacing: 0.5,
 							textTransform: "uppercase",
-							color: c.fg,
+							color: `color-mix(in oklab, ${c.fg} 60%, ${T.textMute})`,
 							overflow: "hidden",
 							textOverflow: "ellipsis",
 							whiteSpace: "nowrap",
@@ -2102,64 +2061,6 @@ function GroupHeaderRow({
 					>
 						{group.name}
 					</span>
-					<span
-						style={{
-							fontSize: 10.5,
-							color: T.textFaint,
-							flexShrink: 0,
-						}}
-					>
-						{count}
-					</span>
-					{aggregates &&
-				(aggregates.unread > 0 || aggregates.waiting > 0) ? (
-							<span
-								style={{
-									marginLeft: "auto",
-									display: "inline-flex",
-									alignItems: "center",
-									gap: 6,
-									flexShrink: 0,
-								}}
-							>
-								{aggregates.waiting > 0 ? (
-									<span
-										style={{
-											display: "inline-flex",
-											alignItems: "center",
-											height: 16,
-											padding: "0 6px",
-											borderRadius: 8,
-											border: `0.5px solid ${T.warnBorder}`,
-											background: T.warnSoft,
-											color: T.warn,
-											fontSize: 10,
-											fontWeight: 600,
-										}}
-									>
-										{aggregates.waiting}
-									</span>
-								) : null}
-								{aggregates.unread > 0 ? (
-									<span
-										style={{
-											display: "inline-flex",
-											alignItems: "center",
-											height: 16,
-											padding: "0 6px",
-											borderRadius: 8,
-											border: `0.5px solid ${T.accentBorder}`,
-											background: T.accentSoft,
-											color: T.accent,
-											fontSize: 10,
-											fontWeight: 600,
-										}}
-									>
-										{aggregates.unread}
-									</span>
-								) : null}
-							</span>
-						) : null}
 				</button>
 				{/* No "+" when no member carries a cwd — there'd be no folder
 				    to target. Mirrors CwdHeaderRow's `{cwd ? … : null}`. */}
@@ -2182,15 +2083,14 @@ function GroupHeaderRow({
 							color: T.textFaint,
 							cursor: "pointer",
 						}}
-						// Rests neutral (T.textFaint) like the chevron and the
-						// count — the name is the group's only colored element
-						// and should stay that way. Hover pulls into the
-						// group's own hue rather than the neutral
-						// ROW_SELECTED_BG the cwd buckets use, matching how
-						// SessionRowSidebar tints its active fill in a group.
+						// Rests neutral (T.textFaint) like the chevron — the
+						// name is the group's only colored element. Hover
+						// matches CwdHeaderRow's neutral lift rather than the
+						// group's own hue, so the "+" reads as the same
+						// pointer affordance in both section kinds.
 						onMouseEnter={(e) => {
-							e.currentTarget.style.background = `color-mix(in oklab, ${c.fg} 8%, transparent)`;
-							e.currentTarget.style.color = c.fg;
+							e.currentTarget.style.background = ROW_SELECTED_BG;
+							e.currentTarget.style.color = T.text;
 						}}
 						onMouseLeave={(e) => {
 							e.currentTarget.style.background = "transparent";
@@ -2332,16 +2232,11 @@ function DraftRowSidebar({
 	draft,
 	active,
 	last,
-	groupColor,
 	onDiscard,
 }: {
 	draft: DraftSession;
 	active: boolean;
 	last: boolean;
-	/** Set when the row renders inside a group box, so the active fill and
-	 * stripe take the group's hue instead of the neutral accent — the same
-	 * treatment SessionRowSidebar gives its `inGroup` members. */
-	groupColor?: { fg: string; bg: string; border: string };
 	onDiscard: () => void;
 }) {
 	const worktree = useWorktreesStore((s) =>
@@ -2352,13 +2247,8 @@ function DraftRowSidebar({
 			style={{
 				borderBottom: last ? "none" : `0.5px solid ${T.borderSoft}`,
 				// Same relative lift as SessionRowSidebar — a draft row can land
-				// inside a recessed bucket too. Inside a group box the fill
-				// comes from the group hue so the row belongs to its container.
-				background: active
-					? groupColor
-						? `color-mix(in oklab, ${groupColor.fg} 7%, transparent)`
-						: ROW_SELECTED_BG
-					: "transparent",
+				// inside a recessed cwd/worktree/group bucket too.
+				background: active ? ROW_SELECTED_BG : "transparent",
 				position: "relative",
 			}}
 		>
@@ -2370,7 +2260,7 @@ function DraftRowSidebar({
 						top: 0,
 						bottom: 0,
 						width: 3,
-						background: groupColor ? groupColor.fg : T.accent,
+						background: T.accent,
 					}}
 				/>
 			) : null}
@@ -3196,39 +3086,6 @@ function worktreeBucketLabel(wt: Worktree, hidePrefix: boolean): string {
 	return hidePrefix
 		? wt.displayName
 		: `${folderName(wt.baseDir)}: ${wt.displayName}`;
-}
-
-/**
- * Attention rollup for a collapsed group header. Plain function (not a
- * hook) on purpose — it runs once per group inside the row-render loop,
- * where per-session hooks like `useRowDerived` would be illegal. Mirrors
- * that hook's rules exactly:
- *   - waiting: pending permission request in the queue, or the session
- *     status itself is awaiting_permission (same pair StatusPill uses);
- *   - unread: not running AND last incoming message is newer than the
- *     session's lastReadAt mark.
- */
-function deriveGroupAggregates(
-	ids: string[],
-	sessions: Record<string, ClaudeSessionFull>,
-	queue: PermissionRequest[],
-	lastReadAt: Record<string, number>,
-): { waiting: number; unread: number } {
-	let waiting = 0;
-	let unread = 0;
-	const pendingIds = new Set(queue.map((q) => q.sessionId));
-	for (const id of ids) {
-		const s = sessions[id];
-		if (!s) continue;
-		if (pendingIds.has(id) || s.status === "awaiting_permission") waiting++;
-		if (
-			s.status !== "running" &&
-			lastIncomingMessageTs(s) > (lastReadAt[id] ?? 0)
-		) {
-			unread++;
-		}
-	}
-	return { waiting, unread };
 }
 
 function lastIncomingMessageTs(session: ClaudeSessionFull): number {

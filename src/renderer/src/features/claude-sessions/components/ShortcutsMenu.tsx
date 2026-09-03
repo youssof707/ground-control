@@ -449,18 +449,20 @@ function SegmentedItem({
 }
 
 /**
- * Opens `~/.claude/skills` in Finder. Deliberately unlabeled and nearly
- * invisible at rest (a dim glyph, no border, no background) — this is a
- * power-user escape hatch, not a primary action, and the modal shouldn't
- * visually advertise "here's a filesystem button." It only exists on the
- * Skills tab, since that's the folder it opens.
+ * Reveals `~/.claude/skills` in Finder: opens the enclosing `~/.claude`
+ * folder with `skills` selected, rather than navigating into it.
+ * Deliberately unlabeled and nearly invisible at rest (a dim glyph, no
+ * border, no background) — this is a power-user escape hatch, not a
+ * primary action, and the modal shouldn't visually advertise "here's a
+ * filesystem button." It only exists on the Skills tab, since that's the
+ * folder it reveals.
  */
 function RevealSkillsFolderButton() {
 	const [hover, setHover] = useState(false);
 	return (
 		<button
 			type="button"
-			aria-label="Open skills folder in Finder"
+			aria-label="Reveal skills folder in Finder"
 			onClick={() => {
 				window.claude
 					.openSkillsFolder()

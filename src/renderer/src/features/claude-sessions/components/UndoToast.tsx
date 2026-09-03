@@ -8,9 +8,15 @@ import { restoreEntry } from "../lib/undoActions";
 /**
  * The "you can take that back" prompt, shown for a few seconds after a session
  * is deleted, handed off, or archived. Renders inside `AmbientStack` (see
- * `MainApp`), directly above the background-task chip — deleting a session
- * with the worktree cascade spawns both, and they should read as one event
- * rather than two things fighting for the same corner.
+ * `MainApp`) in the bottom-left corner, directly above the background-task
+ * chip — deleting a session with the worktree cascade spawns both, and they
+ * should read as one event rather than two things fighting for the same
+ * corner.
+ *
+ * It announces itself by fading out, not by counting down. There used to be a
+ * drain hairline along the bottom edge; it read as a loading bar and pulled
+ * the eye toward a notice that exists to be ignorable. The card now just holds
+ * and dissolves (see `undo-toast-life` in index.css).
  *
  * A card, not a pill: the background-task indicator is `borderRadius: 999`
  * because it's a status glance, whereas this holds an action. It borrows the
@@ -43,13 +49,12 @@ export function UndoToast() {
 
 	const entry = entries.find((e) => e.id === toastEntryId) ?? null;
 
-	// Hovering must not just stop the clock — it has to restart it on leave,
-	// so the user gets a fresh, full window rather than the sliver that was
-	// left when they reached the card. `restartKey` forces both the timeout
-	// and the CSS animation to start over (the latter by remounting the drain
-	// element, which is the only way to replay a CSS animation).
-	const [restartKey, setRestartKey] = useState(0);
-
+	// Hovering must not just stop the clock — it has to restart it on leave, so
+	// the user gets a fresh, full window rather than the sliver that was left
+	// when they reached the card. Dropping `animationName` to "none" (below)
+	// rather than pausing it does that for the fade: the card snaps back to
+	// full opacity, and naming the animation again replays it from 0%. This
+	// effect restarts the matching timeout for free, since `paused` is a dep.
 	useEffect(() => {
 		if (!entry || paused) return;
 		const id = setTimeout(() => {
@@ -61,7 +66,7 @@ export function UndoToast() {
 			}
 		}, TOAST_MS);
 		return () => clearTimeout(id);
-	}, [entry, paused, restartKey]);
+	}, [entry, paused]);
 
 	if (!entry) return null;
 
@@ -88,13 +93,15 @@ export function UndoToast() {
 
 	return (
 		<div
+			// Remounts when the toast advances to a different entry — a second
+			// delete landing mid-fade must start its own full window, not
+			// inherit the half-dissolved opacity of the one it replaced.
+			// Remounting is the only way to replay a CSS animation.
+			key={entry.id}
 			role="status"
 			aria-live="polite"
 			onMouseEnter={() => setPaused(true)}
-			onMouseLeave={() => {
-				setPaused(false);
-				setRestartKey((k) => k + 1);
-			}}
+			onMouseLeave={() => setPaused(false)}
 			style={{
 				pointerEvents: "auto",
 				width: "min(360px, calc(100vw - 40px))",
@@ -103,6 +110,16 @@ export function UndoToast() {
 				borderRadius: 10,
 				boxShadow: "0 16px 40px rgba(0, 0, 0, 0.5)",
 				overflow: "hidden",
+				// The self-timing fade. Named "none" while hovered so the card
+				// returns to full opacity rather than freezing mid-dissolve;
+				// the transition below smooths that hand-back, and can't fight
+				// the animation because it only applies once the animation has
+				// stopped driving opacity.
+				animationName: paused ? "none" : "undo-toast-life",
+				animationDuration: `${TOAST_MS}ms`,
+				animationTimingFunction: "linear",
+				animationFillMode: "forwards",
+				transition: "opacity 150ms ease-out",
 			}}
 		>
 			<div
@@ -131,6 +148,13 @@ export function UndoToast() {
 					>
 						{headline}
 					</span>
+					{/* Grey, not accent-blue. A saturated link in an ambient
+					    corner reads as an alert demanding a decision; this is
+					    an offer you're free to ignore, and the whole card is
+					    already fading out behind it. Brightens to full text
+					    colour on hover so it still declares itself clickable
+					    without the colour cue — same inline-style hover trick
+					    as the × beside it. */}
 					<button
 						type="button"
 						onClick={() => restoreEntry(entry, navigate)}
@@ -138,12 +162,18 @@ export function UndoToast() {
 							flexShrink: 0,
 							border: "none",
 							background: "transparent",
-							color: T.accent,
+							color: T.textDim,
 							fontSize: 12,
 							fontWeight: 500,
 							fontFamily: T.sans,
 							cursor: "pointer",
 							padding: "1px 3px",
+						}}
+						onMouseEnter={(e) => {
+							e.currentTarget.style.color = T.text;
+						}}
+						onMouseLeave={(e) => {
+							e.currentTarget.style.color = T.textDim;
 						}}
 					>
 						Undo
@@ -192,22 +222,6 @@ export function UndoToast() {
 					</span>
 				) : null}
 			</div>
-			{/* Drain hairline — makes the deadline honest instead of a
-			    surprise, and freezes while hovered so the target can't vanish
-			    mid-reach. Duration is passed as a custom property, the same
-			    way ActivityChip parameterises its firework keyframes. */}
-			<div
-				aria-hidden
-				key={`${entry.id}:${restartKey}`}
-				className="undo-toast-drain"
-				style={
-					{
-						"--undo-ms": `${TOAST_MS}ms`,
-						background: T.accent,
-						animationPlayState: paused ? "paused" : "running",
-					} as React.CSSProperties
-				}
-			/>
 		</div>
 	);
 }

@@ -2,10 +2,11 @@ import { useInterruptStore } from "../stores/useInterruptStore";
 import { useQueuedMessagesStore } from "../stores/useQueuedMessagesStore";
 
 /**
- * Imperative session-control operations, shared by the composer's Stop pill
- * (via `SessionChat`) and the global ⌘. handler. Deliberately store-only (no
- * hooks) so it can run from a window keydown listener outside React's render
- * cycle — same pattern as lib/composerActions.ts and lib/sidequestActions.ts.
+ * Imperative session-control operations, shared by the working chip's stop
+ * affordance (via `SessionChat` / `SidequestPanel`) and the global ⌘. handler.
+ * Deliberately store-only (no hooks) so it can run from a window keydown
+ * listener outside React's render cycle — same pattern as
+ * lib/composerActions.ts and lib/sidequestActions.ts.
  */
 
 /**
@@ -19,8 +20,8 @@ import { useQueuedMessagesStore } from "../stores/useQueuedMessagesStore";
  * the turn and then immediately start another one.
  *
  * Re-entrancy is guarded through `useInterruptStore` rather than a local
- * flag, so the Stop button and the hotkey can't both fire a request for the
- * same session.
+ * flag, so the chip and the hotkey can't both fire a request for the same
+ * session.
  */
 export async function stopSession(sessionId: string): Promise<void> {
 	const { interrupting, begin, end } = useInterruptStore.getState();
@@ -31,5 +32,24 @@ export async function stopSession(sessionId: string): Promise<void> {
 		await window.claude.interruptSession(sessionId);
 	} finally {
 		end(sessionId);
+	}
+}
+
+/**
+ * Interrupt a running sidequest. Same shape as `stopSession`, minus the
+ * queued-message `hold()`: sidequests have no message queue, so there's no
+ * idle-edge flush to suppress.
+ *
+ * `useInterruptStore` is keyed by plain id string, so an ephemeral sidequest
+ * id shares the guard (and the chip's "stopping…" state) with no store row.
+ */
+export async function stopSidequest(sidequestId: string): Promise<void> {
+	const { interrupting, begin, end } = useInterruptStore.getState();
+	if (interrupting[sidequestId]) return;
+	begin(sidequestId);
+	try {
+		await window.claude.interruptSession(sidequestId);
+	} finally {
+		end(sidequestId);
 	}
 }
