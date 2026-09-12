@@ -5,13 +5,15 @@ import type {
 import type { PendingImage } from "./pendingImage";
 
 /**
- * Pure helpers shared by every message composer (the main
- * `ImagePasteTextarea` and the sidequest panel's `SidequestComposer`).
+ * Pure helpers for `MessageComposer` — the single composer shared by the
+ * main chat, drafts, and the sidequest panel (all three render the same
+ * component; only the target they talk to differs, via `useComposerTarget`).
  *
- * These used to live inside `ImagePasteTextarea`, which is why the sidequest
- * composer silently dropped pasted images. Anything about *what* an image
- * draft is — which types we accept, how a draft becomes SDK content blocks —
- * belongs here so a fix lands in both composers at once.
+ * These used to live inside a since-deleted `ImagePasteTextarea`, back when
+ * the sidequest panel ran its own hand-duplicated composer that silently
+ * dropped pasted images. Anything about *what* an image draft is — which
+ * types we accept, how a draft becomes SDK content blocks — lives here so a
+ * fix lands everywhere `MessageComposer` is mounted.
  */
 
 /**

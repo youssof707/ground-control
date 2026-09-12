@@ -159,6 +159,9 @@ export function registerSessionsHandlers(): SessionManager {
 	ipcMain.handle("session:resume", (_e, sessionId: string) =>
 		manager.resume(sessionId),
 	);
+	ipcMain.handle("session:retryUsageLimit", (_e, sessionId: string) =>
+		manager.retryUsageLimit(sessionId),
+	);
 	ipcMain.handle("session:refreshBranch", (_e, sessionId: string) =>
 		manager.refreshBranch(sessionId),
 	);

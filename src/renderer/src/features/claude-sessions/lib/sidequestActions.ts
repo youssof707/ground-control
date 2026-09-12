@@ -1,6 +1,7 @@
 import type { UserContentBlock } from "@shared/schemas/claude_session";
 import { lastForkableMessageId } from "./sidequestForkPoint";
 import { useDraftStore } from "../stores/useDraftStore";
+import { useQueuedMessagesStore } from "../stores/useQueuedMessagesStore";
 import { useRightPanelStore } from "../stores/useRightPanelStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import {
@@ -36,9 +37,16 @@ export function appendQuotedToDraft(sidequestId: string, text: string): void {
 	setDraftText(sidequestId, next);
 }
 
-/** Open the sidequest panel and ask its composer to focus (caret at end). */
-export function openSidequestPanelAndFocus(): void {
-	useRightPanelStore.getState().setRightPanel("sidequest");
+/**
+ * Open the sidequest panel and ask its composer to focus (caret at end).
+ *
+ * `parentSessionId` must be the *routed* session. The panel's open flag is
+ * per-session, but `bumpFocus` bumps one app-wide nonce that every mounted
+ * composer watches — passing an off-screen id would open an invisible panel
+ * while yanking focus into whichever sidequest composer is actually mounted.
+ */
+export function openSidequestPanelAndFocus(parentSessionId: string): void {
+	useRightPanelStore.getState().setSessionPanel(parentSessionId, "sidequest");
 	useSidequestsStore.getState().bumpFocus();
 }
 
@@ -60,12 +68,16 @@ export async function recreateSidequest(
 	const carriedFrom =
 		opts?.preserveDraft && existing ? existing.sidequestId : null;
 	if (existing) {
-		// Drop the old draft with the old session — its id is about to become
-		// meaningless, and leaving it would leak one entry per re-fork. Unless
-		// the caller is replacing the sidequest *underneath* someone who is
-		// mid-compose (Clear, or send-time recovery), in which case the draft
-		// is moved onto the new id below instead of being destroyed.
-		if (!carriedFrom) useDraftStore.getState().clearDraft(existing.sidequestId);
+		// Drop the old draft (and any queued pre-move) with the old session —
+		// its id is about to become meaningless, and leaving it would leak one
+		// entry per re-fork. Unless the caller is replacing the sidequest
+		// *underneath* someone who is mid-compose (Clear, or send-time
+		// recovery), in which case both are moved onto the new id below
+		// instead of being destroyed.
+		if (!carriedFrom) {
+			useDraftStore.getState().clearDraft(existing.sidequestId);
+			useQueuedMessagesStore.getState().clearSession(existing.sidequestId);
+		}
 		try {
 			await window.claude.discardSidequest(parentSessionId);
 		} catch (err) {
@@ -77,7 +89,10 @@ export async function recreateSidequest(
 	}
 
 	const sidequestId = newSidequestId();
-	if (carriedFrom) useDraftStore.getState().moveDraft(carriedFrom, sidequestId);
+	if (carriedFrom) {
+		useDraftStore.getState().moveDraft(carriedFrom, sidequestId);
+		useQueuedMessagesStore.getState().moveSession(carriedFrom, sidequestId);
+	}
 	// Mirror what `SessionManager.startSidequest` copies off the parent, so the
 	// composer's mode toggle and model label are already correct during the
 	// "starting" window. `sidequest:started` re-asserts the same values.

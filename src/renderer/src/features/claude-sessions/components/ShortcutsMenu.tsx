@@ -5,6 +5,7 @@ import {
 	useRef,
 	useState,
 	type CSSProperties,
+	type ReactNode,
 } from "react";
 import type { Shortcut } from "@shared/schemas/shortcuts";
 import type { Skill } from "@shared/schemas/skills";
@@ -12,7 +13,7 @@ import { useBackdropDismiss } from "../../../components/useBackdropDismiss";
 import { T } from "../../../design/tokens";
 import { useShortcutsStore } from "../stores/useShortcutsStore";
 import { useSkillsStore } from "../stores/useSkillsStore";
-import { promptPreview, shortcutLabel } from "./ShortcutForm";
+import { shortcutLabel } from "./ShortcutForm";
 import { CreateShortcutModal } from "./CreateShortcutModal";
 import { EditShortcutsModal } from "./EditShortcutsModal";
 
@@ -21,7 +22,8 @@ type Tab = "skills" | "shortcuts";
 type Row = {
 	key: string;
 	label: string;
-	description: string;
+	/** Slash-command labels (skills) render in mono; shortcut titles don't. */
+	mono?: boolean;
 	run: () => void;
 };
 
@@ -89,11 +91,17 @@ export function ShortcutsMenuButton({
  * - "Skills" (default): the user's personal global Claude skills from
  *   `~/.claude/skills/` — clicking one inserts its `/name` slash command.
  *   Every open kicks off an async re-read of the directory; the in-memory
- *   list renders immediately with a spinner beside the tabs while the
+ *   list renders immediately with a spinner beside the title while the
  *   refresh is in flight (never block on disk).
  * - "Shortcuts": the saved reusable prompts, with the create/edit entry
  *   points living inside the modal. Create/Edit close this modal before
  *   opening theirs (no stacked backdrops or dueling Escape handlers).
+ *
+ * Rows are single-line labels only. Skill descriptions and shortcut prompt
+ * previews are deliberately not shown: they're long enough that they always
+ * truncated mid-sentence, which doubled every row's height for no signal.
+ * Geometry is fixed — the list viewport has a floor and a ceiling, and the
+ * footer renders on both tabs — so the card never jumps or collapses.
  */
 export function ShortcutsPickerModal({
 	open,
@@ -135,7 +143,7 @@ export function ShortcutsPickerModal({
 				? skills.map((skill) => ({
 					key: skill.name,
 					label: `/${skill.name}`,
-					description: skill.description,
+					mono: true,
 					run: () => {
 						onOpenChange(false);
 						onRunSkill(skill);
@@ -144,7 +152,6 @@ export function ShortcutsPickerModal({
 				: shortcuts.map((sc) => ({
 					key: sc.id,
 					label: shortcutLabel(sc),
-					description: promptPreview(sc.prompt, 80),
 					run: () => {
 						onOpenChange(false);
 						onRun(sc);
@@ -153,16 +160,13 @@ export function ShortcutsPickerModal({
 		[tab, skills, shortcuts, onOpenChange, onRunSkill, onRun],
 	);
 
-	// Case-insensitive substring match on label + description — same
-	// approach as the branch filter in AttachWorktreeModal. No fuzzy
-	// matching lib in this repo; these lists are short enough that
-	// substring is fine.
+	// Case-insensitive substring match on the label — same approach as the
+	// branch filter in AttachWorktreeModal. No fuzzy matching lib in this
+	// repo; these lists are short enough that substring is fine.
 	const q = query.trim().toLowerCase();
 	const results = useMemo(() => {
 		if (!q) return rows;
-		return rows.filter((r) =>
-			`${r.label} ${r.description}`.toLowerCase().includes(q),
-		);
+		return rows.filter((r) => r.label.toLowerCase().includes(q));
 	}, [rows, q]);
 
 	// Reset to the default tab (and a clean search) on every open.
@@ -231,13 +235,30 @@ export function ShortcutsPickerModal({
 							flexDirection: "column",
 						}}
 					>
-						<h2
-							id="shortcuts-launcher-title"
-							className="modal-title"
-							style={{ flexShrink: 0 }}
+						<div
+							style={{
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "space-between",
+								gap: 10,
+								marginBottom: 10,
+								flexShrink: 0,
+							}}
 						>
-							Skills & shortcuts
-						</h2>
+							<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+								<h2
+									id="shortcuts-launcher-title"
+									className="modal-title"
+									style={{ margin: 0 }}
+								>
+									Skills & shortcuts
+								</h2>
+								{refreshing ? (
+									<span className="asyncy-btn-spinner" aria-hidden />
+								) : null}
+							</div>
+							<SegmentedToggle value={tab} onChange={setTab} />
+						</div>
 
 						<input
 							type="text"
@@ -262,7 +283,7 @@ export function ShortcutsPickerModal({
 							style={{
 								flexShrink: 0,
 								width: "100%",
-								marginBottom: 10,
+								marginBottom: 8,
 								background: T.surfaceLow,
 								border: `0.5px solid ${T.border}`,
 								borderRadius: 6,
@@ -280,32 +301,19 @@ export function ShortcutsPickerModal({
 							}}
 						/>
 
-						<div
-							style={{
-								display: "flex",
-								alignItems: "center",
-								justifyContent: "space-between",
-								gap: 10,
-								marginBottom: 12,
-								flexShrink: 0,
-							}}
-						>
-							<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-								<SegmentedToggle value={tab} onChange={setTab} />
-								{refreshing ? (
-									<span className="asyncy-btn-spinner" aria-hidden />
-								) : null}
-							</div>
-							{tab === "skills" ? <RevealSkillsFolderButton /> : null}
-						</div>
-
+						{/*
+						 * Fixed viewport: a one-result search (or a single saved
+						 * shortcut) must not collapse the card, and a long skills
+						 * list must not stretch it.
+						 */}
 						<div
 							style={{
 								display: "flex",
 								flexDirection: "column",
-								gap: 6,
-								flex: "0 1 auto",
-								minHeight: 0,
+								gap: 1,
+								flex: "1 1 auto",
+								minHeight: 180,
+								maxHeight: "min(46vh, 340px)",
 								overflowY: "auto",
 							}}
 						>
@@ -314,55 +322,78 @@ export function ShortcutsPickerModal({
 									<LauncherRow
 										key={row.key}
 										label={row.label}
-										description={row.description}
+										mono={row.mono}
 										selected={i === selected}
 										onSelect={() => setSelected(i)}
 										onClick={row.run}
 									/>
 								))
 							) : q ? (
-								<div style={{ fontSize: 12.5, color: T.textDim }}>
+								<EmptyState>
 									{tab === "skills"
 										? `No skills match "${query.trim()}".`
 										: `No shortcuts match "${query.trim()}".`}
-								</div>
+								</EmptyState>
 							) : tab === "skills" ? (
 								refreshing ? null : (
-									<div style={{ fontSize: 12.5, color: T.textDim }}>
-										No skills in ~/.claude/skills
-									</div>
+									<EmptyState>No skills in ~/.claude/skills</EmptyState>
 								)
 							) : (
-								<div style={{ fontSize: 12.5, color: T.textDim }}>
-									No shortcuts yet.
-								</div>
+								<EmptyState>No shortcuts yet.</EmptyState>
 							)}
 						</div>
 
-						{tab === "shortcuts" ? (
-							<div className="modal-actions" style={{ flexShrink: 0 }}>
-								{shortcuts.length > 0 ? (
-									<button
-										className="btn"
-										onClick={() => {
-											onOpenChange(false);
-											setEditing(true);
-										}}
-									>
-										Edit shortcuts
-									</button>
-								) : null}
+						{/*
+						 * Footer is present on both tabs so the card doesn't jump
+						 * height when you switch between them.
+						 */}
+						<div
+							className="modal-actions"
+							style={{
+								flexShrink: 0,
+								marginTop: 10,
+								paddingTop: 10,
+								borderTop: `0.5px solid ${T.borderSoft}`,
+							}}
+						>
+							{tab === "skills" ? (
 								<button
-									className="btn btn-primary"
+									className="btn"
 									onClick={() => {
-										onOpenChange(false);
-										setCreating(true);
+										window.claude
+											.openSkillsFolder()
+											.catch((err) =>
+												console.error("[ccw] open skills folder failed", err),
+											);
 									}}
 								>
-									Create shortcut
+									Open skills folder
 								</button>
-							</div>
-						) : null}
+							) : (
+								<>
+									{shortcuts.length > 0 ? (
+										<button
+											className="btn"
+											onClick={() => {
+												onOpenChange(false);
+												setEditing(true);
+											}}
+										>
+											Edit shortcuts
+										</button>
+									) : null}
+									<button
+										className="btn btn-primary"
+										onClick={() => {
+											onOpenChange(false);
+											setCreating(true);
+										}}
+									>
+										Create shortcut
+									</button>
+								</>
+							)}
+						</div>
 					</div>
 				</div>
 			) : null}
@@ -448,71 +479,40 @@ function SegmentedItem({
 	);
 }
 
-/**
- * Reveals `~/.claude/skills` in Finder: opens the enclosing `~/.claude`
- * folder with `skills` selected, rather than navigating into it.
- * Deliberately unlabeled and nearly invisible at rest (a dim glyph, no
- * border, no background) — this is a power-user escape hatch, not a
- * primary action, and the modal shouldn't visually advertise "here's a
- * filesystem button." It only exists on the Skills tab, since that's the
- * folder it reveals.
- */
-function RevealSkillsFolderButton() {
-	const [hover, setHover] = useState(false);
+/** Centered placeholder filling the fixed list viewport. */
+function EmptyState({ children }: { children: ReactNode }) {
 	return (
-		<button
-			type="button"
-			aria-label="Reveal skills folder in Finder"
-			onClick={() => {
-				window.claude
-					.openSkillsFolder()
-					.catch((err) => console.error("[ccw] open skills folder failed", err));
-			}}
-			onMouseEnter={() => setHover(true)}
-			onMouseLeave={() => setHover(false)}
+		<div
 			style={{
 				display: "flex",
 				alignItems: "center",
 				justifyContent: "center",
-				width: 20,
-				height: 20,
-				border: "none",
-				background: "transparent",
-				padding: 0,
-				color: T.textDim,
-				opacity: hover ? 0.85 : 0.2,
-				cursor: "pointer",
-				transition: "opacity 150ms ease",
+				height: "100%",
+				fontSize: 12.5,
+				color: T.textMute,
 			}}
 		>
-			<svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-				<path
-					d="M1.5 3.6a1 1 0 0 1 1-1h2.6l1 1.2h4.4a1 1 0 0 1 1 1v4.9a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1V3.6z"
-					stroke="currentColor"
-					strokeWidth="1.1"
-					strokeLinejoin="round"
-					fill="none"
-				/>
-			</svg>
-		</button>
+			{children}
+		</div>
 	);
 }
 
 /**
- * Clickable run-row shared by both tabs: bold label line plus a dimmed
- * one-line description. Same bordered-card hover treatment as
- * EditShortcutsModal's ShortcutRow, minus the inline delete affordance
- * (management lives behind "Edit shortcuts").
+ * Clickable run-row shared by both tabs: a single flat line of text, no
+ * border and no description. Deliberately *not* the bordered-card
+ * treatment used by EditShortcutsModal's ShortcutRow — this is a palette
+ * you scan and filter, so rows read as a list rather than a stack of
+ * boxes, and hover/selection is carried by an accent-tinted fill alone.
  */
 function LauncherRow({
 	label,
-	description,
+	mono,
 	selected,
 	onSelect,
 	onClick,
 }: {
 	label: string;
-	description: string;
+	mono?: boolean;
 	selected: boolean;
 	onSelect: () => void;
 	onClick: () => void;
@@ -537,47 +537,25 @@ function LauncherRow({
 			}}
 			onMouseLeave={() => setHover(false)}
 			style={{
-				display: "flex",
-				flexDirection: "column",
-				alignItems: "stretch",
-				gap: 2,
+				display: "block",
 				width: "100%",
 				textAlign: "left",
-				padding: "7px 10px",
-				border: `0.5px solid ${active ? T.accentBorder : T.border}`,
-				borderRadius: 8,
-				background: active ? T.surfaceHi : T.surface,
+				padding: "6px 9px",
+				border: "none",
+				borderRadius: 6,
+				background: active ? T.accentSoft : "transparent",
+				color: active ? T.text : T.textDim,
+				fontFamily: mono ? T.mono : T.sans,
+				fontSize: 12.5,
+				fontWeight: 500,
+				overflow: "hidden",
+				textOverflow: "ellipsis",
+				whiteSpace: "nowrap",
 				cursor: "pointer",
-				transition: "background 80ms ease, border-color 80ms ease",
+				transition: "background 80ms ease, color 80ms ease",
 			}}
 		>
-			<span
-				style={{
-					fontSize: 13,
-					fontWeight: 600,
-					color: T.text,
-					overflow: "hidden",
-					textOverflow: "ellipsis",
-					whiteSpace: "nowrap",
-					minWidth: 0,
-				}}
-			>
-				{label}
-			</span>
-			{description ? (
-				<span
-					style={{
-						fontSize: 11.5,
-						color: T.textDim,
-						overflow: "hidden",
-						textOverflow: "ellipsis",
-						whiteSpace: "nowrap",
-						minWidth: 0,
-					}}
-				>
-					{description}
-				</span>
-			) : null}
+			{label}
 		</button>
 	);
 }

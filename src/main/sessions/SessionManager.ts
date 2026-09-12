@@ -219,6 +219,10 @@ interface RunningEntry {
 	// removed from `sessions`. Lets callers (e.g. session:delete) await
 	// complete SDK teardown before continuing.
 	done: Promise<void>;
+	/** See `retryUsageLimit`: the blocks of the turn the SDK most recently
+	 * started, i.e. the one a usage-limit cutoff just killed. `null` before
+	 * the first turn is handed off. */
+	getLastTurnBlocks: () => UserContentBlock[] | null;
 }
 
 function roleFromSdkMessage(
@@ -367,6 +371,30 @@ function firstTextFromBlocks(blocks: UserContentBlock[]): string {
 		if (b.type === "text" && b.text.trim().length > 0) return b.text;
 	}
 	return "";
+}
+
+/**
+ * Recover the blocks of the most recent user turn from a persisted
+ * transcript. Backs `retryUsageLimit`'s cross-restart path, where there is no
+ * live `RunningEntry` to ask (its own in-memory `lastTurnBlocks` is gone) —
+ * this walks the store's copy instead, looking for the same
+ * `{ type: "user", message: { role: "user", content } }` shape `pushUserMessage`
+ * persists. `SessionMessage.content` is `z.unknown()`, so every layer here is
+ * read defensively.
+ */
+function lastUserTurnBlocksFrom(
+	messages: SessionMessage[],
+): UserContentBlock[] | null {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m = messages[i];
+		if (m.role !== "user") continue;
+		const content = m.content as
+			| { message?: { content?: unknown } }
+			| undefined;
+		const blocks = content?.message?.content;
+		if (Array.isArray(blocks)) return blocks as UserContentBlock[];
+	}
+	return null;
 }
 
 /**
@@ -1211,9 +1239,12 @@ export class SessionManager {
 	}
 
 	async resume(wrapperId: string): Promise<void> {
-		if (this.sessions.has(wrapperId)) {
-			throw new Error("Session is already active");
-		}
+		// A "usage_limit" session still has a live loop — `sendTurn` treats
+		// any non-open status as closed and calls `resume` before sending,
+		// since it can't tell a flagged-but-alive session apart from a
+		// genuinely dead one from status alone. Make that call a no-op
+		// instead of throwing, so the send that follows isn't swallowed.
+		if (this.sessions.has(wrapperId)) return;
 		const persisted = sessionStore.getSession(wrapperId);
 		if (!persisted) throw new Error("Session not found");
 		if (!persisted.sdkSessionId) {
@@ -1267,6 +1298,47 @@ export class SessionManager {
 			initialTurns: [],
 			resumeSdkSessionId: persisted.sdkSessionId,
 		});
+	}
+
+	/**
+	 * Click handler behind the red "usage limit" badge: reconnect if the loop
+	 * has died since the cutoff, and re-send the exact turn that got cut off
+	 * — the user shouldn't have to retype it.
+	 *
+	 * Two sources for "the turn that got cut off", tried in order:
+	 *  1. The loop is still alive (`this.sessions` has an entry) — the common
+	 *     case, since a usage-limit flag doesn't end the run, it just marks
+	 *     status (see `syncStatus`'s "usage_limit" carve-out). Ask the live
+	 *     entry for `getLastTurnBlocks()`.
+	 *  2. The loop is gone (app restarted since the cutoff) — fall back to
+	 *     the persisted transcript via `lastUserTurnBlocksFrom`, then
+	 *     `resume()` a fresh loop before replaying into it.
+	 */
+	async retryUsageLimit(wrapperId: string): Promise<void> {
+		const live = this.sessions.get(wrapperId);
+		if (live) {
+			const blocks = live.getLastTurnBlocks();
+			if (!blocks) {
+				throw new Error("No prior turn to replay");
+			}
+			live.pushTurn(blocks);
+			return;
+		}
+
+		const persisted = sessionStore.getSession(wrapperId);
+		if (!persisted) throw new Error("Session not found");
+		const blocks = lastUserTurnBlocksFrom(persisted.messages);
+		if (!blocks) throw new Error("No prior turn to replay");
+
+		await this.resume(wrapperId);
+		// Safe to read straight back off the map: `resume()`'s `runLoop` call
+		// is un-awaited, but everything up to and including its own
+		// `this.sessions.set(id, …)` runs synchronously before `resume()`'s
+		// `await this.runLoop(…)`-free body returns — there is no `await`
+		// between `runLoop` starting and that `set` call.
+		const resumed = this.sessions.get(wrapperId);
+		if (!resumed) throw new Error("Resume failed to start a session");
+		resumed.pushTurn(blocks);
 	}
 
 	private async runLoop(cfg: {
@@ -1329,12 +1401,31 @@ export class SessionManager {
 		// the comparison against `session.status` lives here, which is what
 		// lets status self-heal after the terminal-state early-return below.
 		const syncStatus = () => {
-			// Only "running" and "idle" are ours. Once the loop has moved the
-			// session to a terminal state (done/cancelled/errored), a late
-			// message must not resurrect it.
-			if (session.status !== "running" && session.status !== "idle") return;
+			// Only "running", "idle" and "usage_limit" are ours. Once the loop
+			// has moved the session to a terminal state (done/cancelled/errored),
+			// a late message must not resurrect it.
+			//
+			// "usage_limit" is in that set because it is NOT terminal while the
+			// loop is alive: it's a flag on an otherwise-idle session saying the
+			// last turn was cut off by a quota. The next user turn must be able
+			// to clear it — `pushTurnWithStatus` → `noteUserTurn` → here →
+			// "running". Leave it out and the session wedges on the badge
+			// forever while actually running.
+			if (
+				session.status !== "running" &&
+				session.status !== "idle" &&
+				session.status !== "usage_limit"
+			) {
+				return;
+			}
 			const next = activity.isActive ? "running" : "idle";
 			if (session.status === next) return;
+			// A flagged session is idle by definition, so every later
+			// notification that doesn't start a turn (a trailing background
+			// message, a provisional-sweep eviction, `setIdle`) would compute
+			// "idle" here and silently erase the badge seconds after it
+			// appeared. Only real work clears the flag.
+			if (session.status === "usage_limit" && next !== "running") return;
 			session.status = next;
 			const d = activity.debug;
 			console.log(
@@ -1414,6 +1505,10 @@ export class SessionManager {
 			queryRef,
 			done,
 			ephemeral: cfg.ephemeral,
+			// Backs `retryUsageLimit`'s in-process path: the same blocks
+			// `userStream` last handed to the SDK, i.e. exactly the turn that
+			// got cut off. See `lastTurnBlocks` above.
+			getLastTurnBlocks: () => lastTurnBlocks,
 		});
 		this.send(
 			ch("started"),
@@ -1523,6 +1618,29 @@ export class SessionManager {
 				// status flip should not wait on the persist/broadcast path,
 				// and some of the messages that drive it are dropped below.
 				activity.apply(msg);
+
+				// A turn cut off by a usage limit reports as a normal
+				// (non-thrown) `result` — the loop above just parked status at
+				// "idle". Overwrite it here, mid-session, rather than waiting
+				// for the loop to exit: with a streaming-input prompt the loop
+				// doesn't exit between turns, so the teardown branch below
+				// (which also sets "usage_limit" off `lastTerminalReason`) only
+				// ever fires once the whole session is finished — by which
+				// point the badge is moot. Must come after `activity.apply`
+				// above, whose `syncStatus()` call is what wrote "idle" in the
+				// first place, or this gets clobbered immediately.
+				if (
+					terminalReason !== undefined &&
+					USAGE_LIMIT_TERMINAL_REASONS.has(terminalReason)
+				) {
+					session.status = "usage_limit";
+					this.send(ch("usage_limit"), { sessionId: id });
+					if (persist) {
+						void sessionStore.updateSession(id, {
+							status: "usage_limit",
+						});
+					}
+				}
 
 				// ── Model rejection → fall back to the CLI default ──────────
 				// Detect on the synthetic assistant error, ACT on the `result`

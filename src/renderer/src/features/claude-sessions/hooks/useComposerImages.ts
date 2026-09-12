@@ -8,8 +8,8 @@ import { EMPTY_IMAGES, toSupportedMediaType } from "../lib/composerImages";
  * draft store so images survive switching sessions the same way draft text
  * does.
  *
- * Shared by `ImagePasteTextarea` (main chat + draft screen) and the sidequest
- * panel's `SidequestComposer`.
+ * Used by `MessageComposer`, the single composer shared by the main chat,
+ * drafts, and the sidequest panel.
  *
  * `sessionId` is whatever key the composer drafts under — a real session id, a
  * draft id, or a sidequest id.

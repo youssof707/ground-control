@@ -7,22 +7,27 @@ import {
 	openSidequestPanelAndFocus,
 	recreateSidequest,
 } from "../lib/sidequestActions";
+import {
+	useActiveRightPanel,
+	useRightPanelStore,
+} from "../stores/useRightPanelStore";
 import { T } from "../../../design/tokens";
-import type { RightPanel } from "../../../MainApp";
 
-export function AppNav({
-	rightPanel,
-	setRightPanel,
-}: {
-	rightPanel: RightPanel;
-	setRightPanel: (v: RightPanel) => void;
-}) {
+export function AppNav() {
 	const queue = usePermissionsStore((s) => s.queue);
 	const sessionsMap = useSessionsStore((s) => s.sessions);
 	const sessionsOrder = useSessionsStore((s) => s.order);
 	const sessionMatch = useMatch("/sessions/:id/*");
 	const inSession = !!sessionMatch;
 	const activeSessionId = sessionMatch?.params.id;
+	// The panel actually on screen — Notes/Sidequest are remembered per session,
+	// the Inbox overlays them. Every `active=` below compares against this, so a
+	// button reads inactive whenever its panel is hidden behind the Inbox, which
+	// is what the user sees.
+	const rightPanel = useActiveRightPanel(activeSessionId);
+	const inboxOpen = useRightPanelStore((s) => s.inboxOpen);
+	const setInboxOpen = useRightPanelStore((s) => s.setInboxOpen);
+	const setSessionPanel = useRightPanelStore((s) => s.setSessionPanel);
 	// A dot on the toggle when the current session has a sidequest actively
 	// working — the panel itself may not be open, so this is the only signal
 	// the user gets that something is running back there.
@@ -77,27 +82,29 @@ export function AppNav({
 	 * the first reply lands).
 	 */
 	const toggleSidequest = () => {
+		// Hoisted above the close branch so it narrows `activeSessionId` for
+		// every path below. The toggle only renders inside a session anyway.
+		if (!activeSessionId) return;
 		if (rightPanel === "sidequest") {
-			setRightPanel(null);
+			setSessionPanel(activeSessionId, null);
 			return;
 		}
-		if (!activeSessionId) return;
 		if (useSidequestsStore.getState().byParent[activeSessionId]) {
-			openSidequestPanelAndFocus();
+			openSidequestPanelAndFocus(activeSessionId);
 			return;
 		}
 		const parent = useSessionsStore.getState().sessions[activeSessionId];
 		const forkMessageId = lastForkableMessageId(parent?.messages ?? []);
 		if (!forkMessageId) {
-			setRightPanel("sidequest");
+			setSessionPanel(activeSessionId, "sidequest");
 			return;
 		}
 		// Open first so the fork's "Branching…" state is visible immediately;
 		// focus lands once the composer mounts.
-		setRightPanel("sidequest");
+		setSessionPanel(activeSessionId, "sidequest");
 		void (async () => {
 			await recreateSidequest(activeSessionId, forkMessageId);
-			openSidequestPanelAndFocus();
+			openSidequestPanelAndFocus(activeSessionId);
 		})();
 	};
 
@@ -172,11 +179,14 @@ export function AppNav({
 				/>
 			</div>
 			<div style={{ flex: 1 }} />
-			{inSession ? (
+			{inSession && activeSessionId ? (
 				<NotesToggle
 					active={rightPanel === "notes"}
 					onClick={() =>
-						setRightPanel(rightPanel === "notes" ? null : "notes")
+						setSessionPanel(
+							activeSessionId,
+							rightPanel === "notes" ? null : "notes",
+						)
 					}
 				/>
 			) : null}
@@ -190,9 +200,7 @@ export function AppNav({
 			<InboxToggle
 				active={rightPanel === "inbox"}
 				badge={inboxBadge}
-				onClick={() =>
-					setRightPanel(rightPanel === "inbox" ? null : "inbox")
-				}
+				onClick={() => setInboxOpen(!inboxOpen)}
 			/>
 		</nav>
 	);

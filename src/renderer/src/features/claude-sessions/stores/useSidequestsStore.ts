@@ -245,3 +245,20 @@ function findParent(
 	}
 	return undefined;
 }
+
+/**
+ * Same reverse lookup as `findParent`, but returns the row itself rather
+ * than the parent id. Exported (unlike `findParent`) so composer-side
+ * scalar selectors — e.g. `useSidequestsStore(s => sidequestByChildId(s.byParent, id)?.mode)`
+ * — can read a single field of a sidequest by its *own* id without
+ * subscribing to the whole `SidequestState` object, which is rebuilt on
+ * every streamed message (see `appendMessage`) and would otherwise
+ * re-render the composer per token.
+ */
+export function sidequestByChildId(
+	byParent: Record<string, SidequestState>,
+	sidequestId: string,
+): SidequestState | undefined {
+	const parentId = findParent(byParent, sidequestId);
+	return parentId ? byParent[parentId] : undefined;
+}

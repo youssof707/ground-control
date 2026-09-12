@@ -61,20 +61,21 @@ export function appendPromptBlock(sessionId: string, prompt: string): void {
 }
 
 /**
- * Set a session's mode, store-only equivalent of `ImagePasteTextarea`'s local
- * `changeMode` (draft vs. real-session branch, optimistic flip with
- * revert-on-failure for real sessions).
+ * Set a session's mode, store-only equivalent of `useComposerTarget`'s
+ * session/draft `changeMode` branches (draft vs. real-session, optimistic
+ * flip with revert-on-failure for real sessions).
  *
- * Two callers, both running outside that component: the global Cmd+K "insert"
- * path applying a saved shortcut's mode, and the global Cmd+P plan-mode
- * toggle. Neither has a `modeSwitching` loading state to thread through —
- * this deliberately drops it; it only ever disabled the composer's own
- * `ModeToggle` mid-request, which doesn't apply to a fire-and-forget hotkey
- * action.
+ * Two callers, both running outside `MessageComposer`: the global Cmd+K
+ * "insert" path applying a saved shortcut's mode, and the global Cmd+P
+ * plan-mode toggle. Neither has a `modeSwitching` loading state to thread
+ * through — this deliberately drops it; it only ever disabled the composer's
+ * own `ModeToggle` mid-request, which doesn't apply to a fire-and-forget
+ * hotkey action.
  *
  * Only models real sessions and drafts. Sidequests take a different path
- * (`SidequestPanel`'s local `changeMode` → `sidequest:patch`) and must not be
- * routed here — the `useSessionsStore` lookup below would miss them entirely.
+ * (`useComposerTarget`'s sidequest branch → `sidequest:patch`) and must not
+ * be routed here — the `useSessionsStore` lookup below would miss them
+ * entirely.
  */
 export async function applySessionMode(
 	sessionId: string,

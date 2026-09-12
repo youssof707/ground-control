@@ -33,7 +33,7 @@ export function buildHandoffPrompt(assistantText: string): string {
 }
 
 /** `${title} (handoff)`, budgeted so the suffix survives the 200-char title
- * cap `createSessionFromDraft` applies on send (see ImagePasteTextarea.tsx) —
+ * cap `createSessionFromDraft` applies on send (see lib/promoteDraft.ts) —
  * without the slice, a long parent title would eat the " (handoff)" tail. */
 export function handoffTitle(oldTitle: string): string {
 	const base = (oldTitle.trim() || "Session").slice(
@@ -106,7 +106,7 @@ export function startHandoff(input: {
  * turn — so a failed or abandoned handoff never destroys the source.
  *
  * Fire-and-forget via runBackgroundTask, the same treatment confirmDelete
- * gives its worktree cascade: the caller (ImagePasteTextarea.send) has
+ * gives its worktree cascade: the caller (`useComposerTarget`'s `send`) has
  * already navigated away and may unmount before this resolves, so a
  * rejection must not be reported as a send failure — it surfaces in the
  * background-tasks indicator instead, and the old session simply stays put

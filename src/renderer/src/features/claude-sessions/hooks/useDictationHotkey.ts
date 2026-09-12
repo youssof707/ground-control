@@ -73,7 +73,7 @@ export function useDictationHotkey(): void {
 			if (!sessionId) return;
 
 			// Drafts included on purpose — `DraftSessionChat` renders the same
-			// `ImagePasteTextarea`, and dictation already works there today.
+			// `MessageComposer`, and dictation already works there today.
 			const sqScope =
 				useSidequestsStore.getState().byParent[sessionId]?.sidequestId;
 
@@ -108,7 +108,7 @@ export function useDictationHotkey(): void {
 			if (!handle) return;
 			if (!handle.toggle()) return;
 
-			if (scope === sqScope) openSidequestPanelAndFocus();
+			if (scope === sqScope) openSidequestPanelAndFocus(sessionId);
 			else focusComposer();
 
 			e.preventDefault();

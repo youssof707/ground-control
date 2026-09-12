@@ -23,7 +23,7 @@ import { ShortcutsPickerModal } from "./ShortcutsMenu";
  *     `lib/sessionStartActions.ts` helpers. No local `workspaceFilter` to
  *     reconcile here — see that module's doc comment.
  *   - "insert": same flow as the composer footer's ⚡ button
- *     (`ImagePasteTextarea.runShortcut`/`runSkill`) for the target session.
+ *     (`MessageComposer.runShortcut`/`runSkill`) for the target session.
  */
 export function CommandPaletteModal() {
 	const open = useCommandPaletteStore((s) => s.open);

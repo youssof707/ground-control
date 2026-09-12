@@ -8,8 +8,9 @@ import { useSidequestsStore } from "../stores/useSidequestsStore";
 
 // A pending permission request (plan-mode's ExitPlanMode card, an
 // AskUserQuestion card, etc.) disables the composer's `<textarea>` — see
-// `SessionChat.tsx`'s `pending.length > 0` → `ImagePasteTextarea disabled`.
-// That's a plain HTML `disabled` attribute, so it blocks keystrokes but does
+// `SessionChat.tsx` and `SidequestPanel.tsx`'s `pending.length > 0` →
+// `MessageComposer disabled`. That's a plain HTML `disabled` attribute, so it
+// blocks keystrokes but does
 // nothing to stop imperative store writes like `appendQuotedInline`/
 // `focusComposer`, which bypass the DOM entirely. Without this guard, Cmd+R
 // would still shove quoted text into a composer the user can't then edit or
@@ -36,7 +37,7 @@ function hasPendingRequest(sessionId: string): boolean {
  * That's the same `[data-sidequest-panel]` attribution rule `useSidequestHotkey`
  * uses for its CASE 2, so the two hotkeys agree on what "inside the sidequest"
  * means. Cmd+R never forks or opens a sidequest, though — that's Cmd+S's job.
- * Works on draft sessions too, since those render `ImagePasteTextarea` via
+ * Works on draft sessions too, since those render `MessageComposer` via
  * `DraftSessionChat`.
  *
  * Registered in the capture phase, same as `useSidequestHotkey`. Cmd+R is
@@ -96,7 +97,7 @@ export function useComposerFocusHotkey(): void {
 				// newline because it opens a fresh turn. Same store either way —
 				// drafts are keyed by sidequest id here, session id below.
 				appendQuotedInline(sq.sidequestId, selText);
-				openSidequestPanelAndFocus();
+				openSidequestPanelAndFocus(sessionId);
 				return;
 			}
 

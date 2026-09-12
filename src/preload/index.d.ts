@@ -45,6 +45,7 @@ declare global {
 			finishSession: (sessionId: string) => Promise<void>;
 			interruptSession: (sessionId: string) => Promise<void>;
 			resumeSession: (sessionId: string) => Promise<void>;
+			retryUsageLimit: (sessionId: string) => Promise<void>;
 			refreshBranch: (sessionId: string) => Promise<void>;
 			switchBranch: (sessionId: string, branch: string) => Promise<void>;
 			hasUncommittedChanges: (sessionId: string) => Promise<boolean>;

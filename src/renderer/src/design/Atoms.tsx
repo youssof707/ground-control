@@ -59,11 +59,11 @@ const STATUS_MAP: Record<string, StatusStyle> = {
 		border: T.dangerBorder,
 	},
 	usage_limit: {
-		dot: T.warn,
+		dot: T.danger,
 		label: "usage limit",
-		color: T.warn,
-		bg: T.warnSoft,
-		border: T.warnBorder,
+		color: T.danger,
+		bg: T.dangerSoft,
+		border: T.dangerBorder,
 	},
 };
 
@@ -71,6 +71,7 @@ export function StatusPill({
 	status,
 	mode,
 	pendingToolName,
+	onClick,
 }: {
 	status: string;
 	/** When the session is "running" and in read-only Plan mode, the badge
@@ -85,6 +86,11 @@ export function StatusPill({
 	 * word for what's actually being waited on. Omit to keep the generic
 	 * label. */
 	pendingToolName?: string;
+	/** When provided, the pill renders as a real `<button>` instead of an
+	 * inert chip. The only current caller is the red "usage limit" pill,
+	 * where clicking retries the turn a quota cutoff killed — every other
+	 * status stays non-interactive. */
+	onClick?: (e: React.MouseEvent) => void;
 }) {
 	const map = STATUS_MAP[status] ?? STATUS_MAP.idle;
 	const label =
@@ -93,33 +99,47 @@ export function StatusPill({
 			: status === "awaiting_permission" && pendingToolName === "ExitPlanMode"
 				? "planning complete"
 				: map.label;
-	return (
-		<div
+	const dot = (
+		<span
 			style={{
-				display: "inline-flex",
-				alignItems: "center",
-				gap: 6,
-				height: 22,
-				padding: "0 9px",
-				borderRadius: 11,
-				background: map.bg,
-				border: `0.5px solid ${map.border}`,
-				fontSize: 11.5,
-				color: map.color,
-				fontWeight: 500,
-				letterSpacing: "0.1px",
-				whiteSpace: "nowrap",
+				width: 6,
+				height: 6,
+				borderRadius: "50%",
+				background: map.dot,
+				boxShadow: map.pulse ? `0 0 0 3px ${T.okSoft}` : "none",
 			}}
-		>
-			<span
-				style={{
-					width: 6,
-					height: 6,
-					borderRadius: "50%",
-					background: map.dot,
-					boxShadow: map.pulse ? `0 0 0 3px ${T.okSoft}` : "none",
-				}}
-			/>
+		/>
+	);
+	const sharedStyle: React.CSSProperties = {
+		display: "inline-flex",
+		alignItems: "center",
+		gap: 6,
+		height: 22,
+		padding: "0 9px",
+		borderRadius: 11,
+		background: map.bg,
+		border: `0.5px solid ${map.border}`,
+		fontSize: 11.5,
+		color: map.color,
+		fontWeight: 500,
+		letterSpacing: "0.1px",
+		whiteSpace: "nowrap",
+	};
+	if (onClick) {
+		return (
+			<button
+				type="button"
+				onClick={onClick}
+				style={{ ...sharedStyle, fontFamily: "inherit", cursor: "pointer" }}
+			>
+				{dot}
+				{label}
+			</button>
+		);
+	}
+	return (
+		<div style={sharedStyle}>
+			{dot}
 			{label}
 		</div>
 	);
@@ -588,6 +608,10 @@ function ModeToggleButton({
 		<button
 			type="button"
 			onClick={onClick}
+			// Don't let a mouse click pull focus off the composer textarea —
+			// flipping the mode should leave the caret exactly where the user
+			// left it.
+			onMouseDown={(e) => e.preventDefault()}
 			disabled={disabled}
 			style={{
 				height: 20,

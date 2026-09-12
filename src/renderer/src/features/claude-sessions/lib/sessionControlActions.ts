@@ -36,9 +36,11 @@ export async function stopSession(sessionId: string): Promise<void> {
 }
 
 /**
- * Interrupt a running sidequest. Same shape as `stopSession`, minus the
- * queued-message `hold()`: sidequests have no message queue, so there's no
- * idle-edge flush to suppress.
+ * Interrupt a running sidequest. Same shape as `stopSession`, including the
+ * queued-message `hold()`: a sidequest composer can queue a pre-move too
+ * (see `useQueuedMessageFlusher`'s sidequest half), and without the latch
+ * the flusher would read the interrupt's idle edge as "the turn finished"
+ * and immediately fire the queued message right after Stop.
  *
  * `useInterruptStore` is keyed by plain id string, so an ephemeral sidequest
  * id shares the guard (and the chip's "stopping…" state) with no store row.
@@ -47,6 +49,7 @@ export async function stopSidequest(sidequestId: string): Promise<void> {
 	const { interrupting, begin, end } = useInterruptStore.getState();
 	if (interrupting[sidequestId]) return;
 	begin(sidequestId);
+	useQueuedMessagesStore.getState().hold(sidequestId);
 	try {
 		await window.claude.interruptSession(sidequestId);
 	} finally {

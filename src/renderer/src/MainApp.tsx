@@ -23,8 +23,8 @@ import { AppNav } from "./features/claude-sessions/components/AppNav";
 import { SidebarFooter } from "./features/claude-sessions/components/SidebarFooter";
 import { useSettingsStore } from "./features/claude-sessions/stores/useSettingsStore";
 import {
+	useActiveRightPanel,
 	useRightPanelStore,
-	type RightPanel,
 } from "./features/claude-sessions/stores/useRightPanelStore";
 import { useSidequestHotkey } from "./features/claude-sessions/hooks/useSidequestHotkey";
 import { useComposerFocusHotkey } from "./features/claude-sessions/hooks/useComposerFocusHotkey";
@@ -37,11 +37,6 @@ import { useUndoHotkey } from "./features/claude-sessions/hooks/useUndoHotkey";
 import { useDictationHotkey } from "./features/claude-sessions/hooks/useDictationHotkey";
 import { CommandPaletteModal } from "./features/claude-sessions/components/CommandPaletteModal";
 import { T } from "./design/tokens";
-
-// Re-exported for the components that already import the type from here.
-// The state itself now lives in `useRightPanelStore` so the global Cmd+S
-// handler can open the sidequest panel from outside the component tree.
-export type { RightPanel };
 
 const SIDEBAR_DEFAULT_WIDTH = 320;
 const SIDEBAR_MIN_WIDTH = 260;
@@ -84,8 +79,6 @@ export default function MainApp() {
 	// Global ⌘D — starts/stops voice dictation in the focused composer, or
 	// stops whichever take is already running. No-op unless a session is open.
 	useDictationHotkey();
-	const rightPanel = useRightPanelStore((s) => s.rightPanel);
-	const setRightPanel = useRightPanelStore((s) => s.setRightPanel);
 	return (
 		<div
 			style={{
@@ -100,8 +93,8 @@ export default function MainApp() {
 			{/* The version chip + rate-limit meter now live inside
 			    `SidebarFooter`, pinned to the bottom of the sessions sidebar
 			    rather than floating fixed over the window corner. */}
-			<AppNav rightPanel={rightPanel} setRightPanel={setRightPanel} />
-			<MainBody rightPanel={rightPanel} setRightPanel={setRightPanel} />
+			<AppNav />
+			<MainBody />
 			<UpdateModal />
 			<CommandPaletteModal />
 			{/* One ambient bottom-left column, above the sidebar footer and
@@ -116,31 +109,21 @@ export default function MainApp() {
 	);
 }
 
-function MainBody({
-	rightPanel,
-	setRightPanel,
-}: {
-	rightPanel: RightPanel;
-	setRightPanel: (v: RightPanel) => void;
-}) {
+function MainBody() {
 	// The SessionsList sidebar is always rendered on the left. The right pane
 	// holds the active session (`/sessions/:id`) and is empty at the index
 	// route `/` — that's the "no session selected" state.
 	const sessionMatch = useMatch("/sessions/:id/*");
 	const activeSessionId = sessionMatch?.params.id;
 
-	// Auto-close the session-scoped panels when navigating away from a session
-	// route — rendering them for an undefined session is wrong. (The sidequest
-	// itself survives: it's keyed by parent session id in useSidequestsStore,
-	// so returning to the session brings its transcript back.)
-	useEffect(() => {
-		if (
-			(rightPanel === "notes" || rightPanel === "sidequest") &&
-			!activeSessionId
-		) {
-			setRightPanel(null);
-		}
-	}, [rightPanel, activeSessionId, setRightPanel]);
+	// Notes and Sidequest are remembered per session and resolve to null off a
+	// session route, so there's no auto-close effect: rendering them for an
+	// undefined session is structurally impossible. (The sidequest itself
+	// survives navigation — it's keyed by parent session id in
+	// useSidequestsStore, so returning brings its transcript back.)
+	const rightPanel = useActiveRightPanel(activeSessionId);
+	const setInboxOpen = useRightPanelStore((s) => s.setInboxOpen);
+	const setSessionPanel = useRightPanelStore((s) => s.setSessionPanel);
 
 	return (
 		<div style={{ flex: 1, display: "flex", minHeight: 0 }}>
@@ -151,19 +134,20 @@ function MainBody({
 					<Route path="/sessions/:id" element={<SessionRoute />} />
 				</Routes>
 			</div>
+			{/* One exclusive chain, not three independent conditions: all three
+			    panels are `flexShrink: 0` flex siblings, so rendering two would
+			    squash the transcript. */}
 			{rightPanel === "inbox" ? (
-				<InboxSidebar onClose={() => setRightPanel(null)} />
-			) : null}
-			{rightPanel === "notes" && activeSessionId ? (
+				<InboxSidebar onClose={() => setInboxOpen(false)} />
+			) : rightPanel === "notes" && activeSessionId ? (
 				<NotesSidebarShell
 					sessionId={activeSessionId}
-					onClose={() => setRightPanel(null)}
+					onClose={() => setSessionPanel(activeSessionId, null)}
 				/>
-			) : null}
-			{rightPanel === "sidequest" && activeSessionId ? (
+			) : rightPanel === "sidequest" && activeSessionId ? (
 				<SidequestSidebarShell
 					sessionId={activeSessionId}
-					onClose={() => setRightPanel(null)}
+					onClose={() => setSessionPanel(activeSessionId, null)}
 				/>
 			) : null}
 		</div>

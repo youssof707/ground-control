@@ -38,7 +38,7 @@ async function resolveDraftCwd(targetCwd: string | null): Promise<string | null>
 /**
  * The worktree a new session in `cwd` should be pre-attached to: whichever
  * one was last actually used there (see `setLastUsedWorktree`'s write site in
- * `ImagePasteTextarea`), or undefined.
+ * `lib/promoteDraft.ts`), or undefined.
  *
  * Both validations matter. The worktree may have been deleted since it was
  * remembered — the settings file has no visibility into worktree lifecycle,
@@ -95,7 +95,7 @@ export async function startNewSessionDraft(
  * otherwise resolves a folder (targetCwd, else the native picker) before
  * creating one. The prompt is appended to the composer rather than
  * overwriting it, and the composer textarea autofocuses on navigation
- * (`ImagePasteTextarea`'s sessionId-keyed focus effect).
+ * (`MessageComposer`'s sessionId-keyed focus effect).
  */
 export async function startSessionFromShortcut(
 	sc: Shortcut,

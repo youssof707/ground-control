@@ -314,9 +314,10 @@ export function SessionsList({
 	// Single-slot draft (the UI-only session that exists before the first
 	// message). Both New Session affordances short-circuit to navigate into
 	// the existing draft when one is open — per the "reuse, don't replace"
-	// decision. The real session is created later by `ImagePasteTextarea.send`
-	// on the first user message, which also handles cwd reconciliation via
-	// the `session:started` broadcast.
+	// decision. The real session is created later by the composer's send
+	// path (`useComposerTarget`'s draft branch) on the first user message,
+	// which also handles cwd reconciliation via the `session:started`
+	// broadcast.
 	const draft = useDraftSessionsStore((s) => s.draft);
 
 	const createDraftAndNavigate = (
@@ -463,7 +464,7 @@ export function SessionsList({
 	//     GroupSection and handed in here;
 	//   - the draft is seeded with `groupId` so the row lands inside the
 	//     group's box AND the real session is BORN in the group on first send
-	//     (ImagePasteTextarea forwards draft.groupId to startSession).
+	//     (the composer target's `send` forwards draft.groupId to startSession).
 	//     Born-with rather than set post-hoc — same rule as the handoff flow,
 	//     and it means pruneGroupIfEmpty never sees a momentarily memberless
 	//     group.
@@ -1643,6 +1644,31 @@ function SessionRowSidebar({
 							status={status}
 							mode={session.mode}
 							pendingToolName={pending[0]?.toolName}
+							onClick={
+								status === "usage_limit"
+									? (e) => {
+										// The row is wrapped in <Link> — same
+										// swallow-propagation pattern as
+										// RowMenuButton, so retrying doesn't
+										// also navigate.
+										e.preventDefault();
+										e.stopPropagation();
+										void window.claude
+											.retryUsageLimit(session.id)
+											.catch((err) => {
+												// Rare (e.g. no prior turn to
+												// replay) — the composer is
+												// always a working fallback, so
+												// this stays silent rather than
+												// growing a new toast surface.
+												console.error(
+													"[ccw] retryUsageLimit failed:",
+													err,
+												);
+											});
+									}
+									: undefined
+							}
 						/>
 						{session.branch ? (
 							<BranchChipWithDelta

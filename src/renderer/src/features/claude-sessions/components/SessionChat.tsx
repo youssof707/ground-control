@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
@@ -10,12 +10,15 @@ import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { focusComposer } from "../lib/composerActions";
 import { stopSession } from "../lib/sessionControlActions";
 import { startHandoff } from "../lib/handoffActions";
+import { switchModelAndResume } from "../lib/modelSwitchActions";
+import { useComposerResize } from "../hooks/useComposerResize";
 import { PermissionCard } from "./PermissionCard";
 import { ActivityChip } from "./ActivityChip";
-import { ImagePasteTextarea } from "./ImagePasteTextarea";
+import { MessageComposer } from "./MessageComposer";
 import { MessageView } from "./MessageView";
 import { SessionTokenBar } from "./SessionTokenBar";
 import { ToolRunGroup } from "./ToolRunGroup";
+import { ComposerDivider } from "./ComposerDivider";
 import { DraftSessionChat } from "./DraftSessionChat";
 import { groupMessagesIntoUnits } from "../lib/groupMessages";
 import { ConfirmModal } from "../../../components/ConfirmModal";
@@ -27,7 +30,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	// Draft sessions (UI-only, not yet persisted) live at /sessions/draft-<id>
 	// and render through a stripped-down shell that skips the transcript /
 	// fork / permission / branch affordances — none of those apply pre-creation.
-	// The draft → real promotion runs inside ImagePasteTextarea.send().
+	// The draft → real promotion runs inside useComposerTarget's send().
 	if (isDraftId(sessionId)) return <DraftSessionChat draftId={sessionId} />;
 	const navigate = useNavigate();
 	const session = useSessionsStore((s) => s.sessions[sessionId]);
@@ -59,89 +62,10 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	const [titleDraft, setTitleDraft] = useState("");
 	const [openFolderModal, setOpenFolderModal] = useState(false);
 	const titleInputRef = useRef<HTMLInputElement>(null);
-	// `inputHeight` is the single source of truth for the chat textarea's
-	// rendered height. It's updated by either:
-	//   (1) the drag handle (any direction, sets it directly), or
-	//   (2) content measurement via `onContentHeightChange` — but ONLY
-	//       to push the height UP when scrollHeight exceeds the current
-	//       height. Content measurement never shrinks `inputHeight`, so
-	//       a manual drag-down is preserved and the textarea scrolls
-	//       internally (overflowY: auto) past the dragged height.
-	const [inputHeight, setInputHeight] = useState(44);
-	// Cap the chat textarea at 45% of the window so the message transcript
-	// always keeps the majority of the viewport. The 120px floor keeps the
-	// textarea usable on tiny windows where 45% would be cramped.
-	const maxInputHeight = Math.max(120, Math.floor(window.innerHeight * 0.45));
-	const dragRef = useRef<{
-		startY: number;
-		startHeight: number;
-		lastHeight: number;
-	} | null>(null);
-	// Manual-size lock: set true after a drag-DOWN so subsequent typing
-	// can't undo the user's deliberate shrink. Released by either a
-	// drag-UP past the original size or by the textarea emptying out
-	// (e.g. after sending), so each new message starts in auto-grow mode.
-	const isManualRef = useRef(false);
-
-	const onContentHeightChange = useCallback(
-		(sh: number) => {
-			// Textarea is essentially empty (post-send, or all text deleted).
-			// Reset the manual lock so the next typing session auto-grows.
-			// Empty Chromium textarea with default rows=2 reports
-			// scrollHeight ≈ 42–46, so 50 is a safe threshold.
-			if (sh <= 50) {
-				isManualRef.current = false;
-			}
-			// While locked (after a drag-down), don't auto-grow — let the
-			// textarea's overflowY: auto scroll content internally instead.
-			if (isManualRef.current) return;
-			setInputHeight((prev) =>
-				sh > prev
-					? Math.min(maxInputHeight, Math.max(44, sh))
-					: prev,
-			);
-		},
-		[maxInputHeight],
-	);
-
-	const onDividerPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-		e.preventDefault();
-		dragRef.current = {
-			startY: e.clientY,
-			startHeight: inputHeight,
-			lastHeight: inputHeight,
-		};
-		e.currentTarget.setPointerCapture(e.pointerId);
-		document.body.style.userSelect = "none";
-		document.body.style.cursor = "ns-resize";
-	};
-	const onDividerPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-		const d = dragRef.current;
-		if (!d) return;
-		const delta = e.clientY - d.startY;
-		const newHeight = Math.min(
-			maxInputHeight,
-			Math.max(44, d.startHeight - delta),
-		);
-		d.lastHeight = newHeight;
-		setInputHeight(newHeight);
-	};
-	const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
-		const d = dragRef.current;
-		if (!d) return;
-		// Apply the manual-lock rule from the drag's final direction:
-		// drag-down locks the smaller size; drag-up releases any prior lock.
-		// A click without movement leaves the flag unchanged.
-		if (d.lastHeight < d.startHeight) {
-			isManualRef.current = true;
-		} else if (d.lastHeight > d.startHeight) {
-			isManualRef.current = false;
-		}
-		dragRef.current = null;
-		e.currentTarget.releasePointerCapture(e.pointerId);
-		document.body.style.userSelect = "";
-		document.body.style.cursor = "";
-	};
+	// Chat textarea's drag-to-resize + auto-grow model — shared with the
+	// sidequest panel's composer via `useComposerResize`.
+	const { height: inputHeight, onContentHeightChange, dividerProps } =
+		useComposerResize({ initialHeight: 44 });
 
 	const isOpen =
 		session?.status === "running" ||
@@ -256,7 +180,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	// Stages a new session (draft, not yet created) pre-filled with the
 	// handoff text and, for "Handoff & delete", remembers to remove this
 	// session once the new one actually receives its first message —
-	// ImagePasteTextarea.send() is what fires that deferred delete.
+	// useComposerTarget's send() is what fires that deferred delete.
 	const runHandoff = (deleteOld: boolean) => {
 		if (!pendingHandoff || !session) return;
 		setPendingHandoff(null);
@@ -489,6 +413,25 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 						status={effectiveStatus}
 						mode={session.mode}
 						pendingToolName={pending[0]?.toolName}
+						onClick={
+							effectiveStatus === "usage_limit"
+								? () => {
+									// No <Link> ancestor here (unlike the
+									// sidebar row), so no propagation to swallow.
+									void window.claude
+										.retryUsageLimit(sessionId)
+										.catch((err) => {
+											// See the sidebar row's identical
+											// catch — composer send is always a
+											// working fallback.
+											console.error(
+												"[ccw] retryUsageLimit failed:",
+												err,
+											);
+										});
+								}
+								: undefined
+						}
 					/>
 					<BranchChipWithDelta
 						branch={session.branch}
@@ -606,25 +549,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 			</div>
 
 			{canChat ? (
-				<div
-					onPointerDown={onDividerPointerDown}
-					onPointerMove={onDividerPointerMove}
-					onPointerUp={endDrag}
-					onPointerCancel={endDrag}
-					role="separator"
-					aria-orientation="horizontal"
-					aria-label="Resize chat input"
-					style={{
-						flexShrink: 0,
-						height: 6,
-						cursor: "ns-resize",
-						display: "flex",
-						alignItems: "center",
-						touchAction: "none",
-					}}
-				>
-					<div style={{ height: 1, width: "100%", background: T.borderSoft }} />
-				</div>
+				<ComposerDivider {...dividerProps} ariaLabel="Resize chat input" />
 			) : null}
 
 			{forkError && !pendingForkMessageId ? (
@@ -636,10 +561,15 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 				</div>
 			) : null}
 
-			{canChat ? <SessionTokenBar session={session} /> : null}
+			{canChat ? (
+				<SessionTokenBar
+					target={session}
+					onSwitchAndResume={(value) => switchModelAndResume(session.id, value)}
+				/>
+			) : null}
 
 			{canChat ? (
-				<ImagePasteTextarea
+				<MessageComposer
 					sessionId={sessionId}
 					textareaHeight={inputHeight}
 					onContentHeightChange={onContentHeightChange}

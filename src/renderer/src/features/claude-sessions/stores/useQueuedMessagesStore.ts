@@ -43,6 +43,8 @@ interface State {
 	unshift: (sessionId: string, msg: QueuedMessage) => void;
 	cancel: (sessionId: string, messageId: string) => void;
 	clearSession: (sessionId: string) => void;
+	/** Re-key a session's queue + error onto a different id — see moveDraft. */
+	moveSession: (fromSessionId: string, toSessionId: string) => void;
 	hold: (sessionId: string) => void;
 	release: (sessionId: string) => void;
 	setError: (sessionId: string, err: string | null) => void;
@@ -117,6 +119,30 @@ export const useQueuedMessagesStore = create<State>((set, get) => ({
 			heldSessions: withoutKey(s.heldSessions, sessionId),
 			errorsBySession: withoutKey(s.errorsBySession, sessionId),
 		})),
+
+	// Mirrors useDraftStore.moveDraft: a sidequest re-fork mints a fresh id,
+	// so its queue (and any flush error) has to move with it or the pre-move
+	// the user just queued dies with the old id. A fresh fork is never held
+	// (there's nothing to hold against yet), so heldSessions[from] is
+	// dropped rather than carried. Overwrites the destination — a freshly
+	// forked sidequest never has a queue of its own yet.
+	moveSession: (fromSessionId, toSessionId) =>
+		set((s) => {
+			if (!fromSessionId || !toSessionId || fromSessionId === toSessionId) {
+				return s;
+			}
+			const queue = s.queuesBySession[fromSessionId];
+			const error = s.errorsBySession[fromSessionId];
+			return {
+				queuesBySession: queue
+					? { ...withoutKey(s.queuesBySession, fromSessionId), [toSessionId]: queue }
+					: withoutKey(s.queuesBySession, fromSessionId),
+				heldSessions: withoutKey(s.heldSessions, fromSessionId),
+				errorsBySession: error
+					? { ...withoutKey(s.errorsBySession, fromSessionId), [toSessionId]: error }
+					: withoutKey(s.errorsBySession, fromSessionId),
+			};
+		}),
 
 	hold: (sessionId) =>
 		set((s) => ({

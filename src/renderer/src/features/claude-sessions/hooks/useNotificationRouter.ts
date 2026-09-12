@@ -26,13 +26,18 @@ export function useNotificationRouter() {
 			// session and open the panel where its permission card lives.
 			// Never navigate to `/sessions/sidequest-…`: there's no row there,
 			// so the chat would render as a dead end.
+			//
+			// The panel write is keyed by parent id, so it doesn't care whether
+			// React has committed the route swap yet — order is irrelevant.
 			if (isSidequestId(intent.sessionId)) {
 				const parentId = useSidequestsStore
 					.getState()
 					.parentOf(intent.sessionId);
 				if (!parentId) return;
 				navigate(`/sessions/${parentId}`);
-				useRightPanelStore.getState().setRightPanel("sidequest");
+				useRightPanelStore
+					.getState()
+					.setSessionPanel(parentId, "sidequest");
 				return;
 			}
 			navigate(`/sessions/${intent.sessionId}`);

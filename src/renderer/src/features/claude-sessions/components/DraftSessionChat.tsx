@@ -4,7 +4,9 @@ import { useDraftSessionsStore } from "../stores/useDraftSessionsStore";
 import { useDraftStore } from "../stores/useDraftStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
-import { ImagePasteTextarea } from "./ImagePasteTextarea";
+import { useComposerResize } from "../hooks/useComposerResize";
+import { MessageComposer } from "./MessageComposer";
+import { ComposerDivider } from "./ComposerDivider";
 import { AttachWorktreeModal } from "./AttachWorktreeModal";
 import { ModelPickerModal } from "./ModelPickerModal";
 import { WorktreeChip } from "../../../design/WorktreeChip";
@@ -16,20 +18,26 @@ import { formatModelName } from "@shared/claude-sessions/sessionModel";
  * until the user sends a first message. Sibling to `SessionChat` but stripped
  * down: there is no transcript yet, no fork / rename / permission affordances,
  * no branch chip, no Stop button, no token bar. Just a header showing the
- * provisional title + cwd, an empty-state message, and the existing
- * `ImagePasteTextarea` (which becomes draft-aware via its `sessionId` prop —
- * `useDraftStore` already keys text + images by id).
+ * provisional title + cwd, an empty-state message, and the shared
+ * `MessageComposer` (draft-aware via its `sessionId` prop, resolved to a
+ * "draft" target by `useComposerTarget` — `useDraftStore` already keys text +
+ * images by id).
  *
  * On unmount we auto-discard the draft iff it's empty (no text, no images),
  * per product decision. The actual draft → real session promotion lives in
- * `ImagePasteTextarea.send` so we don't need to thread the IPC through here.
+ * `useComposerTarget`'s `send` so we don't need to thread the IPC through
+ * here.
  */
 export function DraftSessionChat({ draftId }: { draftId: string }) {
 	const draft = useDraftSessionsStore((s) =>
 		s.draft && s.draft.id === draftId ? s.draft : null,
 	);
-	const [inputHeight, setInputHeight] = useState(44);
-	const maxInputHeight = Math.max(120, Math.floor(window.innerHeight * 0.45));
+	// Mirrors SessionChat's auto-grow rule but skips the manual drag-shrink
+	// lock since no resize divider handlers are wired up here — see
+	// `ComposerDivider`'s `static` variant below.
+	const { height: inputHeight, onContentHeightChange } = useComposerResize({
+		initialHeight: 44,
+	});
 	// Guard against double-clicks on the folder chip spawning two pickers.
 	// The native dialog is modal but the async round-trip leaves a window.
 	const [pickingFolder, setPickingFolder] = useState(false);
@@ -107,18 +115,6 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 			cancelled = true;
 		};
 	}, [draft?.cwd]);
-
-	// Mirror SessionChat's auto-grow rule but skip the manual drag-shrink lock
-	// since we don't render the resize divider here. The textarea reports its
-	// natural scrollHeight; we push the rendered height up to fit, never down.
-	const onContentHeightChange = useCallback(
-		(sh: number) => {
-			setInputHeight((prev) =>
-				sh > prev ? Math.min(maxInputHeight, Math.max(44, sh)) : prev,
-			);
-		},
-		[maxInputHeight],
-	);
 
 	// Auto-discard on unmount iff the draft is empty AND the user has
 	// actually navigated away from this draft's URL. The URL check rejects
@@ -218,7 +214,7 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 						    message. Typing a name locks it permanently.
 
 						    Writes to the store on every keystroke rather than on
-						    blur — `send()` in ImagePasteTextarea reads the draft
+						    blur — `useComposerTarget`'s `send` reads the draft
 						    synchronously, so an on-blur-only write would lose the
 						    name when the user types it and then hits Enter in the
 						    composer without ever leaving this field. */}
@@ -414,19 +410,7 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 			    same 1px separator above the model bar so the draft footer's
 			    visual chrome matches a real session. No pointer handlers —
 			    there's no transcript to resize yet. */}
-			<div
-				style={{
-					flexShrink: 0,
-					height: 6,
-					display: "flex",
-					alignItems: "center",
-				}}
-				aria-hidden="true"
-			>
-				<div
-					style={{ height: 1, width: "100%", background: T.borderSoft }}
-				/>
-			</div>
+			<ComposerDivider static ariaLabel="Resize chat input" />
 
 			<DraftModelBar
 				model={draft.model}
@@ -443,7 +427,7 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 				onClose={() => setModelPickerOpen(false)}
 			/>
 
-			<ImagePasteTextarea
+			<MessageComposer
 				sessionId={draftId}
 				textareaHeight={inputHeight}
 				onContentHeightChange={onContentHeightChange}

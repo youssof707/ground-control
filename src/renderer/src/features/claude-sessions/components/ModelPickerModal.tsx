@@ -98,10 +98,14 @@ export function ModelPickerModal({
 	/** Line under the title. Defaults to the per-session wording; the app
 	 * settings pane overrides it since its pick has app-wide scope. */
 	subtitle?: string;
-	/** Hand focus back to the composer after a pick. True for the three
-	 * chat-side call sites; the app-settings picker passes false — the
-	 * composer sits behind the still-open Settings modal, and grabbing
-	 * focus would yank it out of the dialog the user is in. */
+	/** Hand focus back to the *main* composer after a pick, via the global
+	 * `focusComposer()`. True by default (the draft header's picker, and
+	 * `SessionTokenBar` when it has no `onAfterSelect` override). Two callers
+	 * pass false: the app-settings picker, whose composer sits behind the
+	 * still-open Settings modal and shouldn't have focus yanked out of it;
+	 * and `SessionTokenBar` when the caller supplies its own `onAfterSelect`
+	 * (the sidequest panel, so a pick there re-focuses the *panel's* composer
+	 * instead of the main one). */
 	focusComposerAfterSelect?: boolean;
 	/** Called with the chosen model id, or `undefined` to clear the
 	 * override. May be async; the modal disables its buttons while the
@@ -201,7 +205,7 @@ export function ModelPickerModal({
 			// Picking a model is a one-shot detour, not a control the user
 			// meant to linger on — hand focus straight back to the composer
 			// so typing can continue uninterrupted. Same pattern as
-			// runShortcut/runSkill in ImagePasteTextarea. Skipped by the
+			// runShortcut/runSkill in MessageComposer. Skipped by the
 			// app-settings picker, whose composer sits behind the still-open
 			// Settings modal.
 			if (focusComposerAfterSelect) focusComposer();

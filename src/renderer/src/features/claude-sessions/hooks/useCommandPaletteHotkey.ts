@@ -8,7 +8,7 @@ import { useCommandPaletteStore } from "../stores/useCommandPaletteStore";
  * `useComposerFocusHotkey`.
  *
  *   - Focus inside a session composer (identified by the
- *     `data-composer-session-id` attribute `ImagePasteTextarea` stamps on
+ *     `data-composer-session-id` attribute `MessageComposer` stamps on
  *     its `<textarea>`) → open in "insert" mode for that session, same as
  *     clicking that composer's own ⚡ button.
  *   - Focus nowhere in particular (or on some non-editable element, e.g. a

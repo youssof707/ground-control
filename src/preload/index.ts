@@ -29,6 +29,8 @@ const claude = {
 		ipcRenderer.invoke("session:interrupt", sessionId),
 	resumeSession: (sessionId: string) =>
 		ipcRenderer.invoke("session:resume", sessionId),
+	retryUsageLimit: (sessionId: string) =>
+		ipcRenderer.invoke("session:retryUsageLimit", sessionId),
 	refreshBranch: (sessionId: string) =>
 		ipcRenderer.invoke("session:refreshBranch", sessionId),
 	switchBranch: (sessionId: string, branch: string) =>

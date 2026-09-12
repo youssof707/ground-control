@@ -12,7 +12,7 @@ import { useSessionsStore } from "../stores/useSessionsStore";
  * Scoped to the composer textarea, deliberately: unlike the other global
  * hotkeys this one is only live while you're actually typing a prompt. The
  * target session is read off the composer element's own
- * `data-composer-session-id` attribute (stamped by `ImagePasteTextarea`, the
+ * `data-composer-session-id` attribute (stamped by `MessageComposer`, the
  * same hook `useCommandPaletteHotkey` uses) rather than off the route — so it
  * follows focus, and the "text box only" rule is structural rather than a
  * second check bolted on. Focus anywhere else — sidebar, a rename box, a
@@ -21,12 +21,13 @@ import { useSessionsStore } from "../stores/useSessionsStore";
  * `SessionMode` is a two-value enum (`plan` | `acceptEdits`), so this is a
  * true toggle rather than a cycle through modes.
  *
- * The sidequest composer is excluded by construction: its textarea carries no
- * `data-composer-session-id`. That's the right outcome anyway — a sidequest's
- * mode goes through `SidequestPanel`'s own `changeMode` and a
- * `sidequest:patch` broadcast, which `applySessionMode` doesn't model.
+ * The sidequest composer is excluded by construction: `MessageComposer` skips
+ * the attribute there (`ComposerTarget.stampComposerAttr`, from
+ * `useComposerTarget`). That's the right outcome anyway — a sidequest's mode
+ * goes through `useComposerTarget`'s sidequest branch and a `sidequest:patch`
+ * broadcast, which `applySessionMode` doesn't model.
  *
- * Doesn't respect `ImagePasteTextarea`'s `modeSwitching` / `disabled` state —
+ * Doesn't respect `MessageComposer`'s `modeSwitching` / `disabled` state —
  * those are component-local and only ever greyed out that component's own
  * `ModeToggle` mid-request. Same call `applySessionMode` already documents
  * for the Cmd+K path.

@@ -5,25 +5,16 @@ import {
 	useState,
 	type KeyboardEvent,
 } from "react";
-import { useNavigate } from "react-router-dom";
 import type { SessionMode } from "@shared/claude-sessions/types";
-import { useSessionsStore } from "../stores/useSessionsStore";
-import { useSettingsStore } from "../stores/useSettingsStore";
 import { useDraftStore } from "../stores/useDraftStore";
-import {
-	isDraftId,
-	useDraftSessionsStore,
-	type DraftSession,
-} from "../stores/useDraftSessionsStore";
 import {
 	useQueuedMessagesStore,
 	type QueuedMessage,
 } from "../stores/useQueuedMessagesStore";
 import { buildUserBlocks, draftFromBlocks } from "../lib/composerImages";
 import { useComposerImages } from "../hooks/useComposerImages";
-import { sendTurn } from "../lib/sendTurn";
-import { appendPromptBlock, focusComposer } from "../lib/composerActions";
-import { runHandoffDelete } from "../lib/handoffActions";
+import { useComposerTarget } from "../hooks/useComposerTarget";
+import { appendPromptBlock } from "../lib/composerActions";
 import { T } from "../../../design/tokens";
 import { ModeToggle, isBranchStale } from "../../../design/Atoms";
 import { DictationButton, type DictationHandle } from "./DictationButton";
@@ -32,117 +23,92 @@ import type { Shortcut } from "@shared/schemas/shortcuts";
 import type { Skill } from "@shared/schemas/skills";
 import { ShortcutsMenuButton } from "./ShortcutsMenu";
 
+type Density = "full" | "compact";
+
 interface Props {
 	sessionId: string;
 	disabled?: boolean;
 	textareaHeight?: number;
 	onContentHeightChange?: (height: number) => void;
+	/** "compact" is used by the sidequest panel, which resizes as narrow as
+	 * 280px (SIDEQUEST_MIN_WIDTH) — only chrome (padding, max-width, font
+	 * size, thumbnail size, footer wrapping) changes between the two; every
+	 * feature and handler below is identical regardless of density. */
+	density?: Density;
 }
+
+// Chrome-only differences between the two hosts. Everything else — markup,
+// handlers, features — is shared; see the Props doc above.
+const DENSITY: Record<
+	Density,
+	{
+		outerPadding: string;
+		cardMaxWidth: number | undefined;
+		cardMargin: string;
+		cardPadding: number;
+		cardRadius: number;
+		cardBackground: string;
+		cardShadow: string;
+		textFontSize: number;
+		thumbSize: number | undefined;
+		footerFlexWrap: "nowrap" | "wrap";
+		chipMaxWidth: number;
+	}
+> = {
+	full: {
+		outerPadding: "4px 32px 18px",
+		cardMaxWidth: 760,
+		cardMargin: "0 auto",
+		cardPadding: 12,
+		cardRadius: 12,
+		cardBackground: T.surface,
+		cardShadow: "0 8px 24px rgba(0,0,0,0.25)",
+		textFontSize: 14,
+		thumbSize: undefined,
+		footerFlexWrap: "nowrap",
+		chipMaxWidth: 260,
+	},
+	compact: {
+		outerPadding: "10px 16px 16px",
+		cardMaxWidth: undefined,
+		cardMargin: "0",
+		cardPadding: 10,
+		cardRadius: 10,
+		cardBackground: T.surfaceLow,
+		cardShadow: "none",
+		textFontSize: 13,
+		thumbSize: 48,
+		footerFlexWrap: "wrap",
+		chipMaxWidth: 160,
+	},
+};
 
 // A fresh [] literal on every render would break the zustand selector's
 // reference equality and re-render the composer on every unrelated store
 // update. (The images equivalent lives in `lib/composerImages`, shared with
-// the sidequest composer.)
+// every composer instance.)
 const EMPTY_QUEUE: QueuedMessage[] = Object.freeze(
 	[] as QueuedMessage[],
 ) as QueuedMessage[];
 
 /**
- * Convert a draft session into a real one. Subscribes to `session:started`
- * BEFORE invoking startSession so we don't race the broadcast — the
- * renderer-side startSession promise won't resolve until the SDK loop ends,
- * so the real id only arrives via the event. Pattern lifted from the
- * pre-draft `SessionsList.startWith()` flow.
+ * The message composer, shared by the main chat (`SessionChat`,
+ * `DraftSessionChat`) and the sidequest panel. All per-target branching
+ * (session vs. draft vs. sidequest — different state stores, different send
+ * paths, different lifecycle) lives behind `useComposerTarget`; this
+ * component has exactly one code path regardless of what `sessionId` points
+ * at.
  */
-function createSessionFromDraft(draft: DraftSession): Promise<string> {
-	// A blank name box means "auto-name me": send the provisional `Session N`
-	// placeholder (never an empty title — the sidebar row would render blank
-	// for the beat between `session:started` and the first message's patch)
-	// and leave `titleLocked` false so SessionManager.pushUserMessage still
-	// derives the real title from that first message. A name the user typed
-	// is sent locked and is never overwritten afterwards.
-	const typedTitle = draft.title.trim().slice(0, 200);
-	const expectedTitle = typedTitle || draft.defaultTitle;
-	return new Promise((resolve, reject) => {
-		let off: (() => void) | null = window.claude.on(
-			"session:started",
-			(p) => {
-				const s = p as {
-					id: string;
-					title?: string;
-					cwd?: string;
-					sdkSessionId?: string;
-				};
-				// `session:started` broadcasts on EVERY runLoop start, not just
-				// this one — resumes (see sendTurn's resume-if-needed and
-				// useQueuedMessageFlusher) and forks fire it too. Blindly
-				// resolving on the first event risks promoting this draft onto
-				// an unrelated session; since "Handoff & delete" chains a
-				// deferred delete off the resolved id, a misfire would send the
-				// handoff into the wrong conversation AND delete the source.
-				// A genuine newborn from `run()` has no sdkSessionId yet and
-				// carries exactly the cwd/title we just asked for.
-				if (s.sdkSessionId) return;
-				if (s.cwd !== draft.cwd || s.title !== expectedTitle) return;
-				off?.();
-				off = null;
-				clearTimeout(timer);
-				resolve(s.id);
-			},
-		);
-		// Without a timeout, a dropped or mismatched broadcast wedges the
-		// composer in `sending` forever with no recovery but a reload.
-		const timer = setTimeout(() => {
-			off?.();
-			off = null;
-			reject(new Error("Timed out waiting for the new session to start."));
-		}, 20_000);
-		// Remember which worktree this workspace was last actually used with,
-		// so the next New Session / Cmd+N here pre-attaches it. Recorded at
-		// promotion rather than at draft time because starting a session is
-		// the honest signal — a draft the user abandons shouldn't retarget
-		// anything. `draft.worktreeId` being undefined is meaningful and gets
-		// written through: a plain session in this folder means "I'm on the
-		// base checkout now", and forgets the previous pairing.
-		useSettingsStore
-			.getState()
-			.setLastUsedWorktree(draft.cwd, draft.worktreeId);
-		window.claude
-			.startSession({
-				title: expectedTitle,
-				titleLocked: typedTitle.length > 0,
-				cwd: draft.cwd,
-				mode: draft.mode,
-				// Carry the draft's worktree attachment forward. Main-side
-				// SessionManager persists this onto the new session record
-				// and rewires the SDK cwd to the worktree's checkout path
-				// via resolveEffectiveCwd — see SessionManager.run.
-				worktreeId: draft.worktreeId,
-				// Carry the model override the user picked in the draft
-				// header. Undefined = use the CLI default (SessionManager
-				// stamps this onto the session record; the SDK loop reads
-				// it on the first turn).
-				model: draft.model,
-				// Carry the sidebar group inherited from a handoff's source
-				// session (undefined for ordinary drafts). Born-with rather
-				// than set post-hoc — see DraftSession.groupId doc.
-				groupId: draft.groupId,
-			})
-			.catch((err) => {
-				off?.();
-				off = null;
-				clearTimeout(timer);
-				reject(err);
-			});
-	});
-}
-
-export function ImagePasteTextarea({
+export function MessageComposer({
 	sessionId,
 	disabled,
 	textareaHeight = 44,
 	onContentHeightChange,
+	density = "full",
 }: Props) {
+	const D = DENSITY[density];
+	const target = useComposerTarget(sessionId);
+
 	// Drafts (text + pasted images) live in a per-session in-memory Zustand
 	// store so switching sessions doesn't carry the draft from one to the
 	// next. See `useDraftStore` for details. The shim setters below preserve
@@ -155,47 +121,28 @@ export function ImagePasteTextarea({
 	const [sending, setSending] = useState(false);
 	const [dictating, setDictating] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-	// Paste-to-attach, shared with the sidequest composer.
+	// Paste-to-attach, shared by every composer instance.
 	const { images, onPaste, removeImage, setImages } = useComposerImages(
 		sessionId,
 		setError,
 	);
 	const [modeSwitching, setModeSwitching] = useState(false);
-	// Draft awareness — when the sessionId is a draft, status / mode / branch
-	// don't exist in useSessionsStore yet. We read from useDraftSessionsStore
-	// instead so the mode toggle is live during draft composition, and the
-	// send handler can promote the draft to a real session.
-	const isDraft = isDraftId(sessionId);
-	const navigate = useNavigate();
-	const draftSession = useDraftSessionsStore((s) =>
-		s.draft && s.draft.id === sessionId ? s.draft : null,
-	);
-	// Subscribe to mode so the toggle reflects live SDK / IPC updates (e.g.
-	// `session:patch` broadcasts after a successful setMode in the main process).
-	// For a draft, the source of truth is the draft store; the real-session
-	// selector is still called (hooks rule) but its value is ignored.
-	const realMode = useSessionsStore(
-		(s) => s.sessions[sessionId]?.mode ?? "plan",
-	);
-	const mode: SessionMode = isDraft
-		? (draftSession?.mode ?? "plan")
-		: realMode;
-	const status = useSessionsStore((s) => s.sessions[sessionId]?.status);
-	const isRunning = status === "running";
+
 	// Subscribe to the two branch fields so the send button mirrors the
 	// BranchChip's stale (red) state — extra visibility for "you're about
-	// to send on a different branch than your last message."
-	const branch = useSessionsStore((s) => s.sessions[sessionId]?.branch);
-	const lastUserMessageBranch = useSessionsStore(
-		(s) => s.sessions[sessionId]?.lastUserMessageBranch,
-	);
-	const branchStale = isBranchStale({ branch, lastUserMessageBranch });
+	// to send on a different branch than your last message." Undefined for
+	// draft/sidequest targets, which reads as "not stale".
+	const branchStale = isBranchStale({
+		branch: target.branch,
+		lastUserMessageBranch: target.lastUserMessageBranch,
+	});
 
-	// Queued pre-move(s) for this session — see useQueuedMessagesStore /
+	// Queued pre-move(s) for this target — see useQueuedMessagesStore /
 	// useQueuedMessageFlusher. The UI only ever lets one accumulate today
 	// (the menu item below disables itself once the queue is non-empty), but
 	// the store is already a FIFO array so a future multi-queue UI needs no
-	// data-model change here.
+	// data-model change here. Flushed for sidequests the same way as real
+	// sessions — see the flusher's sidequest half.
 	const queuedMessages = useQueuedMessagesStore(
 		(s) => s.queuesBySession[sessionId] ?? EMPTY_QUEUE,
 	);
@@ -237,13 +184,14 @@ export function ImagePasteTextarea({
 		return () => window.clearTimeout(id);
 	}, [sessionId]);
 
-	// Focus + caret to end whenever the Cmd+R composer-focus hotkey fires.
+	// Focus + caret to end whenever this target's focus-request nonce fires
+	// (Cmd+R quoting into the composer, Cmd+S / Clear on the sidequest side).
 	// rAF so it runs after the draft-text write (and resulting re-render)
-	// that composerActions.appendQuotedInline just triggered. Skipped on the
-	// initial nonce (0) — session-entry focus is already handled above.
-	const composerFocusNonce = useDraftStore((s) => s.composerFocusNonce);
+	// that triggered the request. Skipped on the initial nonce (0) —
+	// session-entry focus is already handled above.
+	const focusNonce = target.focusNonce;
 	useEffect(() => {
-		if (composerFocusNonce === 0) return;
+		if (focusNonce === 0) return;
 		const raf = requestAnimationFrame(() => {
 			const ta = textareaRef.current;
 			if (!ta) return;
@@ -251,15 +199,16 @@ export function ImagePasteTextarea({
 			ta.selectionStart = ta.selectionEnd = ta.value.length;
 		});
 		return () => cancelAnimationFrame(raf);
-	}, [composerFocusNonce]);
+	}, [focusNonce]);
 
 	// Auto-grow the textarea to fit its content. We toggle height to "auto"
 	// just long enough to read scrollHeight (the natural content height),
-	// then restore the previous height so React's controlled style prop wins
-	// on the next render. useLayoutEffect runs synchronously before paint,
-	// so the brief swap never produces a visible flash. The measured value
-	// is reported up to SessionChat, which combines it with the drag-set
-	// baseline (Math.max) and feeds the result back as `textareaHeight`.
+	// then restore the previous height so React's controlled height prop
+	// wins on the next render. useLayoutEffect runs synchronously before
+	// paint, so the brief swap never produces a visible flash. The measured
+	// value is reported up to the host, which combines it with the drag-set
+	// baseline (Math.max) and feeds the result back as `textareaHeight` —
+	// see `useComposerResize`.
 	useLayoutEffect(() => {
 		const ta = textareaRef.current;
 		if (!ta || !onContentHeightChange) return;
@@ -271,55 +220,50 @@ export function ImagePasteTextarea({
 	}, [text, onContentHeightChange]);
 
 	const changeMode = async (next: SessionMode) => {
-		if (modeSwitching || mode === next) return;
-		if (isDraft) {
-			// Draft sessions don't exist in main yet — no IPC to call. Just
-			// update the in-memory draft so the chosen mode flows through to
-			// the eventual startSession call in send().
-			useDraftSessionsStore.getState().updateDraft({ mode: next });
-			return;
-		}
-		// Optimistic flip; revert on IPC failure. The main process broadcasts
-		// the canonical value back via session:patch on success.
-		useSessionsStore.getState().upsertSession({ id: sessionId, mode: next });
+		if (modeSwitching || target.starting || target.mode === next) return;
 		setModeSwitching(true);
 		try {
-			await window.claude.setSessionMode(sessionId, next);
+			await target.changeMode(next);
 		} catch (err) {
-			useSessionsStore
-				.getState()
-				.upsertSession({ id: sessionId, mode });
-			console.error("Failed to change session mode", err);
+			// Sidequest mode changes have no persisted record and no visible
+			// affordance besides this composer, so surface the failure inline.
+			// Real/draft sessions keep the prior (silent) behavior — the
+			// optimistic flip already reverted, and nothing else in the UI
+			// depends on this promise settling.
+			if (target.kind === "sidequest") {
+				setError(err instanceof Error ? err.message : String(err));
+			} else {
+				console.error("Failed to change session mode", err);
+			}
 		} finally {
 			setModeSwitching(false);
 		}
 	};
 
 	/**
-	 * Run a shortcut in this session: append its text to whatever is already
-	 * in the composer (non-destructive — you can stack a shortcut on top of a
-	 * half-typed thought) and flip the session's mode to match.
+	 * Run a shortcut in this composer: append its text to whatever is already
+	 * there (non-destructive — you can stack a shortcut on top of a
+	 * half-typed thought) and flip the target's mode to match.
 	 *
-	 * `changeMode` already handles both branches (draft store vs. setMode
-	 * IPC) and no-ops when the mode already matches, so there's no extra
-	 * plumbing here. `focusComposer` bumps the composer-focus nonce, whose
+	 * `changeMode` above already handles every target kind and no-ops when
+	 * the mode already matches, so there's no extra plumbing here.
+	 * `target.requestFocus()` bumps this target's own focus nonce, whose
 	 * effect above refocuses and moves the caret to end once the draft-text
 	 * re-render lands.
 	 */
 	const runShortcut = (sc: Shortcut) => {
 		appendPromptBlock(sessionId, sc.prompt);
 		void changeMode(sc.mode);
-		focusComposer();
+		target.requestFocus();
 	};
 
 	/**
-	 * Run a skill in this session: append its slash command to the composer.
-	 * Skills carry no mode (unlike shortcuts), so the session's current mode
-	 * is left alone.
+	 * Run a skill in this composer: append its slash command. Skills carry no
+	 * mode (unlike shortcuts), so the target's current mode is left alone.
 	 */
 	const runSkill = (skill: Skill) => {
 		appendPromptBlock(sessionId, `/${skill.name}`);
-		focusComposer();
+		target.requestFocus();
 	};
 
 	const send = async () => {
@@ -330,50 +274,7 @@ export function ImagePasteTextarea({
 		setSending(true);
 		setError(null);
 		try {
-			let targetId = sessionId;
-			// Deferred half of "Handoff & delete" — captured before
-			// discardDraft() below nulls the slot. Only fired once the
-			// promotion AND the first turn have both succeeded (see below),
-			// so an abandoned or failed handoff never destroys the source.
-			let handoffDeleteId: string | undefined;
-			if (isDraft) {
-				// Promote the draft to a real session before delivering the
-				// message. createSessionFromDraft subscribes to session:started
-				// BEFORE invoking startSession so we don't miss the broadcast;
-				// useSessionsBootstrap also handles it and upserts the full
-				// ClaudeSession into useSessionsStore, so by the time this
-				// resolves sendTurn's appendMessage call has a valid row.
-				const draft = useDraftSessionsStore.getState().draft;
-				if (!draft || draft.id !== sessionId) {
-					throw new Error("Draft session no longer exists");
-				}
-				handoffDeleteId = draft.handoffDeleteSessionId;
-				targetId = await createSessionFromDraft(draft);
-			}
-			// sendTurn owns the resume-if-needed check, the sendUserMessage
-			// IPC call, and the optimistic local echo — shared with
-			// useQueuedMessageFlusher so a manually-sent turn and a flushed
-			// pre-move go through identical logic.
-			await sendTurn(targetId, blocks);
-			useDraftStore.getState().clearDraft(sessionId);
-			if (isDraft) {
-				// Navigate BEFORE discardDraft so the DraftSessionChat doesn't
-				// briefly render its "Draft no longer exists" fallback. The
-				// route swap unmounts the draft view and mounts the real
-				// SessionChat for `targetId`. `replace` so the back button
-				// doesn't strand the user on the now-dead draft URL.
-				navigate(`/sessions/${targetId}`, { replace: true });
-				useDraftSessionsStore.getState().discardDraft();
-				// Only now — successor exists (born with the source's
-				// groupId, so pruneGroupIfEmpty always finds a member) and
-				// has actually received the handoff turn. Fire-and-forget:
-				// runHandoffDelete routes through the background-task store
-				// so a failure surfaces there instead of on this (possibly
-				// already-unmounted) composer.
-				if (handoffDeleteId && handoffDeleteId !== targetId) {
-					runHandoffDelete(handoffDeleteId);
-				}
-			}
+			await target.send(blocks);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
 		} finally {
@@ -383,9 +284,9 @@ export function ImagePasteTextarea({
 
 	// Queue-message (the split-button's dropup menu action). Only offered
 	// while running; can be used repeatedly — messages append to the
-	// session's FIFO and render as a horizontal chip strip above the
-	// composer. Never touches IPC: useQueuedMessageFlusher fires these one
-	// per turn as each of the session's turns completes.
+	// target's FIFO and render as a horizontal chip strip above the
+	// composer. Never touches IPC directly: useQueuedMessageFlusher fires
+	// these one per turn as each turn completes.
 	const queueMessage = () => {
 		if (!text.trim() && images.length === 0) return;
 		const blocks = buildUserBlocks(text, images);
@@ -528,10 +429,16 @@ export function ImagePasteTextarea({
 	};
 
 	const canSend = !!(text.trim() || images.length > 0);
+	// `starting` (sidequest fork still being handed to the SDK) deliberately
+	// does NOT gate the textarea: Cmd+S forks and immediately focuses the
+	// panel, so the user types straight into a still-starting sidequest.
+	// It only gates the settings row below.
+	const inputDisabled = disabled || sending;
+	const settingsDisabled = disabled || sending || target.starting;
 
 	const sendAriaLabel =
-		branchStale && lastUserMessageBranch
-			? `Send (branch changed since last message, was "${lastUserMessageBranch}")`
+		branchStale && target.lastUserMessageBranch
+			? `Send (branch changed since last message, was "${target.lastUserMessageBranch}")`
 			: "Send";
 
 	// Shared between the plain and split renderings of the Send button below.
@@ -580,20 +487,20 @@ export function ImagePasteTextarea({
 		<div
 			style={{
 				flexShrink: 0,
-				padding: "4px 32px 18px",
+				padding: D.outerPadding,
 				background: T.win,
 			}}
 		>
 			<div
 				style={{
 					position: "relative",
-					maxWidth: 760,
-					margin: "0 auto",
-					borderRadius: 12,
+					maxWidth: D.cardMaxWidth,
+					margin: D.cardMargin,
+					borderRadius: D.cardRadius,
 					border: `0.5px solid ${T.border}`,
-					background: T.surface,
-					padding: 12,
-					boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+					background: D.cardBackground,
+					padding: D.cardPadding,
+					boxShadow: D.cardShadow,
 				}}
 			>
 				{queuedMessages.length > 0 ? (
@@ -616,6 +523,7 @@ export function ImagePasteTextarea({
 								// holds the queue, so the error belongs to the first chip
 								// only — the rest are just waiting behind it.
 								error={i === 0 ? queueError : undefined}
+								maxWidth={D.chipMaxWidth}
 								onCancel={() =>
 									useQueuedMessagesStore.getState().cancel(sessionId, msg.id)
 								}
@@ -627,6 +535,7 @@ export function ImagePasteTextarea({
 
 				<PendingImageStrip
 					images={images}
+					size={D.thumbSize}
 					onRemove={removeImage}
 					onError={setError}
 				/>
@@ -649,15 +558,18 @@ export function ImagePasteTextarea({
 					ref={textareaRef}
 					// Read by the global Cmd+K handler (`useCommandPaletteHotkey`) to
 					// know which session's composer is focused, without threading
-					// route state into that hook.
-					data-composer-session-id={sessionId}
+					// route state into that hook. Omitted for sidequests — see
+					// `ComposerTarget.stampComposerAttr`.
+					{...(target.stampComposerAttr
+						? { "data-composer-session-id": sessionId }
+						: {})}
 					autoFocus
 					value={text}
 					onChange={(e) => setText(e.target.value)}
 					onPaste={onPaste}
 					onKeyDown={onKeyDown}
-					disabled={disabled || sending}
-					placeholder="Reply to Claude…"
+					disabled={inputDisabled}
+					placeholder={target.placeholder}
 					style={{
 						width: "100%",
 						height: textareaHeight,
@@ -667,7 +579,7 @@ export function ImagePasteTextarea({
 						outline: "none",
 						color: T.text,
 						fontFamily: T.sans,
-						fontSize: 14,
+						fontSize: D.textFontSize,
 						lineHeight: 1.5,
 						padding: 0,
 						overflowY: "auto",
@@ -679,6 +591,7 @@ export function ImagePasteTextarea({
 						display: "flex",
 						alignItems: "center",
 						gap: 8,
+						flexWrap: D.footerFlexWrap,
 						marginTop: 10,
 						paddingTop: 10,
 						borderTop: `0.5px solid ${T.borderSoft}`,
@@ -689,28 +602,28 @@ export function ImagePasteTextarea({
 							↵ finish · esc cancel
 						</span>
 					) : null}
-					<div style={{ flex: 1 }} />
+					<div style={{ flex: 1, minWidth: 0 }} />
 					<ShortcutsMenuButton
 						buttonClassName="btn btn-icon"
-						disabled={disabled || sending}
+						disabled={settingsDisabled}
 						onRun={runShortcut}
 						onRunSkill={runSkill}
 					/>
 					<DictationButton
 						ref={dictationRef}
-						disabled={disabled || sending}
+						disabled={settingsDisabled}
 						onRecordingChange={setDictating}
 						onInsert={insertDictation}
 						onError={setError}
 						scope={sessionId}
 					/>
 					<ModeToggle
-						mode={mode}
+						mode={target.mode}
 						onChange={(next) => void changeMode(next)}
-						disabled={disabled || modeSwitching}
+						disabled={settingsDisabled || modeSwitching}
 					/>
-					{isRunning ? (
-						// Split button: the session is running, so this message might
+					{target.isRunning ? (
+						// Split button: the target is running, so this message might
 						// land mid-turn as an interjection (left half, unchanged
 						// behavior) — or the caret opens a menu to queue it for
 						// after the turn completely finishes instead (a chess-style
@@ -864,7 +777,7 @@ function SendMenuItem({
 }
 
 /**
- * A queued pre-move, shown above the composer while its session is running
+ * A queued pre-move, shown above the composer while its target is running
  * (or, if a flush attempt failed, until cancelled). Visually paired with the
  * Stop pill's pill/chip language (same height/radius/border) so the two read
  * as siblings describing "what's happening with this turn".
@@ -878,11 +791,13 @@ function SendMenuItem({
 function QueuedMessageChip({
 	message,
 	error,
+	maxWidth,
 	onCancel,
 	onRestore,
 }: {
 	message: QueuedMessage;
 	error: string | undefined;
+	maxWidth: number;
 	onCancel: () => void;
 	onRestore: () => void;
 }) {
@@ -946,7 +861,7 @@ function QueuedMessageChip({
 					overflow: "hidden",
 					textOverflow: "ellipsis",
 					whiteSpace: "nowrap",
-					maxWidth: 260,
+					maxWidth,
 				}}
 			>
 				{label}

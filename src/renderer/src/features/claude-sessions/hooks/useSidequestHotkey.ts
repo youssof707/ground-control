@@ -27,7 +27,7 @@ import { selectionStartElement, selectionText } from "../lib/selection";
  *      first fork one at the last visible Claude message.
  *
  * Registered in the capture phase so nothing swallows it first, and — unlike
- * the dictation handler in ImagePasteTextarea — it deliberately does NOT skip
+ * the dictation handler in `MessageComposer` — it deliberately does NOT skip
  * editable targets: a DOM selection in the transcript coexists with focus
  * sitting in the composer, which is the common case.
  *
@@ -76,7 +76,7 @@ export function useSidequestHotkey(): void {
 			// the same conversation. Never re-forks, never discards.
 			if (selText && inPanel && sq) {
 				appendQuotedToDraft(sq.sidequestId, selText);
-				openSidequestPanelAndFocus();
+				openSidequestPanelAndFocus(sessionId);
 				return;
 			}
 
@@ -95,7 +95,9 @@ export function useSidequestHotkey(): void {
 				// panel so its empty state explains why, rather than doing
 				// nothing.
 				if (!forkMessageId) {
-					useRightPanelStore.getState().setRightPanel("sidequest");
+					useRightPanelStore
+						.getState()
+						.setSessionPanel(sessionId, "sidequest");
 					return;
 				}
 				void (async () => {
@@ -108,7 +110,7 @@ export function useSidequestHotkey(): void {
 					});
 					if (newId) appendQuotedToDraft(newId, selText);
 					// Open regardless: on failure the panel shows the error.
-					openSidequestPanelAndFocus();
+					openSidequestPanelAndFocus(sessionId);
 				})();
 				return;
 			}
@@ -118,16 +120,18 @@ export function useSidequestHotkey(): void {
 			if (!sq) {
 				const forkMessageId = lastForkableMessageId(session.messages ?? []);
 				if (!forkMessageId) {
-					useRightPanelStore.getState().setRightPanel("sidequest");
+					useRightPanelStore
+						.getState()
+						.setSessionPanel(sessionId, "sidequest");
 					return;
 				}
 				void (async () => {
 					await recreateSidequest(sessionId, forkMessageId);
-					openSidequestPanelAndFocus();
+					openSidequestPanelAndFocus(sessionId);
 				})();
 				return;
 			}
-			openSidequestPanelAndFocus();
+			openSidequestPanelAndFocus(sessionId);
 		};
 
 		window.addEventListener("keydown", onKeyDown, true);

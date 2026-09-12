@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { T } from "../../../design/tokens";
 import { Kbd } from "../../../design/Atoms";
@@ -34,11 +34,51 @@ import { restoreEntry } from "../lib/undoActions";
  * NOTE: no-tooltip rule. The Shift+Cmd+Z hint is always-rendered text, never a
  * hover reveal — a keyboard hint that only appears on hover is exactly what
  * that rule forbids.
+ *
+ * ---------------------------------------------------------------------------
+ * EXPIRY: read this before touching the timing code.
+ *
+ * The card must be impossible to pin open. A previous version gated the
+ * dismiss timer on a `paused` boolean set by onMouseEnter/onMouseLeave on the
+ * keyed card div, and it hung permanently in three separate ways — all of them
+ * variants of "the node was removed from under a stationary cursor, so
+ * `mouseleave` never fired and `paused` latched true forever":
+ *
+ *   1. Clicking × or Undo. The pointer is on the card when it unmounts. From
+ *      then on EVERY later toast was born already-paused, with no timer ever
+ *      scheduled. One click poisoned the whole session.
+ *   2. A second delete landing mid-hover — `key` changes, old node dies, new
+ *      node mounts under the cursor with no enter/leave pair.
+ *   3. Simply appearing under the cursor. This corner sits over the sessions
+ *      sidebar, which is exactly where you just clicked ⋯ → Delete, so the
+ *      card routinely mounts beneath a motionless pointer and Chromium
+ *      recomputes hover on insert.
+ *
+ * The rules that keep it honest, in order of importance:
+ *
+ *   - Expiry is a WALL-CLOCK DEADLINE (`deadlineRef`), not a countdown that
+ *     exists only while unpaused. Pausing moves the deadline; it never deletes
+ *     it. Any code path that forgets to unpause costs at most `MAX_TOAST_MS`.
+ *   - Pausing requires MOVEMENT (onMouseMove), never bare onMouseEnter. A card
+ *     that appears under a still cursor is not being read.
+ *   - `paused` is force-cleared whenever the shown entry changes, and on the
+ *     window/document events that swallow `mouseleave` (blur, pointer leaving
+ *     the window).
+ *   - `MAX_TOAST_MS` is a hard ceiling from the moment the toast was raised.
+ *     Hovering buys reading time; it cannot buy forever.
+ *   - The renderer is background-throttled (BrowserWindow does not disable
+ *     `backgroundThrottling`), so setTimeout is not real time. focus and
+ *     visibilitychange re-check the deadline on return.
  */
 
 /** Visible lifetime of the toast. Long enough to notice, read a title, and
  *  reach the corner; short enough not to become clutter. */
-const TOAST_MS = 8000;
+const TOAST_MS = 5000;
+
+/** Hard ceiling on the card's life, measured from when it was raised, no
+ *  matter how much it is hovered. The escape hatch that makes every "stuck
+ *  hover" bug self-heal instead of hanging the corner. */
+const MAX_TOAST_MS = 30000;
 
 export function UndoToast() {
 	const navigate = useNavigate();
@@ -48,25 +88,98 @@ export function UndoToast() {
 	const [paused, setPaused] = useState(false);
 
 	const entry = entries.find((e) => e.id === toastEntryId) ?? null;
+	const entryId = entry?.id ?? null;
 
-	// Hovering must not just stop the clock — it has to restart it on leave, so
-	// the user gets a fresh, full window rather than the sliver that was left
-	// when they reached the card. Dropping `animationName` to "none" (below)
-	// rather than pausing it does that for the fade: the card snaps back to
-	// full opacity, and naming the animation again replays it from 0%. This
-	// effect restarts the matching timeout for free, since `paused` is a dep.
+	// When this toast's time is up, and the latest it may ever be. Refs, not
+	// state: they are read by timers and written by pointer handlers, and a
+	// re-render per mouse move would be absurd for a fade.
+	const deadlineRef = useRef(0);
+	const ceilingRef = useRef(0);
+	const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	// Raising a *different* entry is a fresh event: new window, new ceiling,
+	// and — critically — pointer state reset. See latch cases 1 and 2 in the
+	// header comment; without this line, dismissing one toast with × while
+	// hovering silently disarms every toast that follows it.
 	useEffect(() => {
-		if (!entry || paused) return;
-		const id = setTimeout(() => {
-			// Re-read rather than closing over `dismissToast(entry.id)`: by now
+		if (!entryId) return;
+		const now = Date.now();
+		deadlineRef.current = now + TOAST_MS;
+		ceilingRef.current = now + MAX_TOAST_MS;
+		setPaused(false);
+	}, [entryId]);
+
+	// Single owner of "is it time yet?". Re-checks the wall clock rather than
+	// trusting that the timeout fired when it was asked to: a throttled or
+	// frozen renderer can deliver it arbitrarily late, and hover can have
+	// pushed the deadline out since it was scheduled.
+	const tick = useCallback(() => {
+		if (timerRef.current) clearTimeout(timerRef.current);
+		timerRef.current = null;
+		if (!entryId) return;
+
+		const due = Math.min(deadlineRef.current, ceilingRef.current);
+		const remaining = due - Date.now();
+		if (remaining <= 0) {
+			// Re-read rather than closing over `dismissToast(entryId)`: by now
 			// the entry may have been restored and the toast advanced to the
-			// next one, which deserves its own full timer.
-			if (useUndoStore.getState().toastEntryId === entry.id) {
+			// next one, which deserves its own full window.
+			if (useUndoStore.getState().toastEntryId === entryId) {
 				useUndoStore.getState().dismissToast();
 			}
-		}, TOAST_MS);
-		return () => clearTimeout(id);
-	}, [entry, paused]);
+			return;
+		}
+		timerRef.current = setTimeout(tick, remaining);
+	}, [entryId]);
+
+	// Hovering pushes the deadline out rather than stopping a clock, so there
+	// is no state in which the toast has no way to die. The ceiling still
+	// applies, so leaning on the card cannot hold the corner hostage.
+	useEffect(() => {
+		if (!entryId) return;
+		if (paused) {
+			// Keep a timer armed even while paused — the ceiling is the
+			// backstop for a `paused` that somehow never gets cleared, and
+			// it is the reason this component can no longer hang.
+			if (timerRef.current) clearTimeout(timerRef.current);
+			const left = Math.max(0, ceilingRef.current - Date.now());
+			timerRef.current = setTimeout(tick, left);
+			return;
+		}
+		// Unhovering (and first mount) grants a fresh full window, rather than
+		// resuming the sliver that was left when the pointer arrived. Set here
+		// rather than in the mouse handler so it lands before `tick` reads it,
+		// and so it matches the CSS fade, which restarts at 0% on this render.
+		deadlineRef.current = Date.now() + TOAST_MS;
+		tick();
+	}, [entryId, paused, tick]);
+
+	useEffect(() => () => {
+		if (timerRef.current) clearTimeout(timerRef.current);
+	}, []);
+
+	// The events that eat `mouseleave`. Switching apps or flicking the pointer
+	// out of the window both leave the card believing it is still hovered;
+	// returning focus also means the timer above may be overdue, so re-check
+	// the clock immediately rather than waiting out a throttled timeout.
+	useEffect(() => {
+		if (!entryId) return;
+		const release = () => setPaused(false);
+		const recheck = () => {
+			setPaused(false);
+			tick();
+		};
+		window.addEventListener("blur", release);
+		window.addEventListener("focus", recheck);
+		document.addEventListener("mouseleave", release);
+		document.addEventListener("visibilitychange", recheck);
+		return () => {
+			window.removeEventListener("blur", release);
+			window.removeEventListener("focus", recheck);
+			document.removeEventListener("mouseleave", release);
+			document.removeEventListener("visibilitychange", recheck);
+		};
+	}, [entryId, tick]);
 
 	if (!entry) return null;
 
@@ -100,7 +213,12 @@ export function UndoToast() {
 			key={entry.id}
 			role="status"
 			aria-live="polite"
-			onMouseEnter={() => setPaused(true)}
+			// MOVEMENT, not entry. This corner sits over the sessions sidebar,
+			// so the card routinely mounts under a cursor that is just resting
+			// where the ⋯ menu was. Moving across it means someone is reading
+			// it; being born beneath a motionless pointer does not, and
+			// treating the two the same is what used to pin the card open.
+			onMouseMove={() => setPaused(true)}
 			onMouseLeave={() => setPaused(false)}
 			style={{
 				pointerEvents: "auto",
@@ -110,11 +228,18 @@ export function UndoToast() {
 				borderRadius: 10,
 				boxShadow: "0 16px 40px rgba(0, 0, 0, 0.5)",
 				overflow: "hidden",
-				// The self-timing fade. Named "none" while hovered so the card
-				// returns to full opacity rather than freezing mid-dissolve;
-				// the transition below smooths that hand-back, and can't fight
-				// the animation because it only applies once the animation has
-				// stopped driving opacity.
+				// The fade is DECORATION — the tick effect above owns the actual
+				// expiry, so a throttled or dropped animation can never strand
+				// the card on screen. They stay in step because leaving the
+				// card grants a fresh full `TOAST_MS`, which is exactly the
+				// duration below: flipping the name back off "none" replays the
+				// animation from 0% against a matching deadline.
+				//
+				// Named "none" while hovered so the card returns to full
+				// opacity rather than freezing mid-dissolve; the transition
+				// below smooths that hand-back, and can't fight the animation
+				// because it only applies once the animation has stopped
+				// driving opacity.
 				animationName: paused ? "none" : "undo-toast-life",
 				animationDuration: `${TOAST_MS}ms`,
 				animationTimingFunction: "linear",

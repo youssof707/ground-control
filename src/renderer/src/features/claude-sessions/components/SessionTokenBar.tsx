@@ -1,14 +1,11 @@
 import { useMemo, useState } from "react";
-import type {
-	ClaudeSessionFull,
-	SessionMessage,
-} from "@shared/schemas/claude_session";
+import type { SessionMessage, SessionStatus } from "@shared/schemas/claude_session";
 import { T } from "../../../design/tokens";
 import {
 	deriveDisplayedModel,
 	formatModelName,
+	type ModelDerivable,
 } from "@shared/claude-sessions/sessionModel";
-import { switchModelAndResume } from "../lib/modelSwitchActions";
 import { useModelPickerStore } from "../stores/useModelPickerStore";
 import { ModelPickerModal } from "./ModelPickerModal";
 
@@ -47,12 +44,43 @@ function fmtTokens(n: number): string {
 	return String(n);
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+/**
+ * The subset of a chat-like target the token bar actually reads. A real
+ * `ClaudeSessionFull` already satisfies this structurally; a sidequest —
+ * which has no `useSessionsStore` row — assembles one from `SidequestState`
+ * fields. Extends `ModelDerivable` (the same structural-subset pattern
+ * `sessionModel.ts` already uses for `deriveDisplayedModel`) with the two
+ * extra fields the bar needs beyond model derivation: an id to key the
+ * picker/IPC calls on, and a status to compute `isRunning`.
+ */
+export interface TokenBarTarget extends ModelDerivable {
+	id: string;
+	/** Sidequests add a "starting" status with no session-store equivalent —
+	 * treated the same as any other non-running status here. */
+	status: SessionStatus | "starting";
+}
+
+type Density = "full" | "compact";
 
 export function SessionTokenBar({
-	session,
+	target,
+	density = "full",
+	/** Interrupt the current turn, set the model, and resume — omitted by
+	 * the sidequest panel: `sendToSidequest`'s self-heal (re-fork a dead SDK
+	 * loop) has no equivalent on this path, so sidequests keep the plain
+	 * "just set it" behavior instead of gaining a fourth send variant. */
+	onSwitchAndResume,
+	/** Called after a successful pick instead of the modal's own default of
+	 * refocusing the *main* composer (`ModelPickerModal`'s
+	 * `focusComposerAfterSelect`) — the sidequest panel passes
+	 * `openSidequestPanelAndFocus` so picking a model there doesn't yank
+	 * focus out of the panel. */
+	onAfterSelect,
 }: {
-	session: ClaudeSessionFull;
+	target: TokenBarTarget;
+	density?: Density;
+	onSwitchAndResume?: (value: string | undefined) => Promise<void> | void;
+	onAfterSelect?: () => void;
 }) {
 	const totalTokens = useMemo(() => {
 		// Per-turn `result` messages from the SDK report usage for that turn
@@ -62,7 +90,7 @@ export function SessionTokenBar({
 		let totalOut = 0;
 		let totalCacheRead = 0;
 		let totalCacheCreation = 0;
-		for (const m of session.messages) {
+		for (const m of target.messages) {
 			if (!isResult(m)) continue;
 			const u = m.content.usage;
 			if (!u) continue;
@@ -72,23 +100,25 @@ export function SessionTokenBar({
 			totalCacheCreation += u.cache_creation_input_tokens ?? 0;
 		}
 		return totalIn + totalOut + totalCacheRead + totalCacheCreation;
-	}, [session.messages]);
+	}, [target.messages]);
 
 	// Stream-derived model label — reflects the model actually producing
 	// responses (self-corrects on fallback flips). While a switch awaits its
 	// first response, shows the requested model dimmed/italic ("pending").
-	// Deps are the fields deriveDisplayedModel actually reads — the `session`
-	// object identity churns on every store update, so depending on it
-	// directly would defeat the memo.
+	// Deps are the fields deriveDisplayedModel actually reads — `target`'s
+	// identity churns on every store update, so depending on it directly
+	// would defeat the memo.
 	const displayed = useMemo(
-		() => deriveDisplayedModel(session),
-		[session.messages, session.model, session.modelChangedAt],
+		() => deriveDisplayedModel(target),
+		[target.messages, target.model, target.modelChangedAt],
 	);
 	// Lifted to a store rather than local state so the global Cmd+Shift+M
 	// hotkey can open this same modal instance from outside this component's
-	// subtree — see useModelPickerStore.ts.
+	// subtree — see useModelPickerStore.ts. Shared by both the main chat's
+	// bar and the sidequest panel's; only one `openForSessionId` can match a
+	// given target's id at a time, so only one modal ever renders.
 	const pickerOpen = useModelPickerStore(
-		(s) => s.openForSessionId === session.id,
+		(s) => s.openForSessionId === target.id,
 	);
 	const [modelHover, setModelHover] = useState(false);
 
@@ -100,7 +130,7 @@ export function SessionTokenBar({
 	// it (which switchModelAndResume does) cancels that pending decision the
 	// same way the composer's own Stop button already does.
 	const isRunning =
-		session.status === "running" || session.status === "awaiting_permission";
+		target.status === "running" || target.status === "awaiting_permission";
 
 	return (
 		<div
@@ -108,8 +138,9 @@ export function SessionTokenBar({
 				flexShrink: 0,
 				display: "flex",
 				alignItems: "center",
+				flexWrap: density === "compact" ? "wrap" : "nowrap",
 				gap: 16,
-				padding: "4px 32px 6px",
+				padding: density === "compact" ? "6px 16px 0" : "4px 32px 6px",
 				fontSize: 11,
 				fontFamily: T.mono,
 				color: T.textMute,
@@ -119,16 +150,19 @@ export function SessionTokenBar({
 		>
 			<div
 				style={{
-					maxWidth: 760,
-					margin: "0 auto",
+					maxWidth: density === "compact" ? undefined : 760,
+					margin: density === "compact" ? 0 : "0 auto",
 					width: "100%",
+					minWidth: 0,
 					display: "flex",
 					alignItems: "center",
 				}}
 			>
-				<span style={{ color: T.textDim }}>{fmtTokens(totalTokens)} tok</span>
+				<span style={{ color: T.textDim, flexShrink: 0 }}>
+					{fmtTokens(totalTokens)} tok
+				</span>
 				<button
-					onClick={() => useModelPickerStore.getState().open(session.id)}
+					onClick={() => useModelPickerStore.getState().open(target.id)}
 					onMouseEnter={() => setModelHover(true)}
 					onMouseLeave={() => setModelHover(false)}
 					style={{
@@ -146,6 +180,10 @@ export function SessionTokenBar({
 						textDecoration: modelHover ? "underline" : "none",
 						textUnderlineOffset: 3,
 						cursor: "pointer",
+						minWidth: 0,
+						overflow: "hidden",
+						textOverflow: "ellipsis",
+						whiteSpace: "nowrap",
 					}}
 				>
 					{modelLabel}
@@ -154,14 +192,21 @@ export function SessionTokenBar({
 			</div>
 			<ModelPickerModal
 				open={pickerOpen}
-				sessionId={session.id}
+				sessionId={target.id}
 				effectiveModel={displayed.model}
 				isRunning={isRunning}
-				onSelect={(value) =>
-					window.claude.setSessionModel(session.id, value)
-				}
-				onSwitchAndResume={(value) =>
-					switchModelAndResume(session.id, value)
+				focusComposerAfterSelect={!onAfterSelect}
+				onSelect={async (value) => {
+					await window.claude.setSessionModel(target.id, value);
+					onAfterSelect?.();
+				}}
+				onSwitchAndResume={
+					onSwitchAndResume
+						? async (value) => {
+							await onSwitchAndResume(value);
+							onAfterSelect?.();
+						}
+						: undefined
 				}
 				onClose={() => useModelPickerStore.getState().close()}
 			/>
