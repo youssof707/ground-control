@@ -2007,6 +2007,65 @@ export class SessionManager {
 	}
 
 	/**
+	 * Copy a plan's markdown into the transcript as an ordinary assistant
+	 * message, so it stays readable in chat history after the plan card is
+	 * dismissed. Driven by PermissionBroker's `onPlanDecision`, which fires on
+	 * all three of the card's buttons.
+	 *
+	 * The plan text otherwise survives only inside the `ExitPlanMode`
+	 * `tool_use` block, where the renderer folds it into a collapsed tool row
+	 * and reveals it as raw JSON — technically present, practically unreadable.
+	 * The duplication is intentional and is the whole point.
+	 *
+	 * Three properties of the synthesised envelope are load-bearing:
+	 *   - No `uuid`/`session_id`: `isForkableAssistant` (renderer) and
+	 *     `resolveForkSource` (above) both require an SDK uuid, so this row is
+	 *     skipped as a fork point rather than producing a fork that can't be
+	 *     branched.
+	 *   - `parent_tool_use_id: null`, not absent: keeps `isSubagentContent`
+	 *     false so it renders through the normal AssistantMessage path, while
+	 *     not claiming human provenance (cf. the discriminator documented in
+	 *     shared/claude-sessions/transcript.ts).
+	 *   - `role: "assistant"`, not "user": `lastUserTurnBlocksFrom` skips
+	 *     non-user rows, so `retryUsageLimit` can never replay a plan as a
+	 *     user turn.
+	 */
+	appendPlanToTranscript(sessionId: string, planText: string) {
+		const message: SessionMessage = {
+			id: randomUUID(),
+			role: "assistant",
+			content: {
+				type: "assistant",
+				parent_tool_use_id: null,
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: planText }],
+				},
+			},
+			ts: Date.now(),
+		};
+
+		// Checked on the id as well as the entry, not just `entry.ephemeral`:
+		// on the Stop path the sidequest's SDK loop may already have exited and
+		// deleted itself from `this.sessions`, and taking the persisted branch
+		// with a sidequest id would drop the message on the floor (both the
+		// store and the renderer no-op on an unknown session).
+		const entry = this.sessions.get(sessionId);
+		if (entry?.ephemeral || isSidequestId(sessionId)) {
+			this.sidequestRuns.get(sessionId)?.messages.push(message);
+			this.send("sidequest:message", { sessionId, message });
+			return;
+		}
+
+		// Unlike pushUserMessage, this one must broadcast: there's no
+		// optimistic renderer echo for it, so without the event it wouldn't
+		// show up until the next hydrate. Same object both ways, so the live
+		// row and the persisted row share an id and don't double up.
+		this.send("session:message", { sessionId, message });
+		void sessionStore.appendMessage(sessionId, message);
+	}
+
+	/**
 	 * Record the current branch as the user's "checkpoint" baseline for this
 	 * session. Called whenever the user actively interacts with the session
 	 * — sending a message, or answering a permission / plan / ask-user

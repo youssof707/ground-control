@@ -27,6 +27,16 @@ export class PermissionBroker {
 		 * red BranchChip on any user interaction (not just sends). Optional
 		 * to keep tests / alternate wirings simple. */
 		private onUserCheckpoint?: (sessionId: string) => void,
+		/** Called when the user answers an ExitPlanMode card — on all three
+		 * buttons (approve, keep planning, stop) — so SessionManager can
+		 * persist the plan text into the transcript. Without this the plan
+		 * only ever lived in the transient card and vanished on click.
+		 *
+		 * Deliberately hung off `handleResponse` rather than the `canUseTool`
+		 * await in SessionManager: `ask()` never rejects (cancelAllForSession
+		 * and the no-window path both *resolve* with a deny), so the awaiting
+		 * side can't tell a real click from a cancellation. This can. */
+		private onPlanDecision?: (sessionId: string, planText: string) => void,
 	) {
 		ipcMain.on("permission:respond", (_e, decision: PermissionDecision) => {
 			this.handleResponse(decision);
@@ -107,6 +117,17 @@ export class PermissionBroker {
 		// answer the prompt on a different branch than their last message.
 		// Fires on both allow and deny — either way they "used" the session.
 		this.onUserCheckpoint?.(entry.request.sessionId);
+		// Copy the plan into the transcript before resolving, so the bubble is
+		// broadcast while the SDK is still blocked — it can't be interleaved
+		// with the tool_result the deny/allow is about to produce.
+		if (entry.request.toolName === "ExitPlanMode") {
+			const plan = (entry.request.input as { plan?: unknown }).plan;
+			// Matches the card's own "(No plan text provided.)" guard: an empty
+			// plan would render as a blank assistant bubble, not nothing.
+			if (typeof plan === "string" && plan.trim().length > 0) {
+				this.onPlanDecision?.(entry.request.sessionId, plan.trim());
+			}
+		}
 		if (d.behavior === "allow") {
 			// ExitPlanMode is the plan-approval gate — it must always require an
 			// explicit click. Refuse to silently always-allow it even if a UI

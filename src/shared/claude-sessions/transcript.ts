@@ -14,6 +14,14 @@
 //   - Top-level SDK messages carry `parent_tool_use_id: null`.
 //   - Subagent traffic carries the spawning tool_use id (a string).
 // So: undefined ⇔ human, null ⇔ top-level SDK, string ⇔ subagent.
+//
+// One locally-synthesised row borrows the `null` case deliberately:
+// SessionManager.appendPlanToTranscript copies an approved/denied plan's
+// markdown into the transcript as an `assistant` message with
+// `parent_tool_use_id: null` and no SDK `uuid`. It isn't SDK traffic, but it
+// is Claude's words, and `null` is the only value that keeps it off both the
+// human and the subagent paths. The missing `uuid` is what keeps it out of
+// fork points (cf. isForkableAssistant).
 
 interface EnvelopeLike {
 	parent_tool_use_id?: unknown;

@@ -79,6 +79,9 @@ export function registerSessionsHandlers(): SessionManager {
 		// Re-anchor the branch baseline when the user answers a permission /
 		// plan / ask-user prompt. Same hook as sending a message.
 		(sessionId) => manager?.snapshotBranchCheckpoint(sessionId),
+		// Keep the plan visible in the chat history after the card is gone.
+		(sessionId, planText) =>
+			manager?.appendPlanToTranscript(sessionId, planText),
 	);
 	manager = new SessionManager(broker);
 
