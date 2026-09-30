@@ -1429,7 +1429,7 @@ export class SessionManager {
 			session.status = next;
 			const d = activity.debug;
 			console.log(
-				`[session ${id}] ${next} (turn=${d.turn} bg=${d.bg} prov=${d.prov})`,
+				`[session ${id}] ${next} (turn=${d.turn} bg=${d.bg} prov=${d.prov} shells=${d.shells})`,
 			);
 			this.send(ch("status"), { sessionId: id, status: next });
 			if (persist) void sessionStore.updateSession(id, { status: next });

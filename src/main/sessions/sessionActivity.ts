@@ -5,6 +5,10 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
  * from a `task_started`, never from a snapshot) may go unheard-from before we
  * presume it dead and stop counting it as work in progress.
  *
+ * Only matters for tasks that pin "running" at all (`taskPinsRunning`) —
+ * background shells are ignored outright, so a never-exiting dev server can't
+ * hold a session on "running" even for the TTL.
+ *
  * Five minutes. It has to clear the longest plausible silence of a live task:
  * background `local_bash` tasks emit nothing at all between start and
  * completion — the captured corpus has a 68 s gap (`bx5nmuif6`) during normal
@@ -55,20 +59,47 @@ export function systemSubtype(msg: SDKMessage): string | null {
  * is load-bearing: a malformed or renamed payload must be *ignored*, never
  * mistaken for "no background tasks are running".
  */
-function backgroundTaskIds(msg: SDKMessage): string[] | null {
+function backgroundTasks(
+	msg: SDKMessage,
+): { id: string; type: string | undefined }[] | null {
 	const tasks = (msg as { tasks?: unknown }).tasks;
 	if (!Array.isArray(tasks)) return null;
-	const ids: string[] = [];
+	const out: { id: string; type: string | undefined }[] = [];
 	for (const t of tasks) {
 		const id = (t as { task_id?: unknown })?.task_id;
-		if (typeof id === "string") ids.push(id);
+		if (typeof id === "string") out.push({ id, type: taskTypeOf(t) });
 	}
-	return ids;
+	return out;
 }
 
 function taskIdOf(msg: SDKMessage): string | null {
 	const id = (msg as { task_id?: unknown }).task_id;
 	return typeof id === "string" ? id : null;
+}
+
+function taskTypeOf(v: unknown): string | undefined {
+	const t = (v as { task_type?: unknown } | null)?.task_type;
+	return typeof t === "string" ? t : undefined;
+}
+
+/**
+ * Does a live background task of this type keep the session "running"?
+ *
+ * Only work whose completion re-enters the model loop counts: subagents
+ * (`local_agent`), workflows, and — conservatively — anything we don't
+ * recognise or whose type is missing. Background *shells* do not. They're
+ * routinely dev servers that never exit (`npm start`, `next start`), and
+ * counting them pinned the session on "running" forever after Claude said
+ * "Done" — prod sessions `35e9fe73` (Fable, `npm start -- --port 3000`) and
+ * `7ae2ba98` (227 s pinned by two `local_bash` servers after `result`).
+ *
+ * A shell the model IS waiting on still works: when it finishes, the CLI
+ * emits `task_notification` → `init` → top-level `assistant`, and both of the
+ * latter re-arm `#turnActive`. The pill just reads idle during the wait.
+ */
+export function taskPinsRunning(type: string | undefined): boolean {
+	if (type === undefined) return true;
+	return !/bash|shell|monitor/i.test(type);
 }
 
 /** The tool_use that spawned a task — our link to its subagent's messages. */
@@ -115,7 +146,9 @@ export interface SessionActivityOptions {
  * Tracks whether a session is doing work.
  *
  * A session is "working" iff EITHER a top-level turn is in flight OR at least
- * one background task is still alive. The second half exists because newer CLI
+ * one background task *that will wake the model* is still alive (see
+ * `taskPinsRunning` — background shells never count, because they're often
+ * dev servers that never exit). The second half exists because newer CLI
  * builds background their subagents, emit a top-level `result` when the *main*
  * turn ends while those subagents keep running, and then re-enter the loop by
  * themselves (no user turn from us) once one finishes.
@@ -157,6 +190,8 @@ export class SessionActivity {
 	#turnActive: boolean;
 	#snapshot = new Set<string>();
 	#provisional = new Map<string, ProvisionalTask>();
+	/** `task_type` per live task id, learned from snapshots and `task_started`. */
+	#taskTypes = new Map<string, string | undefined>();
 	/** True once *we* have asked for work (initial prompt or composer message). */
 	#anyTurnPushed: boolean;
 	#messagesSeen = 0;
@@ -184,17 +219,30 @@ export class SessionActivity {
 	}
 
 	get isActive(): boolean {
-		return (
-			this.#turnActive || this.#snapshot.size > 0 || this.#provisional.size > 0
-		);
+		if (this.#turnActive) return true;
+		for (const id of this.#liveIds()) {
+			if (taskPinsRunning(this.#taskTypes.get(id))) return true;
+		}
+		return false;
 	}
 
-	get debug(): { turn: boolean; bg: number; prov: number } {
+	get debug(): { turn: boolean; bg: number; prov: number; shells: number } {
+		let shells = 0;
+		for (const id of this.#liveIds()) {
+			if (!taskPinsRunning(this.#taskTypes.get(id))) shells++;
+		}
 		return {
 			turn: this.#turnActive,
 			bg: this.#snapshot.size,
 			prov: this.#provisional.size,
+			shells,
 		};
+	}
+
+	/** Union of snapshot and provisional ids (disjoint by construction). */
+	*#liveIds(): Iterable<string> {
+		yield* this.#snapshot;
+		yield* this.#provisional.keys();
 	}
 
 	/** Fold one SDK message into the model, then notify. */
@@ -238,16 +286,29 @@ export class SessionActivity {
 					}
 					break;
 				case "background_tasks_changed": {
-					const ids = backgroundTaskIds(msg);
-					if (ids) {
-						this.#snapshot = new Set(ids);
-						// Promotion, not pruning — see the class docblock.
-						for (const tid of ids) this.#provisional.delete(tid);
+					const tasks = backgroundTasks(msg);
+					if (tasks) {
+						this.#snapshot = new Set(tasks.map((t) => t.id));
+						for (const t of tasks) {
+							// Keep a type learned from `task_started` if the
+							// snapshot entry happens to omit it.
+							if (t.type !== undefined || !this.#taskTypes.has(t.id)) {
+								this.#taskTypes.set(t.id, t.type);
+							}
+							// Promotion, not pruning — see the class docblock.
+							this.#provisional.delete(t.id);
+						}
 					}
 					break;
 				}
 				case "task_started": {
 					const tid = taskIdOf(msg);
+					if (tid) {
+						const type = taskTypeOf(msg);
+						if (type !== undefined || !this.#taskTypes.has(tid)) {
+							this.#taskTypes.set(tid, type);
+						}
+					}
 					// Skip ids the snapshot already owns (the common case for
 					// top-level tasks) so this stays a no-op on builds whose
 					// snapshots are complete.
@@ -273,6 +334,7 @@ export class SessionActivity {
 						// enter either set, close out through here constantly.
 						this.#snapshot.delete(tid);
 						this.#provisional.delete(tid);
+						this.#taskTypes.delete(tid);
 					} else {
 						const entry = this.#provisional.get(tid);
 						if (entry) entry.lastSeen = now;
@@ -301,6 +363,7 @@ export class SessionActivity {
 		this.#turnActive = false;
 		this.#snapshot.clear();
 		this.#provisional.clear();
+		this.#taskTypes.clear();
 		this.#hardStopped = true;
 	}
 
@@ -325,6 +388,7 @@ export class SessionActivity {
 		for (const [tid, entry] of this.#provisional) {
 			if (now - entry.lastSeen >= this.#ttlMs) {
 				this.#provisional.delete(tid);
+				this.#taskTypes.delete(tid);
 				evicted = true;
 			}
 		}

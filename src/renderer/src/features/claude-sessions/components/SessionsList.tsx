@@ -133,6 +133,44 @@ export function SessionsList({
 		});
 	};
 
+	// Sidequest activity, for the collapsed-section status counts only. Both
+	// selectors return a STRING on purpose: `useRowDerived` deliberately
+	// subscribes rows to primitives so streaming sidequest messages don't
+	// re-render the whole sidebar, and subscribing this component to
+	// `s.byParent` would undo exactly that. A joined string compares equal by
+	// value under zustand's default `===`, so appending a message to a
+	// sidequest transcript changes nothing here.
+	const sqRunningKey = useSidequestsStore((s) =>
+		Object.values(s.byParent)
+			.filter((sq) => sq.status === "running" || sq.status === "starting")
+			.map((sq) => sq.parentSessionId)
+			.sort()
+			.join("|"),
+	);
+	const sqIdsKey = useSidequestsStore((s) =>
+		Object.values(s.byParent)
+			.map((sq) => `${sq.parentSessionId}=${sq.sidequestId}`)
+			.sort()
+			.join("|"),
+	);
+	// Parent ids whose sidequest is live (running or still starting up).
+	const sqRunningParents = useMemo(
+		() => new Set(sqRunningKey ? sqRunningKey.split("|") : []),
+		[sqRunningKey],
+	);
+	// Parent ids whose sidequest is blocked on a permission decision.
+	// Sidequest permission requests are keyed by the *sidequest* id, so the
+	// parent's own id can never match them — the pairs in `sqIdsKey` are what
+	// bridges the two id spaces.
+	const sqWaitingParents = useMemo(() => {
+		const out = new Set<string>();
+		for (const pair of sqIdsKey ? sqIdsKey.split("|") : []) {
+			const [parentId, sqId] = pair.split("=");
+			if (queue.some((q) => q.sessionId === sqId)) out.add(parentId);
+		}
+		return out;
+	}, [sqIdsKey, queue]);
+
 	const sortedOrder = useMemo(() => {
 		return [...order].sort((a, b) => {
 			// Archived sessions sink to the bottom regardless of recency, so
@@ -1234,6 +1272,19 @@ export function SessionsList({
 							? renderDraftRow(sidebarRows.length === 0)
 							: null}
 						{sidebarRows.map((row) => {
+							// Collapsed-header status counts. Computed here for
+							// all three section kinds so the rule lives in one
+							// place; O(ids) over a handful of ids, so inline is
+							// cheaper than memoizing per section.
+							const counts = sectionStatusCounts(
+								row.kind === "group"
+									? row.section.ids
+									: row.ids,
+								sessions,
+								queue,
+								sqRunningParents,
+								sqWaitingParents,
+							);
 							if (row.kind === "cwdBucket") {
 								return (
 									<div
@@ -1259,6 +1310,8 @@ export function SessionsList({
 										<CwdHeaderRow
 											cwd={row.cwd}
 											collapsed={row.collapsed}
+											waiting={counts.waiting}
+											running={counts.running}
 											onToggle={() =>
 												toggleCwdCollapsed(row.cwd)
 											}
@@ -1301,6 +1354,8 @@ export function SessionsList({
 											cwd={row.worktree.baseDir}
 											label={row.label}
 											collapsed={row.collapsed}
+											waiting={counts.waiting}
+											running={counts.running}
 											onToggle={() =>
 												toggleCwdCollapsed(
 													`wt:${row.worktree.id}`,
@@ -1334,6 +1389,8 @@ export function SessionsList({
 									ids={ids}
 									sessions={sessions}
 									queue={queue}
+									waiting={counts.waiting}
+									running={counts.running}
 									activeSessionId={activeSessionId}
 									onToggleCollapsed={() =>
 										toggleGroupCollapsed(group)
@@ -1415,6 +1472,44 @@ type SidebarRow =
 		label: string;
 	}
 	| { kind: "group"; section: { group: SessionGroup; ids: string[] } };
+
+/**
+ * Per-section aggregate of the same two statuses `useRowDerived` paints on
+ * each row, for the collapsed-section header badges. Kept in lockstep with
+ * that hook's precedence — waiting beats running, each session counts once —
+ * so a collapsed header can never disagree with the rows it expands into.
+ *
+ * Counts whatever is in `ids`, which means archived members contribute only
+ * when the user has opted into "Show archived sessions" (they're absent from
+ * `visibleOrder` otherwise). That's the right reading here: the badge promises
+ * "this many hidden rows would light up". Deliberately unlike AppNav's global
+ * attention counters, which exclude archived sessions unconditionally.
+ */
+function sectionStatusCounts(
+	ids: string[],
+	sessions: Record<string, ClaudeSessionFull>,
+	queue: PermissionRequest[],
+	sqRunningParents: Set<string>,
+	sqWaitingParents: Set<string>,
+): { waiting: number; running: number } {
+	let waiting = 0;
+	let running = 0;
+	for (const id of ids) {
+		const s = sessions[id];
+		if (!s) continue;
+		// `awaiting_permission` is never a backend status — it's always
+		// derived from the permissions queue, on either thread.
+		if (
+			queue.some((q) => q.sessionId === id) ||
+			sqWaitingParents.has(id)
+		) {
+			waiting++;
+			continue;
+		}
+		if (s.status === "running" || sqRunningParents.has(id)) running++;
+	}
+	return { waiting, running };
+}
 
 /**
  * Shared derivation used by SessionRowSidebar — keeps "unread", "pending",
@@ -1712,6 +1807,8 @@ function GroupSection({
 	ids,
 	sessions,
 	queue,
+	waiting,
+	running,
 	activeSessionId,
 	onToggleCollapsed,
 	onNewSession,
@@ -1727,6 +1824,12 @@ function GroupSection({
 	ids: string[];
 	sessions: Record<string, ClaudeSessionFull>;
 	queue: PermissionRequest[];
+	/** Collapsed-header status counts, forwarded straight to GroupHeaderRow.
+	 * Plain numbers rather than the sidequest lookup sets `sectionStatusCounts`
+	 * needs — this component has no other use for sidequest knowledge, so the
+	 * counting stays in the sidebar's render map alongside the bucket rows. */
+	waiting: number;
+	running: number;
 	activeSessionId?: string;
 	onToggleCollapsed: () => void;
 	/** New Session in this group. The folder is resolved HERE rather than by
@@ -1768,6 +1871,8 @@ function GroupSection({
 		>
 			<GroupHeaderRow
 				group={group}
+				waiting={waiting}
+				running={running}
 				onToggle={onToggleCollapsed}
 				onNewSession={
 					newSessionCwd
@@ -1807,22 +1912,110 @@ function GroupSection({
 }
 
 /**
- * Collapsible section header for a session group. The bordered box lives
- * on the outer `GroupSection`; this component paints the clickable header
- * strip (chevron + colored uppercase name + count + optional aggregate
- * indicators when collapsed).
+ * Status counts for a COLLAPSED section header: how many members are waiting
+ * for input, and how many are running. Only ever rendered while the section is
+ * collapsed — expanded sections already say this per row via `StatusPill`, and
+ * repeating it in the header is pure noise. Both callers gate on their own
+ * collapsed flag; don't "improve" this by showing it always.
+ *
+ * Renders nothing when both counts are zero, so a quiet collapsed section looks
+ * exactly as it did before this existed.
+ *
+ * Geometry is the Inbox badge (`InboxToggle`, AppNav) one step down in scale,
+ * to sit inside a 9px-padded header strip. Colors come from the canonical
+ * status mapping in `STATUS_MAP` (design/Atoms): amber = waiting, green =
+ * running. Digits and color only — no label, and per repo rule no `title`.
  */
+function SectionStatusBadges({
+	waiting,
+	running,
+}: {
+	waiting: number;
+	running: number;
+}) {
+	if (waiting === 0 && running === 0) return null;
+	return (
+		<span
+			style={{
+				// Pushes the pair to the toggle button's right edge. The toggle
+				// is `flex: 1`, so that lands them directly beside the sibling
+				// "+" — which is the whole point of the placement.
+				marginLeft: "auto",
+				display: "inline-flex",
+				alignItems: "center",
+				gap: 5,
+				flexShrink: 0,
+				// The name span ellipsizes rather than shoving these off the
+				// end (it already carries overflow/minWidth for that), but
+				// belt-and-braces against a zero-gap squeeze.
+				paddingLeft: 6,
+			}}
+		>
+			{/* Waiting first — it outranks running in the row precedence too. */}
+			{waiting > 0 ? (
+				<SectionStatusBadge
+					n={waiting}
+					fg={T.warn}
+					bg={T.warnSoft}
+				/>
+			) : null}
+			{running > 0 ? (
+				<SectionStatusBadge n={running} fg={T.ok} bg={T.okSoft} />
+			) : null}
+		</span>
+	);
+}
+
+function SectionStatusBadge({
+	n,
+	fg,
+	bg,
+}: {
+	n: number;
+	fg: string;
+	bg: string;
+}) {
+	return (
+		<span
+			style={{
+				display: "inline-flex",
+				alignItems: "center",
+				justifyContent: "center",
+				minWidth: 16,
+				height: 16,
+				padding: "0 5px",
+				borderRadius: 8,
+				background: bg,
+				color: fg,
+				fontSize: 10,
+				fontWeight: 600,
+				fontFamily: T.mono,
+				letterSpacing: "-0.2px",
+				flexShrink: 0,
+			}}
+		>
+			{n}
+		</span>
+	);
+}
+
 /**
  * Collapsible header strip for a cwd bucket. The recessed dark box lives
  * on the wrapping div in the sidebar's render map (T.bg background +
  * hairline frame); this paints the clickable header inside it — same
  * vocabulary as GroupHeaderRow but neutral (no group color) so it stays
  * subordinate to real groups.
+ *
+ * When collapsed, the strip also carries `SectionStatusBadges` — the waiting /
+ * running counts for the rows it's hiding. Expanded, they're omitted: the
+ * member rows' own `StatusPill`s say it better.
  */
 function CwdHeaderRow({
 	cwd,
 	label,
 	collapsed,
+	waiting,
+	running,
 	onToggle,
 	onNewSession,
 }: {
@@ -1831,6 +2024,10 @@ function CwdHeaderRow({
 	 * bare worktree name) here; cwd buckets omit it and derive from `cwd`. */
 	label?: string;
 	collapsed: boolean;
+	/** Members awaiting a permission decision — shown only while collapsed. */
+	waiting: number;
+	/** Members with a live turn — shown only while collapsed. */
+	running: number;
 	onToggle: () => void;
 	onNewSession: () => void;
 }) {
@@ -1915,6 +2112,16 @@ function CwdHeaderRow({
 				>
 					{label ?? (folderName(cwd) || cwd || "no folder")}
 				</span>
+				{/* Inside the toggle, not a sibling of the "+": a
+				    non-interactive span in a button is valid HTML, and it keeps
+				    the whole strip clickable to expand. A sibling badge would
+				    plant a dead zone right where the user is aiming. */}
+				{collapsed ? (
+					<SectionStatusBadges
+						waiting={waiting}
+						running={running}
+					/>
+				) : null}
 			</button>
 			{/* No "+" for the synthetic "" bucket (sessions with a null cwd):
 			    there is no folder to target. */}
@@ -1969,13 +2176,27 @@ function CwdHeaderRow({
 	);
 }
 
+/**
+ * Collapsible section header for a session group. The bordered box lives on the
+ * outer `GroupSection`; this component paints the clickable header strip:
+ * chevron + colored uppercase name + "+", plus — only while collapsed — the
+ * waiting / running counts for the member rows it's hiding
+ * (`SectionStatusBadges`). Same vocabulary as `CwdHeaderRow`; the one place
+ * group identity shows is the name's color.
+ */
 function GroupHeaderRow({
 	group,
+	waiting,
+	running,
 	onToggle,
 	onNewSession,
 	onRename,
 }: {
 	group: SessionGroup;
+	/** Members awaiting a permission decision — shown only while collapsed. */
+	waiting: number;
+	/** Members with a live turn — shown only while collapsed. */
+	running: number;
 	onToggle: () => void;
 	/** Omitted when no member has a cwd — the header then renders no "+" at
 	 * all rather than a button with nothing to target. */
@@ -2063,9 +2284,12 @@ function GroupHeaderRow({
 							strokeLinejoin="round"
 						/>
 					</svg>
-					{/* Group color lives on the name itself (no separate dot,
-					    no count, no aggregate pills — otherwise identical to
-					    CwdHeaderRow's label). Muted to header weight (mixed
+					{/* Group color lives on the name itself — no separate dot,
+					    and no color on the chevron or the "+" (otherwise
+					    identical to CwdHeaderRow's label). The only other
+					    thing on this strip is the collapsed-only status count
+					    at the far right, which is status-colored, never
+					    group-colored. Muted to header weight (mixed
 					    toward T.textMute, landing near T.textDim) rather than
 					    the raw palette color: a container label should read
 					    quieter than the session titles inside it, and full
@@ -2087,6 +2311,14 @@ function GroupHeaderRow({
 					>
 						{group.name}
 					</span>
+					{/* Inside the toggle, not a sibling of the "+" — see the
+					    matching note in CwdHeaderRow. */}
+					{group.collapsed ? (
+						<SectionStatusBadges
+							waiting={waiting}
+							running={running}
+						/>
+					) : null}
 				</button>
 				{/* No "+" when no member carries a cwd — there'd be no folder
 				    to target. Mirrors CwdHeaderRow's `{cwd ? … : null}`. */}

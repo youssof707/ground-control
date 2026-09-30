@@ -17,7 +17,7 @@ import { shortcutLabel } from "./ShortcutForm";
 import { CreateShortcutModal } from "./CreateShortcutModal";
 import { EditShortcutsModal } from "./EditShortcutsModal";
 
-type Tab = "skills" | "shortcuts";
+type Tab = "shortcuts" | "skills";
 
 type Row = {
 	key: string;
@@ -84,18 +84,18 @@ export function ShortcutsMenuButton({
 }
 
 /**
- * The two-tab Skills/Shortcuts picker itself, extracted out of
+ * The two-tab Shortcuts/Skills picker itself, extracted out of
  * `ShortcutsMenuButton` so the global Cmd+K palette can drive one shared
  * instance (`CommandPaletteModal`) without duplicating this UI:
  *
- * - "Skills" (default): the user's personal global Claude skills from
+ * - "Shortcuts" (default): the saved reusable prompts, with the create/edit
+ *   entry points living inside the modal. Create/Edit close this modal
+ *   before opening theirs (no stacked backdrops or dueling Escape handlers).
+ * - "Skills": the user's personal global Claude skills from
  *   `~/.claude/skills/` — clicking one inserts its `/name` slash command.
  *   Every open kicks off an async re-read of the directory; the in-memory
  *   list renders immediately with a spinner beside the title while the
  *   refresh is in flight (never block on disk).
- * - "Shortcuts": the saved reusable prompts, with the create/edit entry
- *   points living inside the modal. Create/Edit close this modal before
- *   opening theirs (no stacked backdrops or dueling Escape handlers).
  *
  * Rows are single-line labels only. Skill descriptions and shortcut prompt
  * previews are deliberately not shown: they're long enough that they always
@@ -116,7 +116,7 @@ export function ShortcutsPickerModal({
 }) {
 	const closeMenu = useCallback(() => onOpenChange(false), [onOpenChange]);
 	const backdropProps = useBackdropDismiss(closeMenu);
-	const [tab, setTab] = useState<Tab>("skills");
+	const [tab, setTab] = useState<Tab>("shortcuts");
 	const [refreshing, setRefreshing] = useState(false);
 	const [creating, setCreating] = useState(false);
 	const [editing, setEditing] = useState(false);
@@ -172,7 +172,7 @@ export function ShortcutsPickerModal({
 	// Reset to the default tab (and a clean search) on every open.
 	useEffect(() => {
 		if (!open) return;
-		setTab("skills");
+		setTab("shortcuts");
 		setQuery("");
 	}, [open]);
 
@@ -251,7 +251,7 @@ export function ShortcutsPickerModal({
 									className="modal-title"
 									style={{ margin: 0 }}
 								>
-									Skills & shortcuts
+									Shortcuts & skills
 								</h2>
 								{refreshing ? (
 									<span className="asyncy-btn-spinner" aria-hidden />
@@ -430,14 +430,14 @@ function SegmentedToggle({
 			}}
 		>
 			<SegmentedItem
-				label="Skills"
-				active={value === "skills"}
-				onClick={() => onChange("skills")}
-			/>
-			<SegmentedItem
 				label="Shortcuts"
 				active={value === "shortcuts"}
 				onClick={() => onChange("shortcuts")}
+			/>
+			<SegmentedItem
+				label="Skills"
+				active={value === "skills"}
+				onClick={() => onChange("skills")}
 			/>
 		</div>
 	);

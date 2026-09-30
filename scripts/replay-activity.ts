@@ -124,7 +124,7 @@ function currentReplay(messages: Msg[]): string[] {
 			const d = activity.debug;
 			const rel = ((now - t0) / 1000).toFixed(1);
 			flips.push(
-				`${rel.padStart(7)}s ${next} (turn=${d.turn} bg=${d.bg} prov=${d.prov})`,
+				`${rel.padStart(7)}s ${next} (turn=${d.turn} bg=${d.bg} prov=${d.prov} shells=${d.shells})`,
 			);
 		},
 	});
