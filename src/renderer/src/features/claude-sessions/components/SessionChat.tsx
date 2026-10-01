@@ -14,6 +14,7 @@ import { switchModelAndResume } from "../lib/modelSwitchActions";
 import { useComposerResize } from "../hooks/useComposerResize";
 import { PermissionCard } from "./PermissionCard";
 import { ActivityChip } from "./ActivityChip";
+import { BackgroundTasksChip } from "./BackgroundTasksChip";
 import { MessageComposer } from "./MessageComposer";
 import { MessageView } from "./MessageView";
 import { SessionTokenBar } from "./SessionTokenBar";
@@ -524,8 +525,17 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 								margin: "0 auto",
 								display: "flex",
 								justifyContent: "flex-end",
+								gap: 8,
 							}}
 						>
+							{/* Rendered whenever the session is open, not just while
+							    "running": background dev servers outliving the turn
+							    is the whole point of this chip. */}
+							<div style={{ pointerEvents: "auto" }}>
+								{isOpen ? (
+									<BackgroundTasksChip sessionId={sessionId} />
+								) : null}
+							</div>
 							<div style={{ pointerEvents: "auto" }}>
 								{isOpen ? (
 									<ActivityChip

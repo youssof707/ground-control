@@ -1,4 +1,5 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { LiveBackgroundTask } from "../../shared/claude-sessions/types";
 
 /**
  * How long a *provisional* background task (one we only ever learned about
@@ -59,15 +60,23 @@ export function systemSubtype(msg: SDKMessage): string | null {
  * is load-bearing: a malformed or renamed payload must be *ignored*, never
  * mistaken for "no background tasks are running".
  */
-function backgroundTasks(
-	msg: SDKMessage,
-): { id: string; type: string | undefined }[] | null {
+function backgroundTasks(msg: SDKMessage): {
+	id: string;
+	type: string | undefined;
+	description: string | undefined;
+}[] | null {
 	const tasks = (msg as { tasks?: unknown }).tasks;
 	if (!Array.isArray(tasks)) return null;
-	const out: { id: string; type: string | undefined }[] = [];
+	const out: {
+		id: string;
+		type: string | undefined;
+		description: string | undefined;
+	}[] = [];
 	for (const t of tasks) {
 		const id = (t as { task_id?: unknown })?.task_id;
-		if (typeof id === "string") out.push({ id, type: taskTypeOf(t) });
+		if (typeof id === "string") {
+			out.push({ id, type: taskTypeOf(t), description: descriptionOf(t) });
+		}
 	}
 	return out;
 }
@@ -80,6 +89,11 @@ function taskIdOf(msg: SDKMessage): string | null {
 function taskTypeOf(v: unknown): string | undefined {
 	const t = (v as { task_type?: unknown } | null)?.task_type;
 	return typeof t === "string" ? t : undefined;
+}
+
+function descriptionOf(v: unknown): string | undefined {
+	const d = (v as { description?: unknown } | null)?.description;
+	return typeof d === "string" && d.length > 0 ? d : undefined;
 }
 
 /**
@@ -192,6 +206,14 @@ export class SessionActivity {
 	#provisional = new Map<string, ProvisionalTask>();
 	/** `task_type` per live task id, learned from snapshots and `task_started`. */
 	#taskTypes = new Map<string, string | undefined>();
+	/**
+	 * Display metadata per live task id, for `liveTasks` (the renderer's task
+	 * list). Grown and shrunk in lockstep with `#taskTypes`: entries die on a
+	 * terminal event, the TTL sweep, and `hardStop()`. `startedAt` is when WE
+	 * first saw the task — the stream carries no start time — so elapsed
+	 * times undercount by at most one broadcast hop, which is fine for a UI.
+	 */
+	#taskMeta = new Map<string, { description: string; startedAt: number }>();
 	/** True once *we* have asked for work (initial prompt or composer message). */
 	#anyTurnPushed: boolean;
 	#messagesSeen = 0;
@@ -245,6 +267,37 @@ export class SessionActivity {
 		yield* this.#provisional.keys();
 	}
 
+	/**
+	 * The live background tasks, for display. Built off `#liveIds()`, so the
+	 * list the renderer shows is by construction the same set that drives
+	 * running/idle — there is no second liveness model to drift.
+	 */
+	get liveTasks(): LiveBackgroundTask[] {
+		const out: LiveBackgroundTask[] = [];
+		for (const id of this.#liveIds()) {
+			const meta = this.#taskMeta.get(id);
+			out.push({
+				id,
+				type: this.#taskTypes.get(id),
+				description: meta?.description ?? "",
+				startedAt: meta?.startedAt ?? 0,
+			});
+		}
+		out.sort((a, b) => a.startedAt - b.startedAt);
+		return out;
+	}
+
+	/** Record/refresh display metadata for a task id. */
+	#noteMeta(id: string, description: string | undefined, now: number): void {
+		const existing = this.#taskMeta.get(id);
+		if (existing) {
+			// Keep the original startedAt; only a real new label overwrites.
+			if (description !== undefined) existing.description = description;
+		} else {
+			this.#taskMeta.set(id, { description: description ?? "", startedAt: now });
+		}
+	}
+
 	/** Fold one SDK message into the model, then notify. */
 	apply(msg: SDKMessage): void {
 		this.#messagesSeen++;
@@ -295,8 +348,20 @@ export class SessionActivity {
 							if (t.type !== undefined || !this.#taskTypes.has(t.id)) {
 								this.#taskTypes.set(t.id, t.type);
 							}
+							this.#noteMeta(t.id, t.description, now);
 							// Promotion, not pruning — see the class docblock.
 							this.#provisional.delete(t.id);
+						}
+						// A snapshot-owned id the new snapshot no longer names
+						// is gone (top-level tasks are wholly snapshot-governed),
+						// and its closing event may never come — drop its
+						// type/meta so neither map grows for the session's
+						// lifetime. Provisional ids keep theirs.
+						for (const tid of this.#taskTypes.keys()) {
+							if (!this.#snapshot.has(tid) && !this.#provisional.has(tid)) {
+								this.#taskTypes.delete(tid);
+								this.#taskMeta.delete(tid);
+							}
 						}
 					}
 					break;
@@ -308,6 +373,7 @@ export class SessionActivity {
 						if (type !== undefined || !this.#taskTypes.has(tid)) {
 							this.#taskTypes.set(tid, type);
 						}
+						this.#noteMeta(tid, descriptionOf(msg), now);
 					}
 					// Skip ids the snapshot already owns (the common case for
 					// top-level tasks) so this stays a no-op on builds whose
@@ -335,9 +401,17 @@ export class SessionActivity {
 						this.#snapshot.delete(tid);
 						this.#provisional.delete(tid);
 						this.#taskTypes.delete(tid);
+						this.#taskMeta.delete(tid);
 					} else {
 						const entry = this.#provisional.get(tid);
 						if (entry) entry.lastSeen = now;
+						// A non-terminal `task_updated` can rename the task
+						// (`patch.description`) — keep the label current.
+						const patch = (msg as { patch?: unknown }).patch;
+						const desc = descriptionOf(patch);
+						if (desc !== undefined && this.#taskMeta.has(tid)) {
+							this.#noteMeta(tid, desc, now);
+						}
 					}
 					break;
 				}
@@ -364,6 +438,7 @@ export class SessionActivity {
 		this.#snapshot.clear();
 		this.#provisional.clear();
 		this.#taskTypes.clear();
+		this.#taskMeta.clear();
 		this.#hardStopped = true;
 	}
 
@@ -389,6 +464,7 @@ export class SessionActivity {
 			if (now - entry.lastSeen >= this.#ttlMs) {
 				this.#provisional.delete(tid);
 				this.#taskTypes.delete(tid);
+				this.#taskMeta.delete(tid);
 				evicted = true;
 			}
 		}

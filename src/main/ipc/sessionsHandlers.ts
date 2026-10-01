@@ -159,6 +159,14 @@ export function registerSessionsHandlers(): SessionManager {
 	ipcMain.handle("session:interrupt", (_e, sessionId: string) =>
 		manager.interrupt(sessionId),
 	);
+	ipcMain.handle(
+		"session:stopTask",
+		(_e, payload: { sessionId: string; taskId: string }) =>
+			manager.stopBackgroundTask(payload.sessionId, payload.taskId),
+	);
+	ipcMain.handle("session:listTasks", (_e, sessionId: string) =>
+		manager.listBackgroundTasks(sessionId),
+	);
 	ipcMain.handle("session:resume", (_e, sessionId: string) =>
 		manager.resume(sessionId),
 	);

@@ -27,6 +27,10 @@ const claude = {
 		ipcRenderer.invoke("session:finish", sessionId),
 	interruptSession: (sessionId: string) =>
 		ipcRenderer.invoke("session:interrupt", sessionId),
+	stopTask: (sessionId: string, taskId: string) =>
+		ipcRenderer.invoke("session:stopTask", { sessionId, taskId }),
+	listTasks: (sessionId: string) =>
+		ipcRenderer.invoke("session:listTasks", sessionId),
 	resumeSession: (sessionId: string) =>
 		ipcRenderer.invoke("session:resume", sessionId),
 	retryUsageLimit: (sessionId: string) =>

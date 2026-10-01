@@ -1,4 +1,5 @@
 import { useInterruptStore } from "../stores/useInterruptStore";
+import { useLiveTasksStore } from "../stores/useLiveTasksStore";
 import { useQueuedMessagesStore } from "../stores/useQueuedMessagesStore";
 
 /**
@@ -45,6 +46,32 @@ export async function stopSession(sessionId: string): Promise<void> {
  * `useInterruptStore` is keyed by plain id string, so an ephemeral sidequest
  * id shares the guard (and the chip's "stopping…" state) with no store row.
  */
+/**
+ * Kill ONE of the CLI's background tasks (dev server, background shell,
+ * subagent) without interrupting the session — the turn, if any, keeps
+ * running. No queued-message `hold()` for the same reason: this is not an
+ * idle edge, so the flusher has nothing to misread.
+ *
+ * The task row is NOT removed optimistically. Main relays the kill to the
+ * CLI, the CLI confirms with `task_notification{stopped}`, and that flows
+ * back as a `session:tasks`/`sidequest:tasks` broadcast — the round-trip is
+ * the source of truth, and the `stopping` flag covers it with a spinner.
+ * Works for sessions and sidequests alike (the id routes in main).
+ */
+export async function stopBackgroundTask(
+	sessionId: string,
+	taskId: string,
+): Promise<void> {
+	const { stopping, beginStop, endStop } = useLiveTasksStore.getState();
+	if (stopping[taskId]) return;
+	beginStop(taskId);
+	try {
+		await window.claude.stopTask(sessionId, taskId);
+	} finally {
+		endStop(taskId);
+	}
+}
+
 export async function stopSidequest(sidequestId: string): Promise<void> {
 	const { interrupting, begin, end } = useInterruptStore.getState();
 	if (interrupting[sidequestId]) return;

@@ -1,11 +1,13 @@
 import { useEffect } from "react";
 import type {
 	ClaudeSession,
+	LiveBackgroundTask,
 	PermissionRequest,
 	SessionMessage,
 	SessionMode,
 	SessionStatus,
 } from "@shared/claude-sessions/types";
+import { useLiveTasksStore } from "../stores/useLiveTasksStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useReadStore } from "../stores/useReadStore";
@@ -57,6 +59,23 @@ export function useSessionsBootstrap() {
 			const sessions = await window.claude.listSessions();
 			if (my !== seq.sessions) return;
 			hydrate(sessions);
+			// Re-prime the live background-task chip. The `session:tasks`
+			// broadcasts are live-only (nothing persisted), so a window
+			// opened or reloaded mid-session has missed every one of them —
+			// without this a dev server Claude started before the reload
+			// would be invisible again. Only open sessions can have a live
+			// SDK loop, hence tasks.
+			for (const s of sessions) {
+				if (s.status !== "running" && s.status !== "idle") continue;
+				void window.claude
+					.listTasks(s.id)
+					.then((tasks) =>
+						useLiveTasksStore.getState().set(s.id, tasks),
+					)
+					.catch((err) =>
+						console.error("[ccw] listTasks refetch failed", err),
+					);
+			}
 		}
 
 		async function refetchReadState(): Promise<void> {
@@ -180,6 +199,13 @@ export function useSessionsBootstrap() {
 				};
 				setStatus(sessionId, "errored");
 			}),
+			window.claude.on("session:tasks", (p) => {
+				const { sessionId, tasks } = p as {
+					sessionId: string;
+					tasks: LiveBackgroundTask[];
+				};
+				useLiveTasksStore.getState().set(sessionId, tasks);
+			}),
 			window.claude.on("session:cancelled", (p) => {
 				const { sessionId } = p as { sessionId: string };
 				setStatus(sessionId, "cancelled");
@@ -236,6 +262,13 @@ export function useSessionsBootstrap() {
 					status: SessionStatus;
 				};
 				useSidequestsStore.getState().setStatus(sessionId, status);
+			}),
+			window.claude.on("sidequest:tasks", (p) => {
+				const { sessionId, tasks } = p as {
+					sessionId: string;
+					tasks: LiveBackgroundTask[];
+				};
+				useLiveTasksStore.getState().set(sessionId, tasks);
 			}),
 			window.claude.on("sidequest:done", (p) => {
 				const { sessionId } = p as { sessionId: string };

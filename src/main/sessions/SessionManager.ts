@@ -156,6 +156,7 @@ import {
 	parseModelIdentity,
 } from "../../shared/claude-sessions/sessionModel";
 import { isSidequestId } from "../../shared/claude-sessions/sidequest";
+import type { LiveBackgroundTask } from "../../shared/claude-sessions/types";
 import { PermissionBroker } from "./PermissionBroker";
 import {
 	getCurrentBranch,
@@ -223,6 +224,10 @@ interface RunningEntry {
 	 * started, i.e. the one a usage-limit cutoff just killed. `null` before
 	 * the first turn is handed off. */
 	getLastTurnBlocks: () => UserContentBlock[] | null;
+	/** Live CLI background tasks (dev servers, subagents) — reads straight
+	 * off the loop's `SessionActivity`, same closure pattern as
+	 * `getLastTurnBlocks`. Backs `listBackgroundTasks` for window reloads. */
+	getLiveTasks: () => LiveBackgroundTask[];
 }
 
 function roleFromSdkMessage(
@@ -1393,7 +1398,10 @@ export class SessionManager {
 			// when the session was created with a prompt, and that turn is
 			// pushed straight into `turns` rather than via pushTurnWithStatus.
 			initiallyActive: cfg.initialTurns.length > 0,
-			onChange: () => syncStatus(),
+			onChange: () => {
+				syncStatus();
+				syncTasks();
+			},
 		});
 
 		// The single writer of session.status for the lifetime of this loop.
@@ -1435,10 +1443,26 @@ export class SessionManager {
 			if (persist) void sessionStore.updateSession(id, { status: next });
 		};
 
+		// The single writer of the `tasks` broadcast, dedupe at the caller —
+		// same convention as `syncStatus` above. Feeds the renderer's
+		// background-task chip (`useLiveTasksStore`). Live-only state: never
+		// persisted, so a reloaded window re-primes via `session:listTasks`.
+		let lastTasksJson = "[]";
+		const syncTasks = () => {
+			const tasks = activity.liveTasks;
+			const json = JSON.stringify(tasks);
+			if (json === lastTasksJson) return;
+			lastTasksJson = json;
+			this.send(ch("tasks"), { sessionId: id, tasks });
+		};
+
 		/** Stays async so `interrupt()` and `RunningEntry` are unchanged. */
 		const setIdle = async () => {
 			activity.hardStop();
 			syncStatus();
+			// hardStop cleared the task sets; tell the chip so it disappears
+			// with the same interrupt that killed the tasks.
+			syncTasks();
 		};
 
 		const pushTurnWithStatus = (blocks: UserContentBlock[]) => {
@@ -1509,6 +1533,7 @@ export class SessionManager {
 			// `userStream` last handed to the SDK, i.e. exactly the turn that
 			// got cut off. See `lastTurnBlocks` above.
 			getLastTurnBlocks: () => lastTurnBlocks,
+			getLiveTasks: () => activity.liveTasks,
 		});
 		this.send(
 			ch("started"),
@@ -1933,6 +1958,13 @@ export class SessionManager {
 			}
 		} finally {
 			if (sweepTimer) clearInterval(sweepTimer);
+			// The SDK loop is over — whatever the CLI had running died with
+			// it. Clear the renderer's task chip; `send` (not `syncTasks`)
+			// because the activity model may still hold ids the CLI never
+			// closed out.
+			if (lastTasksJson !== "[]") {
+				this.send(ch("tasks"), { sessionId: id, tasks: [] });
+			}
 			state.finished = true;
 			state.waitForTurn?.();
 			this.sessions.delete(id);
@@ -2310,6 +2342,33 @@ export class SessionManager {
 			console.error("[ccw] interrupt failed:", err);
 		}
 		await entry.setIdle();
+	}
+
+	/**
+	 * Kill ONE of the CLI's background tasks (a dev server, a background
+	 * shell, a subagent) without touching the rest of the session. The CLI
+	 * answers with `task_notification{stopped}`, which flows through
+	 * `SessionActivity` and the `tasks` broadcast — so the row disappears
+	 * from the renderer only once the kill actually happened. No `setIdle`:
+	 * this is not an interrupt.
+	 */
+	async stopBackgroundTask(sessionId: string, taskId: string): Promise<void> {
+		const entry = this.sessions.get(sessionId);
+		if (!entry) return;
+		try {
+			await entry.queryRef.current?.stopTask(taskId);
+		} catch (err) {
+			console.error("[ccw] stopTask failed:", err);
+		}
+	}
+
+	/**
+	 * Snapshot of a session's live background tasks. Backs the renderer's
+	 * bootstrap re-prime: the `tasks` broadcasts are live-only, so a window
+	 * opened or reloaded mid-session has missed them all.
+	 */
+	listBackgroundTasks(sessionId: string): LiveBackgroundTask[] {
+		return this.sessions.get(sessionId)?.getLiveTasks() ?? [];
 	}
 
 	cancel(sessionId: string) {

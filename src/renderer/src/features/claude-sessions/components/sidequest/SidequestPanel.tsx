@@ -14,6 +14,7 @@ import { stopSidequest } from "../../lib/sessionControlActions";
 import { useComposerResize } from "../../hooks/useComposerResize";
 import { MessageView } from "../MessageView";
 import { ActivityChip } from "../ActivityChip";
+import { BackgroundTasksChip } from "../BackgroundTasksChip";
 import { ToolRunGroup } from "../ToolRunGroup";
 import { PermissionCard } from "../PermissionCard";
 import { ComposerDivider } from "../ComposerDivider";
@@ -424,7 +425,7 @@ export function SidequestPanel({
 			    `createdAt` until the first message lands. Hidden while a
 			    permission card is up (the chip nulls itself on `hasPending`),
 			    matching SessionChat. */}
-				{sq && (sq.status === "running" || sq.status === "starting") ? (
+				{sq ? (
 					<div
 						style={{
 							position: "absolute",
@@ -434,27 +435,36 @@ export function SidequestPanel({
 							padding: "0 16px 4px",
 							display: "flex",
 							justifyContent: "flex-end",
+							gap: 8,
 							pointerEvents: "none",
 						}}
 					>
+						{/* Not gated on status: a background dev server
+						    outliving the turn is exactly what this chip
+						    exists to show. */}
 						<div style={{ pointerEvents: "auto" }}>
-							<ActivityChip
-								session={{
-									messages: sq.messages,
-									createdAt: sq.createdAt,
-									status: sq.status,
-								}}
-								hasPending={pending.length > 0}
-								// "starting" deliberately gets no "×": there's no live
-								// query to interrupt until the fork lands.
-								onStop={
-									sq.status === "running"
-										? () => void stopSidequest(sq.sidequestId)
-										: undefined
-								}
-								interrupting={interrupting}
-							/>
+							<BackgroundTasksChip sessionId={sq.sidequestId} />
 						</div>
+						{sq.status === "running" || sq.status === "starting" ? (
+							<div style={{ pointerEvents: "auto" }}>
+								<ActivityChip
+									session={{
+										messages: sq.messages,
+										createdAt: sq.createdAt,
+										status: sq.status,
+									}}
+									hasPending={pending.length > 0}
+									// "starting" deliberately gets no "×": there's no live
+									// query to interrupt until the fork lands.
+									onStop={
+										sq.status === "running"
+											? () => void stopSidequest(sq.sidequestId)
+											: undefined
+									}
+									interrupting={interrupting}
+								/>
+							</div>
+						) : null}
 					</div>
 				) : null}
 			</div>

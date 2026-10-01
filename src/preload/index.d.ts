@@ -8,6 +8,7 @@ import type {
 	UserTurn,
 } from "../shared/schemas/claude_session";
 import type { DeletedSessionSnapshot } from "../shared/claude-sessions/undo";
+import type { LiveBackgroundTask } from "../shared/claude-sessions/types";
 import type { ReadStateFile } from "../shared/schemas/read_state";
 import type { AppSettingsFile } from "../shared/schemas/app_settings";
 import type { Note } from "../shared/schemas/session_notes";
@@ -44,6 +45,8 @@ declare global {
 			sendUserMessage: (turn: UserTurn) => Promise<void>;
 			finishSession: (sessionId: string) => Promise<void>;
 			interruptSession: (sessionId: string) => Promise<void>;
+			stopTask: (sessionId: string, taskId: string) => Promise<void>;
+			listTasks: (sessionId: string) => Promise<LiveBackgroundTask[]>;
 			resumeSession: (sessionId: string) => Promise<void>;
 			retryUsageLimit: (sessionId: string) => Promise<void>;
 			refreshBranch: (sessionId: string) => Promise<void>;

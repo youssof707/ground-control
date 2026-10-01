@@ -13,6 +13,8 @@ import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { useSessionGroupsStore } from "../stores/useSessionGroupsStore";
 import { useSidequestsStore } from "../stores/useSidequestsStore";
 import { pushUndo, useUndoStore } from "../stores/useUndoStore";
+import { useLiveTasksStore } from "../stores/useLiveTasksStore";
+import { BackgroundTasksPill } from "./BackgroundTasksChip";
 import { ConfirmModal } from "../../../components/ConfirmModal";
 import { RecentlyDeletedModal } from "./RecentlyDeletedModal";
 import { runBackgroundTask } from "../../background-tasks/stores/useBackgroundTasksStore";
@@ -1597,6 +1599,12 @@ function SessionRowSidebar({
 	);
 	const markUnread = useReadStore((s) => s.markUnread);
 	const archived = session.archivedAt != null;
+	// Live CLI background tasks (dev servers, background shells). Primitive
+	// selector so a row re-renders only when the COUNT moves — these rows sit
+	// on the streaming path. Drives the "idle" swap in the chips row below.
+	const bgTaskCount = useLiveTasksStore(
+		(s) => s.tasks[session.id]?.length ?? 0,
+	);
 	// One-shot accent wash right after this row was restored by undo. The row
 	// returns to its original recency slot, which in a long sidebar is easily
 	// off-screen or lost among neighbours — navigation proves the restore
@@ -1733,38 +1741,47 @@ function SessionRowSidebar({
 							minWidth: 0,
 						}}
 					>
-						{/* `status` folds in sidequest activity (running / waiting)
-						    on top of the session's own state — see useRowDerived. */}
-						<StatusPill
-							status={status}
-							mode={session.mode}
-							pendingToolName={pending[0]?.toolName}
-							onClick={
-								status === "usage_limit"
-									? (e) => {
+						{/* An idle session with a dev server still alive inside
+						    it is the blind spot the running/idle split created,
+						    and "idle" actively hides it — so the task pill
+						    REPLACES the idle pill. Every other status (running,
+						    waiting, errored…) outranks it and stays put. */}
+						{status === "idle" && bgTaskCount > 0 ? (
+							<BackgroundTasksPill sessionId={session.id} />
+						) : (
+						/* `status` folds in sidequest activity (running / waiting)
+						   on top of the session's own state — see useRowDerived. */
+							<StatusPill
+								status={status}
+								mode={session.mode}
+								pendingToolName={pending[0]?.toolName}
+								onClick={
+									status === "usage_limit"
+										? (e) => {
 										// The row is wrapped in <Link> — same
 										// swallow-propagation pattern as
 										// RowMenuButton, so retrying doesn't
 										// also navigate.
-										e.preventDefault();
-										e.stopPropagation();
-										void window.claude
-											.retryUsageLimit(session.id)
-											.catch((err) => {
+											e.preventDefault();
+											e.stopPropagation();
+											void window.claude
+												.retryUsageLimit(session.id)
+												.catch((err) => {
 												// Rare (e.g. no prior turn to
 												// replay) — the composer is
 												// always a working fallback, so
 												// this stays silent rather than
 												// growing a new toast surface.
-												console.error(
-													"[ccw] retryUsageLimit failed:",
-													err,
-												);
-											});
-									}
-									: undefined
-							}
-						/>
+													console.error(
+														"[ccw] retryUsageLimit failed:",
+														err,
+													);
+												});
+										}
+										: undefined
+								}
+							/>
+						)}
 						{session.branch ? (
 							<BranchChipWithDelta
 								branch={session.branch}
