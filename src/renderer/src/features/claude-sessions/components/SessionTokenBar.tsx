@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { SessionMessage, SessionStatus } from "@shared/schemas/claude_session";
+import type { SessionStatus } from "@shared/schemas/claude_session";
 import { T } from "../../../design/tokens";
 import {
 	deriveDisplayedModel,
@@ -9,38 +9,12 @@ import {
 import { useModelPickerStore } from "../stores/useModelPickerStore";
 import { ModelPickerModal } from "./ModelPickerModal";
 
-// ─── Shapes pulled from the Claude Agent SDK message stream ──────────────────
-
-interface ResultUsage {
-	input_tokens?: number;
-	output_tokens?: number;
-	cache_read_input_tokens?: number;
-	cache_creation_input_tokens?: number;
-}
-
-interface ResultContent {
-	type: "result";
-	usage?: ResultUsage;
-}
-
-function isResult(
-	m: SessionMessage,
-): m is SessionMessage & { content: ResultContent } {
-	if (m.role !== "result") return false;
-	const c = m.content;
-	return (
-		typeof c === "object" &&
-		c !== null &&
-		(c as { type?: unknown }).type === "result"
-	);
-}
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function fmtTokens(n: number): string {
 	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-	if (n >= 10_000) return `${Math.round(n / 1_000)}k`;
-	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+	if (n >= 10_000) return `${Math.round(n / 1_000)}K`;
+	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
 	return String(n);
 }
 
@@ -58,6 +32,11 @@ export interface TokenBarTarget extends ModelDerivable {
 	/** Sidequests add a "starting" status with no session-store equivalent —
 	 * treated the same as any other non-running status here. */
 	status: SessionStatus | "starting";
+	/** Tokens currently in the context window — the exact `/context` figure
+	 * captured by `SessionManager.runLoop` (`ClaudeSession.contextTokens`;
+	 * `SidequestState.contextTokens` for forks). Undefined until the first
+	 * capture, in which case the count is simply not rendered. */
+	contextTokens?: number;
 }
 
 type Density = "full" | "compact";
@@ -82,26 +61,6 @@ export function SessionTokenBar({
 	onSwitchAndResume?: (value: string | undefined) => Promise<void> | void;
 	onAfterSelect?: () => void;
 }) {
-	const totalTokens = useMemo(() => {
-		// Per-turn `result` messages from the SDK report usage for that turn
-		// only (verified empirically against persisted sessions), so we sum
-		// them to get the session-wide total.
-		let totalIn = 0;
-		let totalOut = 0;
-		let totalCacheRead = 0;
-		let totalCacheCreation = 0;
-		for (const m of target.messages) {
-			if (!isResult(m)) continue;
-			const u = m.content.usage;
-			if (!u) continue;
-			totalIn += u.input_tokens ?? 0;
-			totalOut += u.output_tokens ?? 0;
-			totalCacheRead += u.cache_read_input_tokens ?? 0;
-			totalCacheCreation += u.cache_creation_input_tokens ?? 0;
-		}
-		return totalIn + totalOut + totalCacheRead + totalCacheCreation;
-	}, [target.messages]);
-
 	// Stream-derived model label — reflects the model actually producing
 	// responses (self-corrects on fallback flips). While a switch awaits its
 	// first response, shows the requested model dimmed/italic ("pending").
@@ -158,15 +117,11 @@ export function SessionTokenBar({
 					alignItems: "center",
 				}}
 			>
-				<span style={{ color: T.textDim, flexShrink: 0 }}>
-					{fmtTokens(totalTokens)} tok
-				</span>
 				<button
 					onClick={() => useModelPickerStore.getState().open(target.id)}
 					onMouseEnter={() => setModelHover(true)}
 					onMouseLeave={() => setModelHover(false)}
 					style={{
-						marginLeft: 12,
 						padding: 0,
 						border: "none",
 						background: "none",
@@ -189,6 +144,24 @@ export function SessionTokenBar({
 					{modelLabel}
 					{displayed.pending ? "…" : ""}
 				</button>
+				{target.contextTokens != null && (
+					// Pinned to the right edge (lining up with the composer box's
+					// right border below) instead of trailing the model label —
+					// two mono strings 12px apart read as one run-on line.
+					<span
+						style={{
+							marginLeft: "auto",
+							paddingLeft: 16,
+							flexShrink: 0,
+							color: T.textMute,
+						}}
+					>
+						Context:{" "}
+						<span style={{ color: T.textDim }}>
+							{fmtTokens(target.contextTokens)} tok
+						</span>
+					</span>
+				)}
 			</div>
 			<ModelPickerModal
 				open={pickerOpen}

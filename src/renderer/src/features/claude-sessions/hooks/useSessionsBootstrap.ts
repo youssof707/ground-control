@@ -259,6 +259,7 @@ export function useSessionsBootstrap() {
 					mode?: SessionMode;
 					model?: string;
 					modelChangedAt?: number;
+					contextTokens?: number;
 				};
 				useSidequestsStore.getState().patch(sessionId, fields);
 			}),

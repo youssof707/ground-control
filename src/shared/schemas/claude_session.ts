@@ -178,6 +178,14 @@ export const ClaudeSessionSchema = z.object({
 	 * model as pending) from "SDK answered with a different model after the
 	 * switch" (label trusts the stream — e.g. a fallback flip). */
 	modelChangedAt: z.number().optional(),
+	/** Tokens currently in the SDK session's context window — the CLI's exact
+	 * `/context` figure (`Query.getContextUsage().totalTokens`). Captured in
+	 * `SessionManager.runLoop` on init and after each turn's `result`, so it
+	 * reflects what the *next* turn actually starts from (subagent transcripts
+	 * never enter the main context and are excluded by construction). Unset
+	 * until the first successful capture: fresh sessions, fresh forks, and
+	 * rows persisted before this field existed. */
+	contextTokens: z.number().optional(),
 	/** Sidebar session group the row is filed under. Mutable (unlike
 	 * `worktreeId`): set/cleared via `groups:setSessionGroup`. When the
 	 * last member leaves a group (removed or deleted), main auto-deletes

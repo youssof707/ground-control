@@ -51,6 +51,11 @@ export interface SidequestState {
 	model?: string;
 	/** When the override was last requested — gates the "pending" label. */
 	modelChangedAt?: number;
+	/** Tokens currently in the fork's own context window — the exact
+	 * `/context` figure captured in `SessionManager.runLoop` and delivered
+	 * via `sidequest:patch`. Same ownership story as `mode`/`model`: nothing
+	 * is persisted, this store is the only record. */
+	contextTokens?: number;
 	error?: string;
 	createdAt: number;
 }
@@ -77,10 +82,15 @@ interface State {
 		model?: string;
 	}) => void;
 	appendMessage: (sidequestId: string, message: SessionMessage) => void;
-	/** Apply a `sidequest:patch` (mode / model sync from main). */
+	/** Apply a `sidequest:patch` (mode / model / context sync from main). */
 	patch: (
 		sidequestId: string,
-		fields: { mode?: SessionMode; model?: string; modelChangedAt?: number },
+		fields: {
+			mode?: SessionMode;
+			model?: string;
+			modelChangedAt?: number;
+			contextTokens?: number;
+		},
 	) => void;
 	setStatus: (sidequestId: string, status: SessionStatus) => void;
 	setError: (sidequestId: string, error: string) => void;
@@ -188,6 +198,9 @@ export const useSidequestsStore = create<State>((set, get) => ({
 						...("model" in fields ? { model: fields.model } : {}),
 						...("modelChangedAt" in fields
 							? { modelChangedAt: fields.modelChangedAt }
+							: {}),
+						...("contextTokens" in fields
+							? { contextTokens: fields.contextTokens }
 							: {}),
 					},
 				},

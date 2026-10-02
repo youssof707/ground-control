@@ -450,10 +450,11 @@ async function retryOnce<T>(fn: () => Promise<T>, delayMs = 300): Promise<T> {
  * Truncate a transcript to (and including) the message at `msgIndex`, plus the
  * turn-end `result` message that immediately follows when present.
  *
- * The SDK emits exactly one `result` per turn, carrying that turn's token
- * usage; without it a forked session's SessionTokenBar would read 0
- * (single-turn parent) or miss the latest turn's cost. Result messages render
- * invisibly, so including it doesn't change the visible chat history.
+ * The SDK emits exactly one `result` per turn, carrying that turn's usage and
+ * `modelUsage` breakdown. Nothing renders it (SessionTokenBar now reads the
+ * session's `contextTokens` field instead of result usage), but it's kept so
+ * the fork's transcript still ends on a complete turn record. Result messages
+ * render invisibly, so including it doesn't change the visible chat history.
  */
 function truncateThrough(
 	messages: SessionMessage[],
@@ -1643,6 +1644,43 @@ export class SessionManager {
 
 			const q = query({ prompt: userStream(), options });
 			queryRef.current = q;
+
+			// Pull the CLI's exact `/context` figure off the live query and fan
+			// it out as `contextTokens`. Fire-and-forget: a control request
+			// round-trips to the CLI, and awaiting it here would stall the
+			// message loop between turns for a number that's purely cosmetic.
+			// Triggered on `init` (resumed sessions get a figure without needing
+			// a turn) and on each turn-end `result` (the post-turn context is
+			// exactly what the next turn starts from).
+			const refreshContextTokens = () => {
+				const liveQ = queryRef.current;
+				if (!liveQ) return;
+				void liveQ
+					.getContextUsage()
+					.then((u) => {
+						if (abort.signal.aborted) return;
+						if (typeof u?.totalTokens !== "number") return;
+						if (session.contextTokens === u.totalTokens) return;
+						session.contextTokens = u.totalTokens;
+						// `ch()` keeps a sidequest on `sidequest:patch` — a
+						// `session:patch` for an ephemeral id would mint a ghost
+						// sidebar row (same rule as the model-fallback patch).
+						this.send(ch("patch"), {
+							sessionId: id,
+							contextTokens: u.totalTokens,
+						});
+						if (persist) {
+							void sessionStore.updateSession(id, {
+								contextTokens: u.totalTokens,
+							});
+						}
+					})
+					.catch(() => {
+						// Control request unsupported (older CLI) or the query is
+						// winding down — keep the last captured value.
+					});
+			};
+
 			for await (const msg of q) {
 				if (abort.signal.aborted) break;
 
@@ -1664,6 +1702,13 @@ export class SessionManager {
 				// status flip should not wait on the persist/broadcast path,
 				// and some of the messages that drive it are dropped below.
 				activity.apply(msg);
+
+				// Context-size capture points. Early (before every `continue`
+				// filter below) out of the same caution as the model-rejection
+				// detection, though neither trigger message is currently dropped.
+				if (msg.type === "result" || systemSubtype(msg) === "init") {
+					refreshContextTokens();
+				}
 
 				// A turn cut off by a usage limit reports as a normal
 				// (non-thrown) `result` — the loop above just parked status at
