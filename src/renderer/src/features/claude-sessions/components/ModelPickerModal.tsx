@@ -57,7 +57,9 @@ function dedupeLatest(options: ModelOption[]): ModelOption[] {
 	const slotByFamily = new Map<string, number>();
 	for (const o of options) {
 		const id =
-			o.value === "default" ? null : parseOptionIdentity(o.value, o.description);
+			o.value === "default"
+				? null
+				: parseOptionIdentity(o.value, o.description, o.displayName);
 		if (!id || id.major === undefined) {
 			result.push(o);
 			continue;
@@ -73,6 +75,7 @@ function dedupeLatest(options: ModelOption[]): ModelOption[] {
 		const incumbentId = parseOptionIdentity(
 			incumbent.value,
 			incumbent.description,
+			incumbent.displayName,
 		);
 		const better =
 			incumbentId?.major === undefined ||
@@ -289,7 +292,9 @@ export function ModelPickerModal({
 	// and no row highlights — intentionally honest.
 	const effectiveIdentity = parseModelIdentity(effectiveModel);
 	const rowIdentities = rowsToRender.map((o) =>
-		isDefaultRow(o) ? null : parseOptionIdentity(o.value, o.description),
+		isDefaultRow(o)
+			? null
+			: parseOptionIdentity(o.value, o.description, o.displayName),
 	);
 
 	let selectedIndex = -1;
@@ -367,7 +372,11 @@ export function ModelPickerModal({
 							// Title/subtitle split: model rows with a parsed
 							// versioned identity show the bare family as the
 							// title ("Fable") and the full model name as the
-							// subtitle ("Fable 5.1"); the 1M variant stays
+							// subtitle ("Fable 5.1"). The version can come
+							// from the value, the description, or the
+							// displayName itself ("Sonnet 5" → "Sonnet" /
+							// "Sonnet 5"), so every versioned row gets the
+							// split, not just aliases. The 1M variant stays
 							// distinguishable via its subtitle. Default rows
 							// keep their label + the resolved model name;
 							// unversioned oddballs ("opusplan") keep their

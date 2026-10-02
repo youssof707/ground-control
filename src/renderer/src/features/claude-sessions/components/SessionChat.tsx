@@ -4,12 +4,10 @@ import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useInterruptStore } from "../stores/useInterruptStore";
 import { useReadStore } from "../stores/useReadStore";
-import { isDraftId, useDraftSessionsStore } from "../stores/useDraftSessionsStore";
-import { useDraftStore } from "../stores/useDraftStore";
+import { isDraftId } from "../stores/useDraftSessionsStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
-import { focusComposer } from "../lib/composerActions";
 import { stopSession } from "../lib/sessionControlActions";
-import { runInstantHandoff, startHandoff } from "../lib/handoffActions";
+import { runHandoff } from "../lib/handoffActions";
 import { switchModelAndResume } from "../lib/modelSwitchActions";
 import { useComposerResize } from "../hooks/useComposerResize";
 import { PermissionCard } from "./PermissionCard";
@@ -52,13 +50,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	const [pendingForkMessageId, setPendingForkMessageId] = useState<
 		string | null
 	>(null);
-	// Object, not a bare string — "" is a legal handoff text (shouldn't
-	// happen given the canHandoff gate, but falsy-collision with `null`
-	// would silently misbehave `open={!!pendingHandoff}`).
-	const [pendingHandoff, setPendingHandoff] = useState<{
-		text: string;
-		hasDirtyDraft: boolean;
-	} | null>(null);
 	const [editingTitle, setEditingTitle] = useState(false);
 	const [titleDraft, setTitleDraft] = useState("");
 	const [openFolderModal, setOpenFolderModal] = useState(false);
@@ -166,45 +157,15 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 		setForkError(null);
 	};
 
-	// useCallback with an empty dep array so MessageView's React.memo keeps
-	// short-circuiting re-renders — the session and draft state are read
-	// fresh from the stores at click time instead of being captured in
-	// closure deps.
-	const handoff = useCallback((text: string) => {
-		const draft = useDraftSessionsStore.getState().draft;
-		const draftText = draft
-			? useDraftStore.getState().draftsBySession[draft.id]?.text
-			: undefined;
-		setPendingHandoff({ text, hasDirtyDraft: !!draftText });
-	}, []);
 
-	// "Handoff": stage a new session (draft, not yet created) pre-filled with
-	// the handoff text — the user edits and sends it themselves.
-	const runStagedHandoff = () => {
-		if (!pendingHandoff || !session) return;
-		setPendingHandoff(null);
-		const id = startHandoff({
-			session,
-			text: pendingHandoff.text,
-		});
-		navigate(`/sessions/${id}`);
-		focusComposer();
-	};
-
-	// "Handoff & delete": one click does everything — successor created,
-	// handoff turn sent, this session deleted (undoable via ⇧⌘Z / Recently
-	// deleted). Fire-and-forget: runInstantHandoff navigates to the successor
-	// itself (this component unmounts), and failures surface in the
-	// background-task indicator rather than here.
-	const runInstant = () => {
-		if (!pendingHandoff || !session) return;
-		setPendingHandoff(null);
-		runInstantHandoff({
-			session,
-			text: pendingHandoff.text,
-			navigate,
-		});
-	};
+	const handoff = useCallback(
+		(text: string) => {
+			const current = useSessionsStore.getState().sessions[sessionId];
+			if (!current) return;
+			runHandoff({ session: current, text, navigate });
+		},
+		[sessionId, navigate],
+	);
 
 	// Pre-pass over messages to collapse contiguous tool_use + tool_result
 	// blocks (across message boundaries) into a single <ToolRunGroup/>.
@@ -609,31 +570,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 				error={forkError}
 				onConfirm={confirmFork}
 				onCancel={cancelFork}
-			/>
-
-			<ConfirmModal
-				open={!!pendingHandoff}
-				title="Hand off to a new session?"
-				message={
-					<>
-						Start a new session in the same folder
-						{session.groupId ? ", group," : ""} and mode.{" "}
-						<strong>Handoff &amp; delete</strong> sends this message to the
-						new session and deletes this one immediately (undoable).{" "}
-						<strong>Handoff</strong> just pre-fills a draft — nothing is
-						sent until you press Enter.
-						{pendingHandoff?.hasDirtyDraft
-							? " Picking Handoff will replace your current unsent draft."
-							: ""}
-					</>
-				}
-				confirmLabel="Handoff & delete"
-				secondaryAction={{
-					label: "Handoff",
-					onClick: runStagedHandoff,
-				}}
-				onConfirm={runInstant}
-				onCancel={() => setPendingHandoff(null)}
 			/>
 
 			<ConfirmModal

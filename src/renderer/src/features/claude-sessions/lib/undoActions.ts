@@ -45,7 +45,7 @@ function flashRow(sessionId: string): void {
  * Put back one buffered entry.
  *
  * Runs through `runBackgroundTask` rather than being awaited, for the same
- * reason `runHandoffDelete` does: the caller may be a toast that is about to
+ * reason `runHandoff` does: the caller may be a toast that is about to
  * unmount, or a keydown handler with nowhere to show an error. A failure must
  * not disappear — it surfaces in the background-task indicator, and crucially
  * the entry STAYS in the buffer so the user can simply press undo again.

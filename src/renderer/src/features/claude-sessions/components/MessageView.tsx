@@ -36,8 +36,9 @@ export const MessageView = memo(function MessageView({
 	m: SessionMessage;
 	onFork?: (messageId: string) => void;
 	forkPending?: boolean;
-	/** Stage a handoff to a new session, seeded with this message's text.
-	 * Unlike Fork this needs no SDK uuid — any assistant message with text
+	/** Hand off to a new session seeded with this message's text, deleting
+	 * the current one. Fires immediately on click — no confirm step. Unlike
+	 * Fork this needs no SDK uuid — any assistant message with text
 	 * qualifies. Omitted (e.g. inside a sidequest panel) simply hides the
 	 * menu item. */
 	onHandoff?: (text: string) => void;

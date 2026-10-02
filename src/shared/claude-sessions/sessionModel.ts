@@ -225,22 +225,28 @@ export function parseDisplayIdentity(
 
 /**
  * Identity of a picker row, combining its `value` (authoritative for family
- * and the "[1m]" flag) with its description (the only place the version
- * appears when `value` is a bare alias).
+ * and the "[1m]" flag) with its description and display name (where the
+ * version appears when `value` is a bare alias or an id we can't parse).
+ * Description is tried first, then the display name ("Sonnet 5").
  */
 export function parseOptionIdentity(
 	value: string | undefined,
 	description?: string,
+	displayName?: string,
 ): ModelIdentity | null {
 	const fromValue = parseModelIdentity(value);
 	// A concrete id already carries everything; don't let prose override it.
 	if (fromValue?.major !== undefined) return fromValue;
 
-	const fromText = parseDisplayIdentity(description);
-	if (fromValue && fromText && fromValue.family === fromText.family) {
-		return { ...fromText, oneM: fromValue.oneM || fromText.oneM };
+	for (const text of [description, displayName]) {
+		const fromText = parseDisplayIdentity(text);
+		if (!fromText) continue;
+		if (!fromValue) return fromText;
+		if (fromValue.family === fromText.family) {
+			return { ...fromText, oneM: fromValue.oneM || fromText.oneM };
+		}
 	}
-	return fromValue ?? fromText;
+	return fromValue;
 }
 
 /**
