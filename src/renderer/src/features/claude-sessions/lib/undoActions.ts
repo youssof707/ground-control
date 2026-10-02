@@ -54,31 +54,7 @@ function flashRow(sessionId: string): void {
  * renderer exactly as it was rather than showing a row that main doesn't have.
  */
 export function restoreEntry(entry: UndoEntry, navigate: NavigateFn): void {
-	// Archive never left disk — undoing it is just clearing `archivedAt`, and
-	// there's no snapshot to replay. Split early so the delete path below
-	// doesn't have to keep testing for it.
-	if (entry.kind === "archive") {
-		runBackgroundTask({
-			label: `Restoring ${entry.title}`,
-			run: () => window.claude.unarchiveSession(entry.sessionId),
-			onSuccess: () => {
-				// Main broadcasts `session:patch` with `archivedAt: undefined`
-				// to every window including this one, which already clears the
-				// field — but do it locally too so the row un-dims on the same
-				// tick as the click rather than one IPC round-trip later.
-				useSessionsStore
-					.getState()
-					.upsertSession({ id: entry.sessionId, archivedAt: undefined });
-				useUndoStore.getState().remove(entry.id);
-				navigate(`/sessions/${entry.sessionId}`);
-				flashRow(entry.sessionId);
-			},
-		});
-		return;
-	}
-
 	const snapshot = entry.snapshot;
-	if (!snapshot) return;
 
 	// Captured out of `run` because runBackgroundTask's onSuccess receives no
 	// value — and we need main's canonical restored record, not our snapshot

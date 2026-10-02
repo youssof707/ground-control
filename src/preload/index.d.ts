@@ -8,6 +8,7 @@ import type {
 	UserTurn,
 } from "../shared/schemas/claude_session";
 import type { DeletedSessionSnapshot } from "../shared/claude-sessions/undo";
+import type { BabysitConfig } from "../shared/claude-sessions/babysit";
 import type { LiveBackgroundTask } from "../shared/claude-sessions/types";
 import type { ReadStateFile } from "../shared/schemas/read_state";
 import type { AppSettingsFile } from "../shared/schemas/app_settings";
@@ -89,8 +90,6 @@ declare global {
 			restoreSession: (
 				snapshot: DeletedSessionSnapshot,
 			) => Promise<ClaudeSessionFull>;
-			archiveSession: (sessionId: string) => Promise<void>;
-			unarchiveSession: (sessionId: string) => Promise<void>;
 			renameSession: (sessionId: string, title: string) => Promise<void>;
 			pickFolder: (opts?: { defaultPath?: string }) => Promise<string | null>;
 			revealPath: (path: string) => Promise<void>;
@@ -121,6 +120,18 @@ declare global {
 			updateNote: (id: string, markdown: string) => Promise<Note | null>;
 			deleteNote: (id: string) => Promise<void>;
 			listPermissions: () => Promise<PermissionRequest[]>;
+			/** Every session currently being babysat, keyed by session id. */
+			listBabysit: () => Promise<Record<string, BabysitConfig>>;
+			/**
+			 * Start, update or stop (`null`) babysitting a session. Resolves
+			 * to the stored config, or null when babysitting is now off —
+			 * which is also what a config with every rule on "do nothing"
+			 * produces. In memory only; never persisted.
+			 */
+			setBabysit: (
+				sessionId: string,
+				config: BabysitConfig | null,
+			) => Promise<BabysitConfig | null>;
 			getRateLimit: () => Promise<RateLimitSnapshot>;
 			listWorktrees: () => Promise<Worktree[]>;
 			listWorktreesForBaseDir: (baseDir: string) => Promise<Worktree[]>;

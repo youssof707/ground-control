@@ -13,10 +13,11 @@ interface ModelOption {
 	/** undefined = clear the override (CLI default model). */
 	value: string | undefined;
 	displayName: string;
-	/** Secondary line under the name — carries the version/tagline the CLI
-	 * ships in `ModelInfo.description` (e.g. "Sonnet 4.6 · Best for everyday
-	 * tasks"). Omitted for our synthetic Default option; skipped in render
-	 * when absent. */
+	/** Version head of the CLI's `ModelInfo.description` (pre-trimmed by
+	 * `firstSegment`, e.g. "Sonnet 4.6"). NOT rendered as row copy anymore —
+	 * it feeds `parseOptionIdentity` (dedupe + current-row highlight) and is
+	 * the Default row's subtitle, where it names the model the CLI resolves
+	 * to. Omitted for our synthetic Default option. */
 	description?: string;
 }
 
@@ -30,6 +31,57 @@ function firstSegment(description: string | undefined): string | undefined {
 	const idx = description.indexOf(" · ");
 	const head = (idx === -1 ? description : description.slice(0, idx)).trim();
 	return head.length > 0 ? head : undefined;
+}
+
+/** First-letter capitalize, for turning an identity's lowercased family
+ * ("fable") into a row title ("Fable"). `sessionModel.ts` has the same
+ * helper but keeps it module-private. */
+function cap(s: string): string {
+	return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * Collapse the CLI's full model list down to the latest version per family —
+ * one Opus row (5.5), one Fable row (5.1), not every point release the CLI
+ * still accepts. The 1M-context variant counts as its own family (mirrors
+ * `identityMatches`' exact-oneM rule), so "Sonnet 4.6 with 1M context"
+ * survives independently of plain Sonnet.
+ *
+ * Rows that don't parse to a versioned identity — the "default" row,
+ * versionless aliases like "opusplan" — can't be ranked, so they pass
+ * through untouched. The winner keeps the list position where its family
+ * first appeared, preserving the CLI's own ordering.
+ */
+function dedupeLatest(options: ModelOption[]): ModelOption[] {
+	const result: ModelOption[] = [];
+	const slotByFamily = new Map<string, number>();
+	for (const o of options) {
+		const id =
+			o.value === "default" ? null : parseOptionIdentity(o.value, o.description);
+		if (!id || id.major === undefined) {
+			result.push(o);
+			continue;
+		}
+		const key = `${id.family}${id.oneM ? "[1m]" : ""}`;
+		const slot = slotByFamily.get(key);
+		if (slot === undefined) {
+			slotByFamily.set(key, result.length);
+			result.push(o);
+			continue;
+		}
+		const incumbent = result[slot];
+		const incumbentId = parseOptionIdentity(
+			incumbent.value,
+			incumbent.description,
+		);
+		const better =
+			incumbentId?.major === undefined ||
+			id.major > incumbentId.major ||
+			(id.major === incumbentId.major &&
+				(id.minor ?? -1) > (incumbentId.minor ?? -1));
+		if (better) result[slot] = o;
+	}
+	return result;
 }
 
 /** Fallback "clear override" row used only when the CLI's model list doesn't
@@ -144,25 +196,23 @@ export function ModelPickerModal({
 			try {
 				const list = await window.claude.getSupportedModels(sessionId);
 				if (my !== fetchSeq.current) return;
-				// Live-only: whatever the CLI reports is what we render, in the
-				// order it returned. No merging with a hardcoded list, no
-				// dedupe against a fallback — the CLI is the single source of
-				// truth for "what can this binary actually spawn?"
+				// Live-only: the CLI is the single source of truth for "what
+				// can this binary actually spawn?" — no hardcoded fallback, no
+				// cache. We then collapse the list to the latest version per
+				// family (`dedupeLatest`); older point releases stay spawnable
+				// via the CLI, they're just not offered.
 				//
 				// `description` from the CLI is a "{version} · {tagline}"
-				// string (e.g. "Sonnet 4.6 · Best for everyday tasks",
-				// "Opus 4.7 with 1M context · Most capable for complex work",
-				// "Sonnet 4.6 with 1M context · Billed as extra usage · $3/$15
-				// per Mtok"). We only want the version-and-capabilities part —
-				// the tagline is marketing copy that clutters the row — so we
-				// split on " · " and keep the first segment. Preserves multi-
-				// dot version strings (the split is on the *first* separator).
+				// string (e.g. "Sonnet 4.6 · Best for everyday tasks"). We keep
+				// only the version head (`firstSegment`) — it feeds identity
+				// parsing and the Default row's subtitle; the tagline is
+				// marketing copy we never show.
 				const sdkOptions = (list ?? []).map((m: ModelInfo) => ({
 					value: m.value,
 					displayName: m.displayName,
 					description: firstSegment(m.description),
 				}));
-				setOptions(sdkOptions);
+				setOptions(dedupeLatest(sdkOptions));
 			} catch (err) {
 				if (my !== fetchSeq.current) return;
 				console.error("[ccw] getSupportedModels failed:", err);
@@ -234,6 +284,9 @@ export function ModelPickerModal({
 	// structural (family + version + 1M flag) and *can* hit more than one row
 	// — a versionless "sonnet" alias matches any Sonnet. When it does, prefer
 	// the row that names a specific version; it's the more informative claim.
+	// If the effective model is an older version whose row `dedupeLatest`
+	// dropped (stream says Opus 4.7, only Opus 5.5 renders), nothing matches
+	// and no row highlights — intentionally honest.
 	const effectiveIdentity = parseModelIdentity(effectiveModel);
 	const rowIdentities = rowsToRender.map((o) =>
 		isDefaultRow(o) ? null : parseOptionIdentity(o.value, o.description),
@@ -311,6 +364,23 @@ export function ModelPickerModal({
 							// the CLI with value === "default" — keeps the
 							// prior semantics of "clear the override" intact.
 							const dispatchValue = isDefaultRow(o) ? undefined : o.value;
+							// Title/subtitle split: model rows with a parsed
+							// versioned identity show the bare family as the
+							// title ("Fable") and the full model name as the
+							// subtitle ("Fable 5.1"); the 1M variant stays
+							// distinguishable via its subtitle. Default rows
+							// keep their label + the resolved model name;
+							// unversioned oddballs ("opusplan") keep their
+							// displayName as the title, no subtitle.
+							const identity = rowIdentities[i];
+							const versioned =
+								!isDefaultRow(o) && identity?.major !== undefined;
+							const title = versioned ? cap(identity.family) : o.displayName;
+							const subtitle = versioned
+								? o.displayName
+								: isDefaultRow(o)
+									? o.description
+									: undefined;
 							return (
 								<button
 									key={o.value ?? "__default__"}
@@ -339,7 +409,7 @@ export function ModelPickerModal({
 										}}
 									>
 										<span style={{ fontSize: 13, fontWeight: 600 }}>
-											{o.displayName}
+											{title}
 										</span>
 										{selected ? (
 											<span
@@ -353,11 +423,11 @@ export function ModelPickerModal({
 											</span>
 										) : null}
 									</span>
-									{o.description ? (
-										// Version + tagline from the CLI (e.g.
-										// "Sonnet 4.6 · Best for everyday tasks").
-										// Dimmed / smaller so the display name
-										// stays the primary read.
+									{subtitle ? (
+										// Full model name ("Fable 5.1") — or, on
+										// the Default row, the model the CLI
+										// resolves to. Dimmed / smaller so the
+										// family title stays the primary read.
 										<span
 											style={{
 												fontSize: 11,
@@ -366,7 +436,7 @@ export function ModelPickerModal({
 												lineHeight: 1.35,
 											}}
 										>
-											{o.description}
+											{subtitle}
 										</span>
 									) : null}
 								</button>

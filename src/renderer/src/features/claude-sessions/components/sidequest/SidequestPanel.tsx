@@ -129,6 +129,16 @@ export function SidequestPanel({
 	const canFork =
 		!!sq && sq.status !== "running" && sq.status !== "starting";
 
+	// An error before the user has sent anything is noise: the fork died in
+	// the background, and `sendToSidequest` already re-forks a dead sidequest
+	// on the first send. Nothing for the user to do, so show it as a plain
+	// idle sidequest — no red pill, no error banner. Once they've sent a
+	// turn, an error explains why their reply never came, so it shows.
+	const hideError =
+		!!sq &&
+		sq.status === "errored" &&
+		!sq.messages.some((m) => m.role === "user");
+
 	// Serves both the header's Clear button (discard + re-fork) and the empty
 	// state's Start button (plain fork) — the underlying action is identical:
 	// (re-)fork at the very last Claude reply in the main thread.
@@ -218,7 +228,7 @@ export function SidequestPanel({
 						<button
 							type="button"
 							onClick={onClose}
-							aria-label="Close sidequest"
+							aria-label="Hide sidequest"
 							style={{
 								flexShrink: 0,
 								width: 28,
@@ -233,12 +243,15 @@ export function SidequestPanel({
 								justifyContent: "center",
 							}}
 						>
+							{/* Right caret, not an X: this only hides the panel —
+							    the sidequest keeps running and comes back on reopen. */}
 							<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
 								<path
-									d="M3 3l6 6M9 3l-6 6"
+									d="M4.5 2.5L8 6L4.5 9.5"
 									stroke="currentColor"
 									strokeWidth="1.5"
 									strokeLinecap="round"
+									strokeLinejoin="round"
 								/>
 							</svg>
 						</button>
@@ -265,7 +278,9 @@ export function SidequestPanel({
 									? "awaiting_permission"
 									: sq.status === "starting"
 										? "running"
-										: sq.status
+										: hideError
+											? "idle"
+											: sq.status
 							}
 							mode={sq.mode}
 							pendingToolName={pending[0]?.toolName}
@@ -369,7 +384,7 @@ export function SidequestPanel({
 						</div>
 					) : (
 						<>
-							{sq.error || forkError ? (
+							{(!hideError && sq.error) || forkError ? (
 								<div
 									style={{
 										fontSize: 12,
@@ -381,7 +396,7 @@ export function SidequestPanel({
 										marginBottom: 12,
 									}}
 								>
-									{sq.error || forkError}
+									{(!hideError && sq.error) || forkError}
 								</div>
 							) : null}
 							{units.map((u) =>

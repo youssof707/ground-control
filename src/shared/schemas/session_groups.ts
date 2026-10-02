@@ -6,8 +6,8 @@ import { StoredWorktreeColorSchema, WorktreeColorSchema } from "./worktrees";
  * style. Unlike worktrees there is no on-disk resource behind a group, so
  * there's no reverse index (`sessionIds`) here: membership lives solely on
  * `ClaudeSession.groupId` and emptiness is computed by scanning the session
- * store. Groups auto-delete the moment their last member leaves (removed,
- * archived, or deleted).
+ * store. Groups auto-delete the moment their last member leaves (removed
+ * or deleted).
  *
  * `color` reuses the worktree palette so both features draw from the same
  * design tokens (info/danger/neutral). The neutral entry ("gray") lets a

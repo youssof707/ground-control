@@ -123,7 +123,6 @@ export type SessionPatch = Partial<
 		| "diff"
 		| "sdkSessionId"
 		| "mode"
-		| "archivedAt"
 		| "model"
 		| "modelChangedAt"
 		| "groupId"

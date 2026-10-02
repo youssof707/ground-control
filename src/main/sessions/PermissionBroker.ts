@@ -37,6 +37,16 @@ export class PermissionBroker {
 		 * and the no-window path both *resolve* with a deny), so the awaiting
 		 * side can't tell a real click from a cancellation. This can. */
 		private onPlanDecision?: (sessionId: string, planText: string) => void,
+		/** Babysit mode's hook: given a prompt, return the answer to give on
+		 * the user's behalf, or null to leave it for the user. Consulted
+		 * before a request is stored, broadcast or notified, so an
+		 * auto-answered prompt never produces a card, a notification sound
+		 * or a dock badge. See `Babysitter`. */
+		private autoDecide?: (args: {
+			sessionId: string;
+			toolName: string;
+			input: Record<string, unknown>;
+		}) => PermissionResult | null,
 	) {
 		ipcMain.on("permission:respond", (_e, decision: PermissionDecision) => {
 			this.handleResponse(decision);
@@ -58,6 +68,22 @@ export class PermissionBroker {
 				behavior: "allow",
 				updatedInput: args.input,
 			});
+		}
+
+		// Babysit mode. After the always-allow check (an always-allowed tool
+		// never prompts, so there is nothing to babysit) and before anything
+		// below registers the request.
+		const auto = this.autoDecide?.(args);
+		if (auto) {
+			console.log(
+				`[broker] babysitter answered tool=${args.toolName} session=${args.sessionId} behavior=${auto.behavior}`,
+			);
+			// No card will ever show this plan, so the transcript copy is the
+			// only place the user can read what was approved or denied.
+			this.notePlanDecision(args);
+			// Deliberately no `onUserCheckpoint`: the user did not engage
+			// with the session, so the branch baseline must not move.
+			return Promise.resolve(auto);
 		}
 
 		const requestId = randomUUID();
@@ -106,6 +132,46 @@ export class PermissionBroker {
 		this.syncBadge();
 	}
 
+	/**
+	 * Run babysit mode over the prompts already waiting for a session.
+	 * Called when babysitting is switched on or its rules change, so a card
+	 * that is on screen at that moment is answered instead of being stranded
+	 * until the user clicks it. Prompts the rules don't cover stay pending.
+	 */
+	answerPendingForSession(sessionId: string) {
+		if (!this.autoDecide) return;
+		for (const [id, entry] of this.pending) {
+			if (entry.request.sessionId !== sessionId) continue;
+			const auto = this.autoDecide(entry.request);
+			if (!auto) continue;
+			this.pending.delete(id);
+			windows.broadcast("permission:resolved", { requestId: id });
+			this.notePlanDecision(entry.request);
+			entry.resolve(auto);
+		}
+		this.syncBadge();
+	}
+
+	/**
+	 * Copy an answered plan into the transcript. Must run before the request
+	 * is resolved, so the bubble is broadcast while the SDK is still blocked
+	 * — it can't be interleaved with the tool_result the deny/allow is about
+	 * to produce.
+	 */
+	private notePlanDecision(request: {
+		sessionId: string;
+		toolName: string;
+		input: Record<string, unknown>;
+	}) {
+		if (request.toolName !== "ExitPlanMode") return;
+		const plan = (request.input as { plan?: unknown }).plan;
+		// Matches the card's own "(No plan text provided.)" guard: an empty
+		// plan would render as a blank assistant bubble, not nothing.
+		if (typeof plan === "string" && plan.trim().length > 0) {
+			this.onPlanDecision?.(request.sessionId, plan.trim());
+		}
+	}
+
 	private handleResponse(d: PermissionDecision) {
 		const entry = this.pending.get(d.requestId);
 		if (!entry) return;
@@ -117,17 +183,7 @@ export class PermissionBroker {
 		// answer the prompt on a different branch than their last message.
 		// Fires on both allow and deny — either way they "used" the session.
 		this.onUserCheckpoint?.(entry.request.sessionId);
-		// Copy the plan into the transcript before resolving, so the bubble is
-		// broadcast while the SDK is still blocked — it can't be interleaved
-		// with the tool_result the deny/allow is about to produce.
-		if (entry.request.toolName === "ExitPlanMode") {
-			const plan = (entry.request.input as { plan?: unknown }).plan;
-			// Matches the card's own "(No plan text provided.)" guard: an empty
-			// plan would render as a blank assistant bubble, not nothing.
-			if (typeof plan === "string" && plan.trim().length > 0) {
-				this.onPlanDecision?.(entry.request.sessionId, plan.trim());
-			}
-		}
+		this.notePlanDecision(entry.request);
 		if (d.behavior === "allow") {
 			// ExitPlanMode is the plan-approval gate — it must always require an
 			// explicit click. Refuse to silently always-allow it even if a UI

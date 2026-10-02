@@ -113,7 +113,6 @@ export async function startSessionFromShortcut(
 			mode: sc.mode,
 			title: sc.title,
 			model: appDefaultModel(),
-			handoffDeleteSessionId: undefined,
 		});
 		id = draft.id;
 		cwd = draft.cwd;
@@ -157,7 +156,6 @@ export async function startSessionFromSkill(
 		// a fresh intent for the shared draft slot.
 		drafts.updateDraft({
 			model: appDefaultModel(),
-			handoffDeleteSessionId: undefined,
 		});
 		id = draft.id;
 		cwd = draft.cwd;

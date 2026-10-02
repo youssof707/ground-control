@@ -15,15 +15,12 @@ import type { CreateSessionGroupInput } from "../../shared/schemas/session_group
  * (create / collapse / auto-delete); membership mutates via
  * `groups:setSessionGroup` and via the session-delete cascade in
  * sessionsHandlers, both of which call `pruneGroupIfEmpty` afterwards.
- * Archiving does NOT touch membership — archived members still count,
- * so an all-archived group survives (hidden, not deleted).
  */
 
 /**
  * Auto-delete a group the moment it has zero members. Called after every
  * mutation that can empty a group (remove-from-group, move-to-other-group,
- * session delete). Archived sessions count as members — archiving hides
- * a row, it doesn't evict it from its group.
+ * session delete).
  *
  * The `state:changed` broadcast is deliberately NOT skip-self: the prune is
  * a cascade the originating window didn't ask for by name (it asked to
@@ -104,7 +101,7 @@ export function registerGroupsHandlers(): void {
 				groupId: groupId ?? undefined,
 			});
 			if (!updated) throw new Error("Session not found");
-			// Same clear-an-optional-field pattern as session:unarchive:
+			// Clearing an optional field:
 			// structured-clone IPC preserves explicit `undefined`, so
 			// upsertSession's spread-merge genuinely clears the field on
 			// every window (including the originator).

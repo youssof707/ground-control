@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 import { SessionManager } from "../sessions/SessionManager";
 import { PermissionBroker } from "../sessions/PermissionBroker";
+import { Babysitter } from "../sessions/Babysitter";
 import { NotificationManager } from "./notifications";
 import type {
 	SessionMode,
@@ -10,9 +11,9 @@ import type {
 	UserTurn,
 } from "../../shared/schemas/claude_session";
 import type { DeletedSessionSnapshot } from "../../shared/claude-sessions/undo";
+import type { BabysitConfig } from "../../shared/claude-sessions/babysit";
 import * as sessionStore from "../core/store/claude_session";
 import * as notesStore from "../core/store/session_notes";
-import * as readStore from "../core/store/read_state";
 import * as worktreesStore from "../core/store/worktrees";
 import * as groupsStore from "../core/store/session_groups";
 import { broadcast } from "../windows";
@@ -73,6 +74,9 @@ async function directoryExists(path: string): Promise<boolean> {
 export function registerSessionsHandlers(): SessionManager {
 	const notifications = new NotificationManager();
 	let manager: SessionManager;
+	// Babysit mode: per-session rules for answering prompts while the user is
+	// away. In memory only — nothing here is ever written to disk.
+	const babysitter = new Babysitter();
 	const broker = new PermissionBroker(
 		notifications,
 		(sessionId) => manager?.getSession(sessionId)?.title,
@@ -82,6 +86,7 @@ export function registerSessionsHandlers(): SessionManager {
 		// Keep the plan visible in the chat history after the card is gone.
 		(sessionId, planText) =>
 			manager?.appendPlanToTranscript(sessionId, planText),
+		(args) => babysitter.decide(args),
 	);
 	manager = new SessionManager(broker);
 
@@ -256,6 +261,25 @@ export function registerSessionsHandlers(): SessionManager {
 	);
 	ipcMain.handle("sessions:list", () => sessionStore.listSessions());
 	ipcMain.handle("permissions:list", () => broker.listPending());
+	ipcMain.handle("babysit:list", () => babysitter.list());
+	ipcMain.handle(
+		"babysit:set",
+		(
+			_e,
+			payload: { sessionId: string; config: BabysitConfig | null },
+		): BabysitConfig | null => {
+			// Real sessions only. Sidequests are ephemeral and have no store
+			// row, so this also keeps them out of babysit mode.
+			if (!sessionStore.getSession(payload.sessionId)) {
+				throw new Error("Session not found");
+			}
+			const saved = babysitter.set(payload.sessionId, payload.config);
+			// Answer whatever is already on screen under the new rules,
+			// rather than leaving it stranded until the user clicks it.
+			if (saved) broker.answerPendingForSession(payload.sessionId);
+			return saved;
+		},
+	);
 	ipcMain.on("notifications:setUnreadCount", (_e, count: number) => {
 		notifications.setUnreadCount(typeof count === "number" ? count : 0);
 	});
@@ -302,59 +326,6 @@ export function registerSessionsHandlers(): SessionManager {
 			broadcast("state:changed", undefined, e.sender.id);
 		},
 	);
-	ipcMain.handle("session:archive", async (e, sessionId: string) => {
-		// Archive is "set aside, but reversible". The session record stays
-		// fully intact (no tombstone, no notes deletion), but every UI
-		// affordance that demands attention is quieted:
-		//   1. Stop the SDK loop so it stops emitting messages / status
-		//      updates that would push the row back to "unread" or
-		//      "running" after archive.
-		//   2. Reject any in-flight permission / tool-use / ask-user prompts
-		//      so the user isn't blocked on something they've stashed away.
-		//      `cancelAllForSession` broadcasts `permission:resolved` for
-		//      each cancellation, which drains the renderer's permissions
-		//      queue (and therefore the Inbox badge + waiting count).
-		//   3. Mark read at `now()` so the session stops contributing to
-		//      the unread count / dock badge. Monotonic in the store, so
-		//      this is a no-op if the session is already up-to-date.
-		manager.cancel(sessionId);
-		broker.cancelAllForSession(sessionId, "Session archived");
-		// A sidequest outlives nothing — its parent is being set aside, so
-		// stop it too rather than leave an orphan SDK loop running.
-		void manager.discardSidequest(sessionId);
-		await readStore.mark(sessionId);
-		// Archiving intentionally KEEPS the session's group membership —
-		// the row returns to its group on unarchive / "Show archived
-		// sessions". Archived members still count for the auto-delete
-		// check, so a group whose members are all archived survives (it's
-		// merely hidden, because the sidebar derives group sections from
-		// visible rows only). Only remove-from-group and session delete
-		// can empty a group.
-		const archivedAt = Date.now();
-		const updated = await sessionStore.updateSession(sessionId, {
-			archivedAt,
-		});
-		if (!updated) throw new Error("Session not found");
-		// Incremental patch so other windows hide the row without a full
-		// refetch. The existing renderer-side `session:patch` listener routes
-		// this through `upsertSession`, which merges `archivedAt` into the
-		// store; the sidebar's `visibleOrder` filter then drops the row.
-		broadcast("session:patch", { sessionId, archivedAt });
-		// Safety-net structural ping for any window that might have missed
-		// the patch — also picks up the new read-state row on other windows.
-		broadcast("state:changed", undefined, e.sender.id);
-	});
-	ipcMain.handle("session:unarchive", async (e, sessionId: string) => {
-		// Reverse of archive: clear the timestamp. Intentionally does NOT
-		// undo the cancel / mark-read side effects — restarting the SDK
-		// loop or rolling back read state is the user's call.
-		const updated = await sessionStore.updateSession(sessionId, {
-			archivedAt: undefined,
-		});
-		if (!updated) throw new Error("Session not found");
-		broadcast("session:patch", { sessionId, archivedAt: undefined });
-		broadcast("state:changed", undefined, e.sender.id);
-	});
 	ipcMain.handle("session:delete", async (e, sessionId: string) => {
 		// Capture the worktree binding BEFORE we tombstone / delete the
 		// session record — we need it to detach from the worktree registry
@@ -387,6 +358,9 @@ export function registerSessionsHandlers(): SessionManager {
 		// We don't await its `done` here: the tombstone above means we don't
 		// need its broadcasts anyway.
 		manager.cancel(sessionId);
+		// Babysitting ends with the session — an undo-restore brings the
+		// session back, but not its babysitter.
+		babysitter.clear(sessionId);
 		// Resolve any pending permission promises for this session and broadcast
 		// permission:resolved so the renderer's inbox queue clears. Redundant
 		// for sessions that were running (the loop's cancelled branch already

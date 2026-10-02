@@ -136,6 +136,27 @@ async function probeSupportedModels(): Promise<ModelInfo[]> {
 		abort.abort();
 	}
 }
+
+/**
+ * Bound an SDK control request (interrupt / setModel / supportedModels) to a
+ * deadline. The SDK resolves these only when the CLI answers the matching
+ * `control_response` — there is **no timeout in the SDK** — so a wedged CLI
+ * leaves the promise pending forever, which upstream means a model-picker
+ * frozen on `saving` or an eternal "Loading models…" spinner. Rejects with a
+ * labelled Error so each call site keeps its own failure policy (interrupt /
+ * setModel swallow-and-continue; supportedModels surfaces the message in the
+ * picker). Same `Promise.race` pattern as `cancelAndWait`.
+ */
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+	let timer: NodeJS.Timeout;
+	const timeout = new Promise<never>((_, reject) => {
+		timer = setTimeout(
+			() => reject(new Error(`${label} timed out after ${ms}ms`)),
+			ms,
+		);
+	});
+	return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
 import type {
 	ClaudeSession,
 	ClaudeSessionFull,
@@ -1208,7 +1229,7 @@ export class SessionManager {
 		}
 
 		// May be undefined if the main session was deleted out from under a
-		// still-running sidequest. Rare (delete/archive both discard first), but
+		// still-running sidequest. Rare (delete discards first), but
 		// the promotion is still worth completing on the sidequest turns alone.
 		const realParent = sessionStore.getSession(parentSessionId);
 		const forkIndex =
@@ -2281,7 +2302,16 @@ export class SessionManager {
 			entry.session.model = model;
 			entry.session.modelChangedAt = modelChangedAt;
 			try {
-				await entry.queryRef.current?.setModel(model);
+				// Deadline, not just error-swallowing: the SDK control request
+				// resolves only when the CLI answers, so a wedged CLI would
+				// otherwise pend forever and freeze the model picker. On
+				// timeout we still fall through to the store write below —
+				// the override persists and applies on the next (re)spawn.
+				await withTimeout(
+					entry.queryRef.current?.setModel(model) ?? Promise.resolve(),
+					5000,
+					"setModel",
+				);
 			} catch (err) {
 				console.error("[ccw] setModel failed:", err);
 			}
@@ -2318,10 +2348,17 @@ export class SessionManager {
 		const live = sessionId
 			? this.sessions.get(sessionId)?.queryRef.current
 			: undefined;
-		if (live) {
-			return await live.supportedModels();
-		}
-		return await probeSupportedModels();
+		// Rejecting timeout (unlike interrupt/setModel's best-effort ones):
+		// the picker's fetch catch turns the rejection into a visible error
+		// instead of an eternal "Loading models…" spinner. 15s, not 5s — the
+		// probe branch cold-spawns a whole CLI process. The probe's own
+		// `finally { abort.abort() }` still tears the subprocess down when
+		// its promise eventually settles, so a timed-out probe doesn't leak.
+		return await withTimeout(
+			live ? live.supportedModels() : probeSupportedModels(),
+			15000,
+			"supportedModels",
+		);
 	}
 
 	/**
@@ -2336,8 +2373,25 @@ export class SessionManager {
 	async interrupt(sessionId: string) {
 		const entry = this.sessions.get(sessionId);
 		if (!entry) return;
+		// Settle any pending permission prompt FIRST. The SDK's `canUseTool`
+		// promise only resolves on a user click or this cancel — and the CLI
+		// can sit on the unanswered `can_use_tool` reply before acking the
+		// interrupt, so interrupting while a permission card is up used to
+		// hang here forever (the model picker's switch-and-resume froze on
+		// `saving`). Denying it also broadcasts `permission:resolved`, which
+		// clears the stale card in the renderer and unblocks the queued-
+		// message flusher's `pendingPermission` guard.
+		this.broker.cancelAllForSession(sessionId, "Interrupted");
 		try {
-			await entry.queryRef.current?.interrupt();
+			// Best-effort deadline: if the CLI doesn't ack within 5s, log and
+			// move on. Rejecting would only propagate a hang to the shared
+			// Stop/quit paths; `setIdle()` below hard-resets our own state
+			// either way, so the UI unsticks.
+			await withTimeout(
+				entry.queryRef.current?.interrupt() ?? Promise.resolve(),
+				5000,
+				"interrupt",
+			);
 		} catch (err) {
 			console.error("[ccw] interrupt failed:", err);
 		}

@@ -35,6 +35,7 @@ import { useNewSessionHotkey } from "./features/claude-sessions/hooks/useNewSess
 import { usePlanModeHotkey } from "./features/claude-sessions/hooks/usePlanModeHotkey";
 import { useUndoHotkey } from "./features/claude-sessions/hooks/useUndoHotkey";
 import { useDictationHotkey } from "./features/claude-sessions/hooks/useDictationHotkey";
+import { useBabysitHotkey } from "./features/claude-sessions/hooks/useBabysitHotkey";
 import { CommandPaletteModal } from "./features/claude-sessions/components/CommandPaletteModal";
 import { T } from "./design/tokens";
 
@@ -72,13 +73,16 @@ export default function MainApp() {
 	// ⌘P — toggles Plan ⇄ Auto-edit, but only while a session composer has
 	// focus (scoped via the composer's data-composer-session-id attribute).
 	usePlanModeHotkey();
-	// ⇧⌘Z — restores the most recently deleted/handed-off/archived session.
+	// ⇧⌘Z — restores the most recently deleted/handed-off session.
 	// Skips editable targets so native text redo is untouched, and falls
 	// through entirely when there's nothing buffered.
 	useUndoHotkey();
 	// Global ⌘D — starts/stops voice dictation in the focused composer, or
 	// stops whichever take is already running. No-op unless a session is open.
 	useDictationHotkey();
+	// Global ⌘⇧B — opens the Babysitter modal for the active session. No-op
+	// off a session route, and on drafts (nothing to babysit yet).
+	useBabysitHotkey();
 	return (
 		<div
 			style={{

@@ -8,7 +8,7 @@ Ground Control is a native desktop app that turns Claude into a real coding team
 
 <!-- SCREENSHOT #1: hero -->
 ![Ground Control main window with sessions sidebar, chat, and inbox panel](./docs/screenshots/01-hero.png)
-> 📸 **What to capture:** the full app window in its "lived-in" state — left sidebar with 4–6 named sessions (mix of active / idle / archived), main chat showing a real in-progress conversation with Claude (a couple of user messages, an assistant reply, and one tool call), and the right-side inbox/notes panel visible. Pick a project with a meaningful branch name. This is the marquee shot — pick the prettiest window state you can stage.
+> 📸 **What to capture:** the full app window in its "lived-in" state — left sidebar with 4–6 named sessions (mix of active / idle), main chat showing a real in-progress conversation with Claude (a couple of user messages, an assistant reply, and one tool call), and the right-side inbox/notes panel visible. Pick a project with a meaningful branch name. This is the marquee shot — pick the prettiest window state you can stage.
 
 ---
 
@@ -24,13 +24,13 @@ Ground Control is a native desktop app that turns Claude into a real coding team
 ## Features
 
 ### 1. Multi-session workspace
-Spin up and switch between as many Claude sessions as you need — each scoped to its own folder, with its own history, notes, and permission state. Sessions persist across restarts. Archive the ones you're done with without losing the transcript.
+Spin up and switch between as many Claude sessions as you need — each scoped to its own folder, with its own history, notes, and permission state. Sessions persist across restarts. Delete the ones you're done with — it's undoable for the rest of the run.
 
 <sub>`src/renderer/src/features/claude-sessions/components/SessionsList.tsx` · `SessionChat.tsx`</sub>
 
 <!-- SCREENSHOT #2: sessions sidebar -->
 ![Left sidebar showing multiple Claude sessions](./docs/screenshots/02-sessions-sidebar.png)
-> 📸 **What to capture:** the left sessions sidebar with 4–6 sessions visible — mix of statuses (one actively running with a spinner, a couple idle, one archived if your UI shows them inline), at least one session showing an unread badge for new activity, and the currently selected session highlighted. Crop tight to the sidebar plus a sliver of the chat area.
+> 📸 **What to capture:** the left sessions sidebar with 4–6 sessions visible — mix of statuses (one actively running with a spinner, a couple idle), at least one session showing an unread badge for new activity, and the currently selected session highlighted. Crop tight to the sidebar plus a sliver of the chat area.
 
 ---
 

@@ -21,10 +21,14 @@ the single source of truth so shortcuts are easy to find.
   stops whichever take is already running regardless of focus, and is a
   no-op in any other text field (rename box, notes editor) or with no
   session open
+- `Cmd+Shift+B` — open the Babysitter modal for the active session, where
+  Ground Control's auto-answers for that session's plan / permission /
+  question prompts are configured. No-op off a session route and on a draft
+  session
 - `Cmd+Shift+M` — open the model picker for the active session (picking a
   model while a turn is running interrupts it, switches, and resumes
   automatically)
-- `Cmd+Shift+Z` — restore the most recently deleted / handed-off / archived
+- `Cmd+Shift+Z` — restore the most recently deleted / handed-off
   session. Ignored while a text field has focus (native redo wins) and when
   nothing is buffered. Not `Cmd+Z`: that's the most-used text shortcut in the
   app, and claiming it would mean hand-rebuilding the native Edit menu

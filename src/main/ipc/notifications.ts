@@ -5,7 +5,6 @@ import * as windows from "../windows";
 export class NotificationManager {
 	private warnedNoSupport = false;
 	private pendingCount = 0;
-	private unreadCount = 0;
 
 	notifyPermissionRequest(req: PermissionRequest, sessionTitle?: string) {
 		if (!Notification.isSupported()) {
@@ -59,9 +58,11 @@ export class NotificationManager {
 		this.applyBadge();
 	}
 
-	setUnreadCount(count: number) {
-		this.unreadCount = Math.max(0, count);
-		this.applyBadge();
+	setUnreadCount(_count: number) {
+		// Accepted to keep the renderer→main IPC contract
+		// ("notifications:setUnreadCount"), but intentionally unused: the dock
+		// badge only reflects pending permission requests (see applyBadge);
+		// unread assistant messages are surfaced in-app via AppNav.
 	}
 
 	private applyBadge() {

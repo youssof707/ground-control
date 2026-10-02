@@ -128,7 +128,7 @@ export function useQueuedMessageFlusher() {
 					tryFlush(id);
 				}
 			}
-			// A session dropped out of the store entirely (deleted/archived) —
+			// A session dropped out of the store entirely (deleted) —
 			// stop holding a queue for it. Sidequest queues are owned by the
 			// sweep below; skip them here so this pass can't race the
 			// intermediate tick a re-fork produces (discard-then-register are

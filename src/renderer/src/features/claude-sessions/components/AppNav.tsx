@@ -30,45 +30,39 @@ export function AppNav() {
 	const setSessionPanel = useRightPanelStore((s) => s.setSessionPanel);
 	// A dot on the toggle when the current session has a sidequest actively
 	// working — the panel itself may not be open, so this is the only signal
-	// the user gets that something is running back there.
+	// the user gets that something is running back there. Green while it
+	// works, orange while it's blocked waiting on the user (a permission
+	// prompt / question queued under the sidequest's own id).
 	const sidequestRunning = useSidequestsStore(
 		(s) => activeSessionId != null && s.byParent[activeSessionId]?.status === "running",
 	);
-
-	// Archive must vanish from every attention-grabbing count: the
-	// AppNav "running" / "editing" / "waiting" stats, the Inbox toggle badge,
-	// and (downstream) the dock badge. Archived sessions get filtered out
-	// at every derivation that produces a number for the user to
-	// glance at, so an unreplied archived session doesn't keep
-	// glowing in the corner of their screen.
-	const isArchived = (id: string) => sessionsMap[id]?.archivedAt != null;
+	const sidequestWaiting = useSidequestsStore((s) => {
+		const sq = activeSessionId != null ? s.byParent[activeSessionId] : undefined;
+		if (!sq) return false;
+		return (
+			sq.status === "awaiting_permission" ||
+			queue.some((q) => q.sessionId === sq.sidequestId)
+		);
+	});
 
 	const runningCount = sessionsOrder.filter(
-		(id) => sessionsMap[id]?.status === "running" && !isArchived(id),
+		(id) => sessionsMap[id]?.status === "running",
 	).length;
 
 	// Running sessions that are *not* in plan mode — i.e. actually touching the
 	// filesystem rather than doing read-only research. A subset of runningCount.
 	const editingCount = sessionsOrder.filter((id) => {
 		const s = sessionsMap[id];
-		return s?.status === "running" && s.mode !== "plan" && !isArchived(id);
+		return s?.status === "running" && s.mode !== "plan";
 	}).length;
 
 	// Sidequests are a side conversation the user is already looking at in the
-	// panel — they must not drive the global attention counters, and they have
-	// no session row for `isArchived` to consult anyway.
+	// panel — they must not drive the global attention counters.
 	const attentionQueue = queue.filter((q) => !isSidequestId(q.sessionId));
 
-	const waitingCount = new Set(
-		attentionQueue
-			.filter((q) => !isArchived(q.sessionId))
-			.map((q) => q.sessionId),
-	).size;
+	const waitingCount = new Set(attentionQueue.map((q) => q.sessionId)).size;
 
-	const inboxBadge = attentionQueue.reduce(
-		(n, q) => (isArchived(q.sessionId) ? n : n + 1),
-		0,
-	);
+	const inboxBadge = attentionQueue.length;
 
 	/**
 	 * Opening the panel *is* the request for a sidequest — don't make the user
@@ -194,6 +188,7 @@ export function AppNav() {
 				<SidequestToggle
 					active={rightPanel === "sidequest"}
 					running={sidequestRunning}
+					waiting={sidequestWaiting}
 					onClick={toggleSidequest}
 				/>
 			) : null}
@@ -242,10 +237,12 @@ function NotesToggle({
 function SidequestToggle({
 	active,
 	running,
+	waiting,
 	onClick,
 }: {
 	active: boolean;
 	running: boolean;
+	waiting: boolean;
 	onClick: () => void;
 }) {
 	return (
@@ -270,13 +267,13 @@ function SidequestToggle({
 			}}
 		>
 			<span>Sidequest</span>
-			{running ? (
+			{running || waiting ? (
 				<span
 					style={{
 						width: 6,
 						height: 6,
 						borderRadius: "50%",
-						background: T.ok,
+						background: waiting ? T.warn : T.ok,
 						flexShrink: 0,
 					}}
 				/>

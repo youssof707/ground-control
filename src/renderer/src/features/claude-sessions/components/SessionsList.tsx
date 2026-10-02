@@ -24,12 +24,15 @@ import {
 	startSessionFromSkill,
 } from "../lib/sessionStartActions";
 import { AddToGroupModal } from "./AddToGroupModal";
+import { BabysitBadge } from "./BabysitBadge";
+import { BabysitModal } from "./BabysitModal";
+import { useBabysitStore } from "../stores/useBabysitStore";
 import { RenameGroupModal } from "./RenameGroupModal";
 import { SettingsModal } from "./SettingsModal";
 import { ShortcutsMenuButton } from "./ShortcutsMenu";
 import { T } from "../../../design/tokens";
 import { BranchChipWithDelta, StatusPill } from "../../../design/Atoms";
-import { WorktreeChip, WORKTREE_COLOR_MAP } from "../../../design/WorktreeChip";
+import { WORKTREE_COLOR_MAP } from "../../../design/WorktreeChip";
 import type {
 	ClaudeSessionFull,
 	PermissionRequest,
@@ -80,13 +83,8 @@ export function SessionsList({
 	// across two consecutive deletes.
 	const [alsoDeleteWorktree, setAlsoDeleteWorktree] = useState(false);
 	const worktrees = useWorktreesStore((s) => s.worktrees);
-	const [pendingArchiveId, setPendingArchiveId] = useState<string | null>(
-		null,
-	);
-	const [archiveError, setArchiveError] = useState<string | null>(null);
-	const [archiving, setArchiving] = useState(false);
 	// Session currently picking a group in the AddToGroupModal. Mirrors the
-	// pendingDeleteId / pendingArchiveId pattern above; null = closed.
+	// pendingDeleteId pattern above; null = closed.
 	const [pendingGroupSessionId, setPendingGroupSessionId] = useState<
 		string | null
 	>(null);
@@ -98,11 +96,6 @@ export function SessionsList({
 	>(null);
 	const groups = useSessionGroupsStore((s) => s.groups);
 	const [workspaceFilter, setWorkspaceFilter] = useState<string[]>([]);
-	// Non-persistent view toggle: when true, archived sessions are no longer
-	// filtered out of the sidebar list (and their cwds appear in the
-	// workspace filter). Resets to false on reload — mirrors how
-	// workspaceFilter behaves.
-	const [showArchived, setShowArchived] = useState(false);
 	// Read-only settings modal, opened from the view-options dropdown.
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	// "Recently deleted" list, also opened from the view-options dropdown —
@@ -112,7 +105,7 @@ export function SessionsList({
 	// Collapsed ungrouped buckets. Keys are cwd paths for cwd buckets and
 	// `wt:<worktreeId>` for worktree buckets (cwds are absolute paths or "",
 	// so the prefix can't collide). Non-persistent view state — resets on
-	// reload, mirroring workspaceFilter / showArchived above.
+	// reload, mirroring workspaceFilter above.
 	const [collapsedCwds, setCollapsedCwds] = useState<Set<string>>(
 		() => new Set(),
 	);
@@ -174,15 +167,10 @@ export function SessionsList({
 	}, [sqIdsKey, queue]);
 
 	const sortedOrder = useMemo(() => {
-		return [...order].sort((a, b) => {
-			// Archived sessions sink to the bottom regardless of recency, so
-			// the active list stays at eye level when "Show archived
-			// sessions" is enabled. Within each group, newest first.
-			const archivedA = sessions[a]?.archivedAt != null ? 1 : 0;
-			const archivedB = sessions[b]?.archivedAt != null ? 1 : 0;
-			if (archivedA !== archivedB) return archivedA - archivedB;
-			return (sessions[b]?.createdAt ?? 0) - (sessions[a]?.createdAt ?? 0);
-		});
+		return [...order].sort(
+			(a, b) =>
+				(sessions[b]?.createdAt ?? 0) - (sessions[a]?.createdAt ?? 0),
+		);
 	}, [order, sessions]);
 
 	// Source of truth for "the workspace the user most recently created a
@@ -195,36 +183,19 @@ export function SessionsList({
 		for (const id of sortedOrder) {
 			const s = sessions[id];
 			if (!s) continue;
-			// Archived sessions are invisible to the sidebar — that includes
-			// the workspace filter dropdown. Once the user enables "Show
-			// archived sessions", their cwds become eligible too so the
-			// filter dropdown can target them.
-			if (!showArchived && s.archivedAt != null) continue;
 			if (s.cwd) set.add(s.cwd);
 		}
 		return Array.from(set).sort((a, b) =>
 			folderName(a).localeCompare(folderName(b)),
 		);
-	}, [sortedOrder, sessions, showArchived]);
-
-	// How many archived sessions exist anywhere. Drives whether to render
-	// the view-options button when there's no workspace filter to anchor
-	// the second header row.
-	const archivedCount = useMemo(() => {
-		let n = 0;
-		for (const id of sortedOrder) {
-			if (sessions[id]?.archivedAt != null) n++;
-		}
-		return n;
 	}, [sortedOrder, sessions]);
 
 	// Whether to render the filter/view-options row under the New Session
 	// button. `undoEntries.length` counts because that row holds the kebab,
 	// which is the ONLY way to reach "Recently deleted" — without it a fresh
-	// install (no workspaces, nothing archived) would hide the kebab and
-	// strand the undo buffer behind a hotkey nobody can discover.
-	const showFilterRow =
-		workspaces.length > 0 || archivedCount > 0 || undoEntries.length > 0;
+	// install (no workspaces) would hide the kebab and strand the undo
+	// buffer behind a hotkey nobody can discover.
+	const showFilterRow = workspaces.length > 0 || undoEntries.length > 0;
 
 	// Prune selected workspaces that no longer have any sessions (e.g. last
 	// session in that workspace was deleted). Empty array means "All", so it's
@@ -241,17 +212,12 @@ export function SessionsList({
 		return sortedOrder.filter((id) => {
 			const s = sessions[id];
 			if (!s) return false;
-			// Archive hides the row from the sidebar unless the user has
-			// explicitly enabled "Show archived sessions". The session is
-			// otherwise untouched (still in the store, still openable by
-			// URL).
-			if (!showArchived && s.archivedAt != null) return false;
 			if (allowed) {
 				if (s.cwd == null || !allowed.has(s.cwd)) return false;
 			}
 			return true;
 		});
-	}, [sortedOrder, sessions, workspaceFilter, showArchived]);
+	}, [sortedOrder, sessions, workspaceFilter]);
 
 	// Partition the visible rows into "ungrouped" (rendered first, bucketed
 	// by cwd — or by worktree for worktree-bound sessions — under subtle
@@ -259,10 +225,9 @@ export function SessionsList({
 	// Precedence per session: manual group > worktree > cwd. Built from
 	// `visibleOrder`, so:
 	//   - intra-bucket / intra-group ordering matches the flat list's
-	//     comparator exactly (newest first; archived sink within their
-	//     bucket — the per-bucket analogue of the global convention above);
-	//   - a group whose members are all filtered out (workspace filter,
-	//     archived-hidden) never materializes a section → hidden, per spec;
+	//     comparator exactly (newest first);
+	//   - a group whose members are all filtered out (workspace filter)
+	//     never materializes a section → hidden, per spec;
 	//   - a dangling groupId (group record missing — crash window, stale
 	//     cache) degrades to "ungrouped" instead of vanishing the row, and
 	//     a dangling worktreeId likewise degrades to the cwd bucket.
@@ -416,12 +381,8 @@ export function SessionsList({
 		if (draft) {
 			// This repurposes the shared draft slot for a plain "new session
 			// here" intent, distinct from whatever it was doing before —
-			// reset the model override to the app default and clear any
-			// pending handoff-delete so neither rides along onto an
-			// unrelated session. (See DraftSession.handoffDeleteSessionId
-			// doc: every retarget site must disown it explicitly or an
-			// abandoned "Handoff & delete" can later delete the wrong
-			// session.)
+			// reset the model override to the app default so it doesn't
+			// ride along onto an unrelated session.
 			//
 			// `groupId` is disowned UNCONDITIONALLY, not inside the cwd
 			// guard below: "new session in this folder" is an inherently
@@ -435,10 +396,8 @@ export function SessionsList({
 				worktreeId?: string;
 				groupId?: string;
 				model?: string;
-				handoffDeleteSessionId?: string;
 			} = {
 				model: appDefaultModel(),
-				handoffDeleteSessionId: undefined,
 				groupId: undefined,
 			};
 			if (draft.cwd !== cwd) {
@@ -477,10 +436,8 @@ export function SessionsList({
 				worktreeId?: string;
 				groupId?: string;
 				model?: string;
-				handoffDeleteSessionId?: string;
 			} = {
 				model: appDefaultModel(),
-				handoffDeleteSessionId: undefined,
 				groupId: undefined,
 			};
 			if (draft.cwd !== wt.baseDir || draft.worktreeId !== wt.id) {
@@ -531,15 +488,14 @@ export function SessionsList({
 		if (draft) {
 			// Same disowning rule as startInCwd/startInWorktree: a fresh "new
 			// session in this group" intent must not carry a stale model
-			// override or a pending handoff-delete — reset the model to the
-			// app default rather than to nothing.
+			// override — reset the model to the app default rather than to
+			// nothing.
 			const patch: {
 				cwd?: string;
 				worktreeId?: string;
 				groupId?: string;
 				model?: string;
-				handoffDeleteSessionId?: string;
-			} = { model: appDefaultModel(), handoffDeleteSessionId: undefined };
+			} = { model: appDefaultModel() };
 			// Guarded like startInCwd: a draft ALREADY in this group on this
 			// folder keeps a worktree the user attached by hand in the draft
 			// header. Only a genuine retarget clears the binding.
@@ -635,16 +591,13 @@ export function SessionsList({
 	 * Entry point for the ⋯ menu's Delete item.
 	 *
 	 * Delete is undoable now, so the blanket "are you sure?" is gone — the undo
-	 * toast is a better net than a dialog people click through on reflex, and
-	 * keeping the modal would have contradicted dropping archive's for exactly
-	 * the same reason.
+	 * toast is a better net than a dialog people click through on reflex.
 	 *
 	 * The modal survives in one case, and it isn't about the session: when this
 	 * is the LAST session on a worktree, deleting it offers to destroy that
 	 * checkout too. `worktreeRemove` shells out to git and then does a recursive
 	 * `fs.rm`, which no in-memory buffer can undo — so that choice still gets
-	 * asked about. Exactly parallel to `startArchive`, which only stops to ask
-	 * when a turn is mid-flight.
+	 * asked about.
 	 */
 	const startDelete = (sessionId: string) => {
 		if (lastOnWorktreeId(sessionId)) {
@@ -868,115 +821,9 @@ export function SessionsList({
 		/>
 	);
 
-	const runArchive = async (targetId: string, viaModal: boolean) => {
-		if (archiving) return;
-		// Capture before the async work — the routing decision below has to be
-		// made against the session that was active when we started.
-		const wasActive = targetId === activeSessionId;
-		const archivedTitle = sessions[targetId]?.title ?? "session";
-		setArchiving(true);
-		setArchiveError(null);
-		try {
-			await window.claude.archiveSession(targetId);
-			// Archive needs no snapshot: the record never leaves disk, so
-			// undoing it is a plain `unarchiveSession` call. `kind: "archive"`
-			// is what tells `restoreEntry` to take that cheaper path.
-			pushUndo({
-				kind: "archive",
-				sessionId: targetId,
-				title: archivedTitle,
-				snapshot: null,
-				worktreeDeleted: false,
-			});
-			// Intentionally do NOT call removeSession or
-			// permissions.removeBySessionId here. Archive is reversible and
-			// the session must remain in the renderer store so URL access
-			// (`/sessions/:id`) still resolves. The main process broadcasts
-			// a `session:patch` with `archivedAt`, which upserts the field
-			// on the row; the sidebar's `visibleOrder` filter then hides
-			// it.
-			//
-			// Mirror the backend's mark-read locally so the originating
-			// window's AppNav unread count drops immediately. Main has
-			// already persisted the same mark (monotonic), so this is a
-			// no-op IPC on the persistence side but updates the in-memory
-			// cache for this window.
-			useReadStore.getState().markRead(targetId);
-			// Backend also broadcasts `permission:resolved` for any
-			// pending tool-use prompts it cancelled, which drains them
-			// from the permissions store automatically — no local clear
-			// needed.
-			setPendingArchiveId(null);
-			// Drop back to "/" if the archived session was the one open in
-			// the right pane — there's no UI surface to find it again from
-			// the sidebar after archiving (matches Delete's UX).
-			if (wasActive) navigate("/");
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			// Route the failure to whichever surface the user is actually
-			// looking at. `viaModal` is passed explicitly rather than inferred
-			// from `pendingArchiveId`: that value comes from the render
-			// closure, so reading it here would silently depend on when this
-			// async function was created.
-			if (viaModal) setArchiveError(message);
-			else setStartError(`Couldn't archive: ${message}`);
-		} finally {
-			setArchiving(false);
-		}
-	};
-
-	/**
-	 * Entry point for the ⋯ menu's Archive item.
-	 *
-	 * Archive used to always raise a confirm modal, which had the safety
-	 * backwards: archiving is fully reversible (unarchive just clears
-	 * `archivedAt`, and already runs with no confirmation at all), while the
-	 * genuinely destructive action next to it in the same menu is the one that
-	 * needed a net. So archive is now immediate, and the undo toast is what
-	 * catches a misclick.
-	 *
-	 * The one surviving confirm has nothing to do with reversibility: archiving
-	 * a session mid-turn CANCELS that turn and rejects its pending permission
-	 * prompts, and unarchiving does not resume it. That's real work thrown
-	 * away, so it still gets asked about.
-	 */
-	const startArchive = (sessionId: string) => {
-		const status = sessions[sessionId]?.status;
-		if (status === "running" || status === "awaiting_permission") {
-			setPendingArchiveId(sessionId);
-			setArchiveError(null);
-			return;
-		}
-		void runArchive(sessionId, false);
-	};
-
-	const confirmArchive = () => {
-		if (!pendingArchiveId) return;
-		void runArchive(pendingArchiveId, true);
-	};
-
-	const unarchive = async (sessionId: string) => {
-		// No confirm modal — unarchive is benign (it just makes a hidden
-		// row visible again) and acts as the "undo" affordance for an
-		// accidental archive.
-		try {
-			await window.claude.unarchiveSession(sessionId);
-		} catch (err) {
-			// Surface failures the same way startError does so the user
-			// isn't left wondering why nothing happened.
-			setStartError(err instanceof Error ? err.message : String(err));
-		}
-	};
-
-	const cancelArchive = () => {
-		if (archiving) return;
-		setPendingArchiveId(null);
-		setArchiveError(null);
-	};
-
 	const removeFromGroup = async (sessionId: string) => {
 		// No confirm modal — removal is benign and self-undoable (re-add via
-		// the ⋯ menu), mirroring unarchive. If this was the group's last
+		// the ⋯ menu). If this was the group's last
 		// member, main auto-deletes the group and pings all windows.
 		try {
 			await window.claude.setSessionGroup(sessionId, null);
@@ -1094,8 +941,6 @@ export function SessionsList({
 				pending={sessionPending}
 				active={id === activeSessionId}
 				onDelete={() => startDelete(id)}
-				onArchive={() => startArchive(id)}
-				onUnarchive={() => void unarchive(id)}
 				onAddToGroup={() => setPendingGroupSessionId(id)}
 				onRemoveFromGroup={() => void removeFromGroup(id)}
 			/>
@@ -1113,36 +958,6 @@ export function SessionsList({
 				console.error("[ccw] setGroupCollapsed failed:", err);
 			});
 	};
-
-	const pendingArchiveSession = pendingArchiveId
-		? sessions[pendingArchiveId]
-		: null;
-
-	// Only ever open for a session that's mid-turn — `startArchive` archives
-	// idle sessions outright. So the copy is about the turn being thrown away,
-	// not about hiding a row: hiding is reversible and needs no dialog, while
-	// a cancelled turn is not resumed by unarchiving.
-	const archiveModal = (
-		<ConfirmModal
-			open={!!pendingArchiveId}
-			title="Archive session?"
-			message={
-				<>
-					<strong>
-						{pendingArchiveSession?.title ?? "This session"}
-					</strong>{" "}
-					is still working. Archiving stops the turn in progress and
-					unarchiving won't resume it.
-				</>
-			}
-			confirmLabel="Archive"
-			cancelLabel="Cancel"
-			busy={archiving}
-			error={archiveError}
-			onConfirm={confirmArchive}
-			onCancel={cancelArchive}
-		/>
-	);
 
 	return (
 		<div
@@ -1207,8 +1022,6 @@ export function SessionsList({
 							</div>
 						) : null}
 						<ViewOptionsButton
-							showArchived={showArchived}
-							onToggleArchived={() => setShowArchived((v) => !v)}
 							onOpenSettings={() => setSettingsOpen(true)}
 							onOpenRecentlyDeleted={() => setRecentlyDeletedOpen(true)}
 							recentlyDeletedCount={undoEntries.length}
@@ -1414,8 +1227,6 @@ export function SessionsList({
 										setPendingRenameGroupId(id)
 									}
 									onDelete={(id) => startDelete(id)}
-									onArchive={(id) => startArchive(id)}
-									onUnarchive={(id) => void unarchive(id)}
 									onAddToGroup={(id) =>
 										setPendingGroupSessionId(id)
 									}
@@ -1430,7 +1241,6 @@ export function SessionsList({
 			</div>
 
 			{deleteModal}
-			{archiveModal}
 			<AddToGroupModal
 				sessionId={pendingGroupSessionId}
 				onClose={() => setPendingGroupSessionId(null)}
@@ -1439,6 +1249,9 @@ export function SessionsList({
 				groupId={pendingRenameGroupId}
 				onClose={() => setPendingRenameGroupId(null)}
 			/>
+			{/* Self-driven: opens off `useBabysitStore.modalSessionId`, set by
+			    a row's ⋯ menu or its babysitting badge. */}
+			<BabysitModal />
 			<SettingsModal
 				open={settingsOpen}
 				onClose={() => setSettingsOpen(false)}
@@ -1480,12 +1293,6 @@ type SidebarRow =
  * each row, for the collapsed-section header badges. Kept in lockstep with
  * that hook's precedence — waiting beats running, each session counts once —
  * so a collapsed header can never disagree with the rows it expands into.
- *
- * Counts whatever is in `ids`, which means archived members contribute only
- * when the user has opted into "Show archived sessions" (they're absent from
- * `visibleOrder` otherwise). That's the right reading here: the badge promises
- * "this many hidden rows would light up". Deliberately unlike AppNav's global
- * attention counters, which exclude archived sessions unconditionally.
  */
 function sectionStatusCounts(
 	ids: string[],
@@ -1570,8 +1377,6 @@ function SessionRowSidebar({
 	inGroup = false,
 	hideCwd = false,
 	onDelete,
-	onArchive,
-	onUnarchive,
 	onAddToGroup,
 	onRemoveFromGroup,
 }: {
@@ -1588,8 +1393,6 @@ function SessionRowSidebar({
 	 * groupId renders (and behaves) as ungrouped. */
 	inGroup?: boolean;
 	onDelete: () => void;
-	onArchive: () => void;
-	onUnarchive: () => void;
 	onAddToGroup: () => void;
 	onRemoveFromGroup: () => void;
 }) {
@@ -1598,13 +1401,16 @@ function SessionRowSidebar({
 		pending,
 	);
 	const markUnread = useReadStore((s) => s.markUnread);
-	const archived = session.archivedAt != null;
 	// Live CLI background tasks (dev servers, background shells). Primitive
 	// selector so a row re-renders only when the COUNT moves — these rows sit
 	// on the streaming path. Drives the "idle" swap in the chips row below.
 	const bgTaskCount = useLiveTasksStore(
 		(s) => s.tasks[session.id]?.length ?? 0,
 	);
+	// Babysit mode on/off — only for the ⋯ menu's label. The badge in the
+	// chips row subscribes for itself. Primitive selector, same reason as
+	// `bgTaskCount` above.
+	const babysitting = useBabysitStore((s) => !!s.bySession[session.id]);
 	// One-shot accent wash right after this row was restored by undo. The row
 	// returns to its original recency slot, which in a long sidebar is easily
 	// off-screen or lost among neighbours — navigation proves the restore
@@ -1633,14 +1439,6 @@ function SessionRowSidebar({
 				// a foreign grey block floating out of its own box.
 				background: active ? ROW_SELECTED_BG : "transparent",
 				position: "relative",
-				// Archived rows dim heavily so they read as "set aside"
-				// against the active list. The full row dims — including
-				// the ⋯ menu — but the button stays fully clickable. The
-				// accent stripe on the active row also dims, which is
-				// fine: archived sessions rarely sit in the active slot,
-				// and when they do the dim acts as a useful "you're
-				// viewing an archived session" cue.
-				opacity: archived ? 0.4 : 1,
 			}}
 		>
 			{active ? (
@@ -1707,14 +1505,15 @@ function SessionRowSidebar({
 						</span>
 						<RowMenuButton
 							onDelete={onDelete}
-							onArchive={onArchive}
-							onUnarchive={onUnarchive}
-							archived={archived}
 							onMarkUnread={() => markUnread(session.id)}
 							showMarkUnread={!unread}
 							grouped={inGroup}
 							onAddToGroup={onAddToGroup}
 							onRemoveFromGroup={onRemoveFromGroup}
+							babysitting={babysitting}
+							onBabysit={() =>
+								useBabysitStore.getState().openModal(session.id)
+							}
 						/>
 					</div>
 					{/* Summary — two-line clamp */}
@@ -1782,6 +1581,10 @@ function SessionRowSidebar({
 								}
 							/>
 						)}
+						{/* Babysit mode — its own badge beside the status, not a
+						    status itself. Renders nothing unless this session is
+						    being babysat; clicking it opens the Babysitter modal. */}
+						<BabysitBadge sessionId={session.id} />
 						{session.branch ? (
 							<BranchChipWithDelta
 								branch={session.branch}
@@ -1832,8 +1635,6 @@ function GroupSection({
 	draftSlot,
 	onRename,
 	onDelete,
-	onArchive,
-	onUnarchive,
 	onAddToGroup,
 	onRemoveFromGroup,
 }: {
@@ -1860,8 +1661,6 @@ function GroupSection({
 	draftSlot?: React.ReactNode;
 	onRename: (groupId: string) => void;
 	onDelete: (id: string) => void;
-	onArchive: (id: string) => void;
-	onUnarchive: (id: string) => void;
 	onAddToGroup: (id: string) => void;
 	onRemoveFromGroup: (id: string) => void;
 }) {
@@ -1915,8 +1714,6 @@ function GroupSection({
 							active={id === activeSessionId}
 							inGroup
 							onDelete={() => onDelete(id)}
-							onArchive={() => onArchive(id)}
-							onUnarchive={() => onUnarchive(id)}
 							onAddToGroup={() => onAddToGroup(id)}
 							onRemoveFromGroup={() =>
 								onRemoveFromGroup(id)
@@ -2501,7 +2298,7 @@ function GroupContextMenu({
  *   - title is italic + paired with a "Draft" pill instead of a status chip
  *   - no unread dot, no branch chip, no summary clamp
  *   - ⋯ menu has a single "Discard" item (drafts are in-memory, so there's
- *     no archive/delete/mark-unread distinction to expose)
+ *     no delete/mark-unread distinction to expose)
  */
 function DraftRowSidebar({
 	draft,
@@ -2514,9 +2311,6 @@ function DraftRowSidebar({
 	last: boolean;
 	onDiscard: () => void;
 }) {
-	const worktree = useWorktreesStore((s) =>
-		draft.worktreeId ? s.worktrees[draft.worktreeId] : undefined,
-	);
 	return (
 		<div
 			style={{
@@ -2552,25 +2346,6 @@ function DraftRowSidebar({
 						minWidth: 0,
 					}}
 				>
-					{/* Worktree row — sits ABOVE the title, matching the real
-					    session row and the session-header treatment. Only
-					    rendered when the draft has one attached. */}
-					{worktree ? (
-						<div
-							style={{
-								display: "flex",
-								alignItems: "center",
-								minWidth: 0,
-							}}
-						>
-							<WorktreeChip
-								displayName={worktree.displayName}
-								color={worktree.color}
-								variant="readonly"
-								small
-							/>
-						</div>
-					) : null}
 					{/* Title row */}
 					<div
 						style={{
@@ -2602,8 +2377,9 @@ function DraftRowSidebar({
 						</span>
 						<DraftRowMenu onDiscard={onDiscard} />
 					</div>
-					{/* Pill row — Draft badge only; the worktree chip lives
-					    above the title now. */}
+					{/* Pill row — Draft badge only. No worktree chip: the
+					    sidebar never shows one; the bucket header already
+					    names the worktree. */}
 					<div
 						style={{
 							display: "flex",
@@ -2998,25 +2774,20 @@ function MenuItem({
  * Sidebar overflow-options dropdown. Visually a 32×32 icon button matching
  * FolderButton — stacks below it as the right-edge control of the second
  * header row, with the WorkspaceFilter taking the remaining width on the
- * left. Exposes a toggle for "Show archived sessions" / "Hide archived
- * sessions" plus "Settings". Sized as a dropdown rather than an inline
- * button so future view controls can land here without crowding the
- * header.
+ * left. Exposes "Recently deleted" (when the undo buffer has entries) plus
+ * "Settings". Sized as a dropdown rather than an inline button so future
+ * view controls can land here without crowding the header.
  *
  * `alignRight` pushes the button to the right edge when there's no
  * WorkspaceFilter sharing the row — keeps it stacked under FolderButton
  * regardless of what else is rendered.
  */
 function ViewOptionsButton({
-	showArchived,
-	onToggleArchived,
 	onOpenSettings,
 	onOpenRecentlyDeleted,
 	recentlyDeletedCount,
 	alignRight,
 }: {
-	showArchived: boolean;
-	onToggleArchived: () => void;
 	onOpenSettings: () => void;
 	onOpenRecentlyDeleted: () => void;
 	recentlyDeletedCount: number;
@@ -3060,11 +2831,8 @@ function ViewOptionsButton({
 				aria-label="View options"
 				style={{ width: 32, padding: 0, color: T.textDim }}
 			>
-				{/* Kebab (more options) icon — the menu now mixes an archived-
-				    visibility toggle with unrelated items (Settings), so an
-				    eye (which implied "the only option here is visibility")
-				    no longer fits. Three dots reads as a generic overflow
-				    menu regardless of what lands in it next. */}
+				{/* Kebab (more options) icon — three dots reads as a generic
+				    overflow menu regardless of what lands in it next. */}
 				<svg width="14" height="14" viewBox="0 0 14 14" fill="none">
 					<circle cx="7" cy="2.5" r="1.15" fill="currentColor" />
 					<circle cx="7" cy="7" r="1.15" fill="currentColor" />
@@ -3087,18 +2855,6 @@ function ViewOptionsButton({
 						boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
 					}}
 				>
-					<MenuItem
-						active={false}
-						label={
-							showArchived
-								? "Hide archived sessions"
-								: "Show archived sessions"
-						}
-						onClick={() => {
-							setOpen(false);
-							onToggleArchived();
-						}}
-					/>
 					{/* The undo toast is gone in 8s and Shift+Cmd+Z is invisible,
 					    so without this nothing on screen would ever suggest a
 					    deleted session is still recoverable. Hidden entirely at
@@ -3129,9 +2885,9 @@ function ViewOptionsButton({
 
 /**
  * Row-level action menu. Replaces the old bare ✕ button so the row exposes
- * more than just "delete". Today: Delete + Mark as unread. The mark-unread
- * item is hidden when the row is already unread — keeps the menu showing
- * only actionable items.
+ * more than just "delete": Babysit, Mark as unread, group membership, and
+ * Delete. The mark-unread item is hidden when the row is already unread —
+ * keeps the menu showing only actionable items.
  *
  * The row is wrapped in <Link>, so every click inside this menu has to
  * swallow propagation; otherwise opening the menu (or picking an item)
@@ -3140,24 +2896,24 @@ function ViewOptionsButton({
  */
 function RowMenuButton({
 	onDelete,
-	onArchive,
-	onUnarchive,
-	archived,
 	onMarkUnread,
 	showMarkUnread,
 	grouped,
 	onAddToGroup,
 	onRemoveFromGroup,
+	babysitting,
+	onBabysit,
 }: {
 	onDelete: () => void;
-	onArchive: () => void;
-	onUnarchive: () => void;
-	archived: boolean;
 	onMarkUnread: () => void;
 	showMarkUnread: boolean;
 	grouped: boolean;
 	onAddToGroup: () => void;
 	onRemoveFromGroup: () => void;
+	/** True while this session is being babysat — only changes the label. */
+	babysitting: boolean;
+	/** Open the Babysitter modal for this session. */
+	onBabysit: () => void;
 }) {
 	const [open, setOpen] = useState(false);
 	// Viewport coordinates of the anchor point (the button's bottom-right
@@ -3299,6 +3055,11 @@ function RowMenuButton({
 						boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
 					}}
 				>
+					<MenuItem
+						active={false}
+						label={babysitting ? "Babysitter" : "Babysit"}
+						onClick={runAndClose(onBabysit)}
+					/>
 					{showMarkUnread ? (
 						<MenuItem
 							active={false}
@@ -3306,23 +3067,6 @@ function RowMenuButton({
 							onClick={runAndClose(onMarkUnread)}
 						/>
 					) : null}
-					{archived ? (
-						<MenuItem
-							active={false}
-							label="Unarchive"
-							onClick={runAndClose(onUnarchive)}
-						/>
-					) : (
-						<MenuItem
-							active={false}
-							label="Archive"
-							onClick={runAndClose(onArchive)}
-						/>
-					)}
-					{/* Available on archived rows too — membership survives
-					    archiving, so an archived row (visible via "Show
-					    archived sessions") can be re-filed or pulled out of
-					    its group like any other. */}
 					{grouped ? (
 						<MenuItem
 							active={false}
@@ -3332,7 +3076,7 @@ function RowMenuButton({
 					) : (
 						<MenuItem
 							active={false}
-							label="Add to group…"
+							label="Add to group"
 							onClick={runAndClose(onAddToGroup)}
 						/>
 					)}

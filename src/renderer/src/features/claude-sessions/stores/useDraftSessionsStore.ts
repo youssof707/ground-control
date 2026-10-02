@@ -59,14 +59,6 @@ export interface DraftSession {
 	 * post-hoc regroup, and no window in which `pruneGroupIfEmpty` could
 	 * delete the group during a "Handoff & delete". */
 	groupId?: string;
-	/** Deferred half of "Handoff & delete": the session to delete once —
-	 * and only once — this draft is promoted AND its first turn lands. If
-	 * the user never sends, the source session survives. Every retarget
-	 * site that repurposes the shared draft slot for a different intent
-	 * (New Session, shortcuts) must explicitly clear this to `undefined` —
-	 * otherwise an abandoned handoff's delete can ride along onto an
-	 * unrelated later draft. */
-	handoffDeleteSessionId?: string;
 }
 
 interface State {
@@ -83,21 +75,14 @@ interface State {
 		groupId?: string;
 	}) => DraftSession;
 	// The patch type intentionally allows `worktreeId: undefined`,
-	// `model: undefined`, `groupId: undefined`, and
-	// `handoffDeleteSessionId: undefined` so callers can clear a prior
-	// binding (folder change, model picker reset, or a retarget site
-	// disowning a stale handoff-delete) in the same call shape.
+	// `model: undefined`, and `groupId: undefined` so callers can clear a
+	// prior binding (folder change, model picker reset) in the same call
+	// shape.
 	updateDraft: (
 		patch: Partial<
 			Pick<
 				DraftSession,
-				| "cwd"
-				| "title"
-				| "mode"
-				| "worktreeId"
-				| "model"
-				| "groupId"
-				| "handoffDeleteSessionId"
+				"cwd" | "title" | "mode" | "worktreeId" | "model" | "groupId"
 			>
 		>,
 	) => void;

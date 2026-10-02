@@ -9,7 +9,7 @@ import { useDraftStore } from "../stores/useDraftStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { focusComposer } from "../lib/composerActions";
 import { stopSession } from "../lib/sessionControlActions";
-import { startHandoff } from "../lib/handoffActions";
+import { runInstantHandoff, startHandoff } from "../lib/handoffActions";
 import { switchModelAndResume } from "../lib/modelSwitchActions";
 import { useComposerResize } from "../hooks/useComposerResize";
 import { PermissionCard } from "./PermissionCard";
@@ -178,20 +178,32 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 		setPendingHandoff({ text, hasDirtyDraft: !!draftText });
 	}, []);
 
-	// Stages a new session (draft, not yet created) pre-filled with the
-	// handoff text and, for "Handoff & delete", remembers to remove this
-	// session once the new one actually receives its first message —
-	// useComposerTarget's send() is what fires that deferred delete.
-	const runHandoff = (deleteOld: boolean) => {
+	// "Handoff": stage a new session (draft, not yet created) pre-filled with
+	// the handoff text — the user edits and sends it themselves.
+	const runStagedHandoff = () => {
 		if (!pendingHandoff || !session) return;
 		setPendingHandoff(null);
 		const id = startHandoff({
 			session,
 			text: pendingHandoff.text,
-			deleteOld,
 		});
 		navigate(`/sessions/${id}`);
 		focusComposer();
+	};
+
+	// "Handoff & delete": one click does everything — successor created,
+	// handoff turn sent, this session deleted (undoable via ⇧⌘Z / Recently
+	// deleted). Fire-and-forget: runInstantHandoff navigates to the successor
+	// itself (this component unmounts), and failures surface in the
+	// background-task indicator rather than here.
+	const runInstant = () => {
+		if (!pendingHandoff || !session) return;
+		setPendingHandoff(null);
+		runInstantHandoff({
+			session,
+			text: pendingHandoff.text,
+			navigate,
+		});
 	};
 
 	// Pre-pass over messages to collapse contiguous tool_use + tool_result
@@ -605,20 +617,22 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 				message={
 					<>
 						Start a new session in the same folder
-						{session.groupId ? ", group," : ""} and mode, with this message
-						pre-filled in the composer. Nothing is sent until you press
-						Enter.
+						{session.groupId ? ", group," : ""} and mode.{" "}
+						<strong>Handoff &amp; delete</strong> sends this message to the
+						new session and deletes this one immediately (undoable).{" "}
+						<strong>Handoff</strong> just pre-fills a draft — nothing is
+						sent until you press Enter.
 						{pendingHandoff?.hasDirtyDraft
-							? " Your current unsent draft will be replaced."
+							? " Picking Handoff will replace your current unsent draft."
 							: ""}
 					</>
 				}
 				confirmLabel="Handoff & delete"
 				secondaryAction={{
 					label: "Handoff",
-					onClick: () => runHandoff(false),
+					onClick: runStagedHandoff,
 				}}
-				onConfirm={() => runHandoff(true)}
+				onConfirm={runInstant}
 				onCancel={() => setPendingHandoff(null)}
 			/>
 

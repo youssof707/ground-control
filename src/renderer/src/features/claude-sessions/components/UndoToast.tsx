@@ -7,7 +7,7 @@ import { restoreEntry } from "../lib/undoActions";
 
 /**
  * The "you can take that back" prompt, shown for a few seconds after a session
- * is deleted, handed off, or archived. Renders inside `AmbientStack` (see
+ * is deleted or handed off. Renders inside `AmbientStack` (see
  * `MainApp`) in the bottom-left corner, directly above the background-task
  * chip — deleting a session with the worktree cascade spawns both, and they
  * should read as one event rather than two things fighting for the same
@@ -193,16 +193,14 @@ export function UndoToast() {
 			? `${remaining} more can be restored.`
 			: null;
 
-	// The handoff wording is deliberately different from the other two. By the
-	// time a "Handoff & delete" actually lands, the user is looking at a
+	// The handoff wording is deliberately different. By the time a
+	// "Handoff & delete" actually lands, the user is looking at a
 	// brand-new session, and an unexplained "Deleted …" appearing there reads
 	// as an error report. Naming the handoff explains why the toast is here.
 	const headline =
 		entry.kind === "handoff"
 			? `Handed off — deleted "${entry.title}"`
-			: entry.kind === "archive"
-				? `Archived "${entry.title}"`
-				: `Deleted "${entry.title}"`;
+			: `Deleted "${entry.title}"`;
 
 	return (
 		<div

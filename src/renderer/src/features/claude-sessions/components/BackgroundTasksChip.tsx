@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { T } from "../../../design/tokens";
 import { useLiveTasksStore } from "../stores/useLiveTasksStore";
 import { stopBackgroundTask } from "../lib/sessionControlActions";
@@ -25,6 +25,16 @@ export function BackgroundTasksChip({ sessionId }: { sessionId: string }) {
 	const [expanded, setExpanded] = useState(false);
 	const [hover, setHover] = useState(false);
 	const rootRef = useRef<HTMLDivElement | null>(null);
+	const cardRef = useRef<HTMLDivElement | null>(null);
+	// Card may grow upward almost to the top of the window, so it rarely
+	// needs to scroll. Measured on open, before paint; resize closes the
+	// card, so one measurement per open is enough.
+	const [maxCardHeight, setMaxCardHeight] = useState(260);
+	useLayoutEffect(() => {
+		if (!expanded || !rootRef.current) return;
+		const top = rootRef.current.getBoundingClientRect().top;
+		setMaxCardHeight(Math.max(120, Math.floor(top - 6 - 16)));
+	}, [expanded]);
 
 	const count = tasks?.length ?? 0;
 
@@ -45,7 +55,8 @@ export function BackgroundTasksChip({ sessionId }: { sessionId: string }) {
 
 	// Dismissal: Escape, mousedown outside, scroll or resize — the same
 	// trio RowMenuButton uses, so every small panel in the app closes the
-	// same way. Scroll uses capture so the transcript scroller triggers it.
+	// same way. Scroll uses capture so the transcript scroller triggers it —
+	// except scrolling the card itself, which must not dismiss it.
 	useEffect(() => {
 		if (!expanded) return;
 		const onKey = (e: KeyboardEvent) => {
@@ -54,16 +65,21 @@ export function BackgroundTasksChip({ sessionId }: { sessionId: string }) {
 		const onDown = (e: MouseEvent) => {
 			if (!rootRef.current?.contains(e.target as Node)) setExpanded(false);
 		};
-		const onScroll = () => setExpanded(false);
+		const onScroll = (e: Event) => {
+			const target = e.target;
+			if (target instanceof Node && cardRef.current?.contains(target)) return;
+			setExpanded(false);
+		};
+		const onResize = () => setExpanded(false);
 		window.addEventListener("keydown", onKey);
 		window.addEventListener("mousedown", onDown);
 		window.addEventListener("scroll", onScroll, true);
-		window.addEventListener("resize", onScroll);
+		window.addEventListener("resize", onResize);
 		return () => {
 			window.removeEventListener("keydown", onKey);
 			window.removeEventListener("mousedown", onDown);
 			window.removeEventListener("scroll", onScroll, true);
-			window.removeEventListener("resize", onScroll);
+			window.removeEventListener("resize", onResize);
 		};
 	}, [expanded]);
 
@@ -79,6 +95,7 @@ export function BackgroundTasksChip({ sessionId }: { sessionId: string }) {
 		<div ref={rootRef} style={{ position: "relative" }}>
 			{expanded ? (
 				<div
+					ref={cardRef}
 					role="region"
 					aria-label="Background tasks"
 					style={{
@@ -87,8 +104,9 @@ export function BackgroundTasksChip({ sessionId }: { sessionId: string }) {
 						right: 0,
 						zIndex: 50,
 						width: "min(360px, calc(100vw - 40px))",
-						maxHeight: 260,
+						maxHeight: maxCardHeight,
 						overflowY: "auto",
+						overscrollBehavior: "contain",
 						background: T.surface,
 						border: `0.5px solid ${T.border}`,
 						borderRadius: 10,
@@ -105,6 +123,7 @@ export function BackgroundTasksChip({ sessionId }: { sessionId: string }) {
 							style={{
 								display: "flex",
 								flexDirection: "column",
+								flexShrink: 0,
 								gap: 4,
 								padding: "8px 9px",
 								background: T.surfaceLow,

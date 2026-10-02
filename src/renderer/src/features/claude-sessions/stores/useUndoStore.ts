@@ -32,9 +32,8 @@ import type { DeletedSessionSnapshot } from "@shared/claude-sessions/undo";
  *             first turn landed. Worth its own wording: by then the user is
  *             looking at a brand-new session, and an unexplained "Deleted …"
  *             appearing there reads as an error report.
- *   archive — reversible already; see the `snapshot: null` note below
  */
-export type UndoKind = "delete" | "handoff" | "archive";
+export type UndoKind = "delete" | "handoff";
 
 export interface UndoEntry {
 	/** Buffer-entry id. Distinct from `sessionId` — the same session could in
@@ -45,12 +44,8 @@ export interface UndoEntry {
 	/** Captured at push time: the session row is gone from the store by the
 	 *  time anything renders this, so the title can't be dereferenced later. */
 	title: string;
-	/**
-	 * The payload `session:restore` needs. Null for `archive`, which needs no
-	 * snapshot at all — archiving only sets `archivedAt`, so undoing it is a
-	 * plain `unarchiveSession` call and the record never left disk.
-	 */
-	snapshot: DeletedSessionSnapshot | null;
+	/** The payload `session:restore` needs. */
+	snapshot: DeletedSessionSnapshot;
 	/** True when the user also ticked "Also delete worktree". Surfaced in the
 	 *  toast, because that half genuinely cannot be undone. */
 	worktreeDeleted: boolean;

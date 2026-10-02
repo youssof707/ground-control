@@ -153,10 +153,10 @@ export const ClaudeSessionSchema = z.object({
 	 * Zod default also backfills pre-existing rows on disk that predate
 	 * this field. */
 	mode: SessionModeSchema.default("plan"),
-	/** When set, the session is hidden from the sidebar list. Reversible
-	 * (no destruction of data) — sessions remain reachable by URL and
-	 * every other system path treats them normally. There is no UI today
-	 * to list / restore archived sessions; that comes later. */
+	/** Orphaned. The archive feature was removed (deletes are undoable
+	 * now, which was archive's whole point). Nothing reads or writes this
+	 * field anymore — it stays in the schema only so values already on
+	 * disk survive load/save round-trips (Zod strips unknown keys). */
 	archivedAt: z.number().optional(),
 	/** App-owned git worktree the session's SDK query runs inside. Set
 	 * once at session creation (from the draft's `worktreeId`) and never
@@ -179,12 +179,10 @@ export const ClaudeSessionSchema = z.object({
 	 * switch" (label trusts the stream — e.g. a fallback flip). */
 	modelChangedAt: z.number().optional(),
 	/** Sidebar session group the row is filed under. Mutable (unlike
-	 * `worktreeId`): set/cleared via `groups:setSessionGroup`. Membership
-	 * survives archiving — an archived member is merely hidden with the
-	 * rest of the group and returns to it on unarchive. When the last
-	 * member leaves a group (removed or deleted, not archived), main
-	 * auto-deletes the group record. A dangling id (group missing)
-	 * renders as "ungrouped" in the sidebar. */
+	 * `worktreeId`): set/cleared via `groups:setSessionGroup`. When the
+	 * last member leaves a group (removed or deleted), main auto-deletes
+	 * the group record. A dangling id (group missing) renders as
+	 * "ungrouped" in the sidebar. */
 	groupId: z.string().optional(),
 });
 export type ClaudeSession = z.infer<typeof ClaudeSessionSchema>;

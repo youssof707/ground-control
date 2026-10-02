@@ -7,6 +7,8 @@ import type {
 	SessionMode,
 	SessionStatus,
 } from "@shared/claude-sessions/types";
+import type { BabysitConfig } from "@shared/claude-sessions/babysit";
+import { useBabysitStore } from "../stores/useBabysitStore";
 import { useLiveTasksStore } from "../stores/useLiveTasksStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
@@ -46,6 +48,7 @@ export function useSessionsBootstrap() {
 			sessions: 0,
 			read: 0,
 			permissions: 0,
+			babysit: 0,
 			settings: 0,
 			rateLimit: 0,
 			worktrees: 0,
@@ -90,6 +93,16 @@ export function useSessionsBootstrap() {
 			const queue = await window.claude.listPermissions();
 			if (my !== seq.permissions) return;
 			for (const req of queue) enqueuePermission(req);
+		}
+
+		// Babysit mode lives only in main's memory, so a window opened or
+		// reloaded mid-babysit has missed the `babysit:changed` broadcasts —
+		// re-prime, or the badge would vanish while main keeps answering.
+		async function refetchBabysit(): Promise<void> {
+			const my = ++seq.babysit;
+			const bySession = await window.claude.listBabysit();
+			if (my !== seq.babysit) return;
+			useBabysitStore.getState().hydrate(bySession);
 		}
 
 		async function refetchSettings(): Promise<void> {
@@ -148,6 +161,7 @@ export function useSessionsBootstrap() {
 			void refetchSessions();
 			void refetchReadState();
 			void refetchPermissions();
+			void refetchBabysit();
 			void refetchSettings();
 			void refetchRateLimit();
 			void refetchWorktrees();
@@ -301,6 +315,15 @@ export function useSessionsBootstrap() {
 			window.claude.on("permission:resolved", (p) => {
 				const { requestId } = p as { requestId: string };
 				removePermission(requestId);
+			}),
+			// Babysit mode switched on, edited or off for a session — from
+			// the modal, or by main clearing it on delete.
+			window.claude.on("babysit:changed", (p) => {
+				const { sessionId, config } = p as {
+					sessionId: string;
+					config: BabysitConfig | null;
+				};
+				useBabysitStore.getState().apply(sessionId, config);
 			}),
 			// Push channel for the claude.ai subscription rate-limit meter.
 			// Main broadcasts the full snapshot every time the SDK emits a

@@ -19,7 +19,7 @@ import { useSessionsStore } from "../stores/useSessionsStore";
  *   1. Existing groups — single click to join and close.
  *   2. Create a new group (name required + color) — creates, joins, closes.
  *
- * Open ⇔ `sessionId != null`, matching the pendingDeleteId/pendingArchiveId
+ * Open ⇔ `sessionId != null`, matching the pendingDeleteId
  * pattern SessionsList already uses for its other modals.
  */
 export function AddToGroupModal({

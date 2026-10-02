@@ -18,9 +18,7 @@ import { enqueue } from "./write_queue";
  * Deliberately no `sessionIds` reverse index: membership lives on
  * `ClaudeSession.groupId` only, and "is this group empty?" is answered by
  * scanning the session store (see `pruneGroupIfEmpty` in groupsHandlers).
- * One source of truth — no cross-store sync to keep honest. Archived
- * sessions keep their membership and count as members for the emptiness
- * check.
+ * One source of truth — no cross-store sync to keep honest.
  */
 
 let initialized = false;

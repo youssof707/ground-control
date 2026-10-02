@@ -7,6 +7,7 @@ import type {
 	UserTurn,
 } from "../shared/schemas/claude_session";
 import type { DeletedSessionSnapshot } from "../shared/claude-sessions/undo";
+import type { BabysitConfig } from "../shared/claude-sessions/babysit";
 import type { CreateWorktreeInput } from "../shared/schemas/worktrees";
 import type { CreateSessionGroupInput } from "../shared/schemas/session_groups";
 import type {
@@ -65,10 +66,6 @@ const claude = {
 		ipcRenderer.invoke("session:delete", sessionId),
 	restoreSession: (snapshot: DeletedSessionSnapshot) =>
 		ipcRenderer.invoke("session:restore", snapshot),
-	archiveSession: (sessionId: string) =>
-		ipcRenderer.invoke("session:archive", sessionId),
-	unarchiveSession: (sessionId: string) =>
-		ipcRenderer.invoke("session:unarchive", sessionId),
 	renameSession: (sessionId: string, title: string) =>
 		ipcRenderer.invoke("session:rename", { sessionId, title }),
 	pickFolder: (opts?: { defaultPath?: string }) =>
@@ -105,6 +102,9 @@ const claude = {
 		ipcRenderer.invoke("notes:update", { id, markdown }),
 	deleteNote: (id: string) => ipcRenderer.invoke("notes:delete", id),
 	listPermissions: () => ipcRenderer.invoke("permissions:list"),
+	listBabysit: () => ipcRenderer.invoke("babysit:list"),
+	setBabysit: (sessionId: string, config: BabysitConfig | null) =>
+		ipcRenderer.invoke("babysit:set", { sessionId, config }),
 	getRateLimit: () => ipcRenderer.invoke("rateLimit:get"),
 	listWorktrees: () => ipcRenderer.invoke("worktrees:list"),
 	listWorktreesForBaseDir: (baseDir: string) =>

@@ -18,21 +18,12 @@ import {
 export function InboxSidebar({ onClose }: { onClose: () => void }) {
 	const queue = usePermissionsStore((s) => s.queue);
 	const sessions = useSessionsStore((s) => s.sessions);
-	// Drop requests whose session is archived. Archive cancels in-flight
-	// prompts on the backend (`PermissionBroker.cancelAllForSession`),
-	// which broadcasts `permission:resolved` and drains them from the
-	// queue — so this filter is normally redundant. It defends against
-	// the race where a permission request fires between "archive IPC
-	// sent" and "broker cancel completes," and against any future
-	// archive code path that forgets to drain.
 	const ordered = [...queue]
 		.reverse()
-		// Sidequests have no session row, so `sessions[id]?.archivedAt == null`
-		// is vacuously true for them and they'd otherwise leak into the Inbox
-		// with a dead `/sessions/<sidequest-…>` link. Their permission cards
-		// belong in the sidequest panel and nowhere else.
-		.filter((req) => !isSidequestId(req.sessionId))
-		.filter((req) => sessions[req.sessionId]?.archivedAt == null);
+		// Sidequests have no session row — they'd otherwise leak into the
+		// Inbox with a dead `/sessions/<sidequest-…>` link. Their permission
+		// cards belong in the sidequest panel and nowhere else.
+		.filter((req) => !isSidequestId(req.sessionId));
 
 	return (
 		<aside

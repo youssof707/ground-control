@@ -40,6 +40,13 @@ export const T = {
 	infoSoft: "oklch(0.80 0.09 210 / 0.14)",
 	infoBorder: "oklch(0.80 0.09 210 / 0.30)",
 
+	// Babysit mode. Orchid (hue 315) because no status pill lives near it —
+	// ok 155, warn 60, info 210, accent 250, danger 25 — so the sidebar badge
+	// can never be misread as a session status.
+	babysit: "oklch(0.78 0.12 315)",
+	babysitSoft: "oklch(0.78 0.12 315 / 0.14)",
+	babysitBorder: "oklch(0.78 0.12 315 / 0.40)",
+
 	sans: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
 	mono: '"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace',
 } as const;

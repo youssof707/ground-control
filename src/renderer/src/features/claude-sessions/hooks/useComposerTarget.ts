@@ -13,7 +13,6 @@ import { draftFromBlocks } from "../lib/composerImages";
 import { sendTurn } from "../lib/sendTurn";
 import { sendToSidequest } from "../lib/sidequestActions";
 import { createSessionFromDraft } from "../lib/promoteDraft";
-import { runHandoffDelete } from "../lib/handoffActions";
 
 export type ComposerKind = "session" | "draft" | "sidequest";
 
@@ -190,11 +189,6 @@ export function useComposerTarget(sessionId: string): ComposerTarget {
 		// `sessionId` itself to `never` here. It's still a plain string at
 		// runtime; the annotation just stops that from infecting `targetId`.
 		let targetId: string = sessionId;
-		// Deferred half of "Handoff & delete" — captured before discardDraft()
-		// below nulls the slot. Only fired once the promotion AND the first
-		// turn have both succeeded, so an abandoned or failed handoff never
-		// destroys the source.
-		let handoffDeleteId: string | undefined;
 		if (isDraft) {
 			// Promote the draft to a real session before delivering the
 			// message. createSessionFromDraft subscribes to session:started
@@ -206,7 +200,6 @@ export function useComposerTarget(sessionId: string): ComposerTarget {
 			if (!draft || draft.id !== sessionId) {
 				throw new Error("Draft session no longer exists");
 			}
-			handoffDeleteId = draft.handoffDeleteSessionId;
 			targetId = await createSessionFromDraft(draft);
 		}
 		// sendTurn owns the resume-if-needed check, the sendUserMessage IPC
@@ -229,14 +222,6 @@ export function useComposerTarget(sessionId: string): ComposerTarget {
 			useRightPanelStore.getState().moveSession(sessionId, targetId);
 			navigate(`/sessions/${targetId}`, { replace: true });
 			useDraftSessionsStore.getState().discardDraft();
-			// Only now — successor exists (born with the source's groupId, so
-			// pruneGroupIfEmpty always finds a member) and has actually
-			// received the handoff turn. Fire-and-forget: runHandoffDelete
-			// routes through the background-task store so a failure surfaces
-			// there instead of on this (possibly already-unmounted) composer.
-			if (handoffDeleteId && handoffDeleteId !== targetId) {
-				runHandoffDelete(handoffDeleteId);
-			}
 		}
 	};
 
