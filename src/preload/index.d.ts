@@ -107,10 +107,6 @@ declare global {
 			markUnread: (sessionId: string) => Promise<void>;
 			getSettings: () => Promise<AppSettingsFile>;
 			setLastUsedWorkspace: (cwd: string) => Promise<void>;
-			setLastUsedWorktree: (
-				cwd: string,
-				worktreeId?: string,
-			) => Promise<void>;
 			setDefaultModel: (model?: string) => Promise<void>;
 			setSessionsSidebarWidth: (width: number) => Promise<void>;
 			setNotesSidebarWidth: (width: number) => Promise<void>;

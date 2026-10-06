@@ -11,6 +11,8 @@ import {
 	recreateSidequest,
 } from "../../lib/sidequestActions";
 import { stopSidequest } from "../../lib/sessionControlActions";
+import { runForkAndDelete } from "../../lib/forkActions";
+import { runHandoff } from "../../lib/handoffActions";
 import { useComposerResize } from "../../hooks/useComposerResize";
 import { MessageView } from "../MessageView";
 import { ActivityChip } from "../ActivityChip";
@@ -120,6 +122,31 @@ export function SidequestPanel({
 			}
 		},
 		[forkingId, sessionId, navigate],
+	);
+
+	// One-click siblings of `fork`, both replacing the parent session (the
+	// one the user is "in"); the sidequest is discarded with it. Undo restores
+	// the parent. Stable callbacks for the same memo reason as `fork`.
+	const forkAndDelete = useCallback(
+		(messageId: string) => {
+			const parent = useSessionsStore.getState().sessions[sessionId];
+			if (!parent) return;
+			runForkAndDelete({
+				session: parent,
+				messageId,
+				navigate,
+				fork: window.claude.promoteSidequest,
+			});
+		},
+		[sessionId, navigate],
+	);
+	const handoff = useCallback(
+		(text: string) => {
+			const parent = useSessionsStore.getState().sessions[sessionId];
+			if (!parent) return;
+			runHandoff({ session: parent, text, navigate });
+		},
+		[sessionId, navigate],
 	);
 
 	// Forking mid-stream would silently drop everything that lands after the
@@ -405,13 +432,18 @@ export function SidequestPanel({
 								) : (
 								// `onFork` here means "promote this branch into a
 								// real session" — a sidequest is already a fork, so
-								// the main chat's meaning doesn't apply. No
-								// `onHandoff`: promoting is the better version of it.
+								// the main chat's meaning doesn't apply. Fork and
+								// delete / Handoff replace the PARENT session, same
+								// as they do from the main chat.
 									<MessageView
 										key={u.message.id}
 										m={u.message}
 										onFork={canFork ? fork : undefined}
 										forkPending={forkingId === u.message.id}
+										onForkAndDelete={
+											canFork ? forkAndDelete : undefined
+										}
+										onHandoff={handoff}
 									/>
 								),
 							)}

@@ -59,6 +59,13 @@ export interface DraftSession {
 	 * post-hoc regroup, and no window in which `pruneGroupIfEmpty` could
 	 * delete the group during a "Handoff & delete". */
 	groupId?: string;
+	/** Set by the plain top-of-sidebar New Session button (and Cmd+N): the
+	 * draft isn't tied to any sidebar container yet, so its row renders at
+	 * the top of the list instead of inside its cwd bucket. A group or
+	 * worktree binding still wins (see `draftHost` in SessionsList), and the
+	 * per-bucket "+" retargets clear it. UI-only — never forwarded to
+	 * `startSession`. */
+	floating?: boolean;
 }
 
 interface State {
@@ -73,6 +80,7 @@ interface State {
 		 * session is BORN in the group on first send — same "born-with, not
 		 * set post-hoc" rule the handoff flow relies on. */
 		groupId?: string;
+		floating?: boolean;
 	}) => DraftSession;
 	// The patch type intentionally allows `worktreeId: undefined`,
 	// `model: undefined`, and `groupId: undefined` so callers can clear a
@@ -82,7 +90,13 @@ interface State {
 		patch: Partial<
 			Pick<
 				DraftSession,
-				"cwd" | "title" | "mode" | "worktreeId" | "model" | "groupId"
+				| "cwd"
+				| "title"
+				| "mode"
+				| "worktreeId"
+				| "model"
+				| "groupId"
+				| "floating"
 			>
 		>,
 	) => void;
@@ -95,7 +109,14 @@ export function isDraftId(id: string | undefined | null): id is string {
 
 export const useDraftSessionsStore = create<State>((set) => ({
 	draft: null,
-	createDraft: ({ cwd, defaultTitle, mode = "plan", worktreeId, groupId }) => {
+	createDraft: ({
+		cwd,
+		defaultTitle,
+		mode = "plan",
+		worktreeId,
+		groupId,
+		floating,
+	}) => {
 		const draft: DraftSession = {
 			id: `draft-${crypto.randomUUID()}`,
 			cwd,
@@ -105,6 +126,7 @@ export const useDraftSessionsStore = create<State>((set) => ({
 			createdAt: Date.now(),
 			worktreeId,
 			groupId,
+			floating,
 			// Seed the app-wide default so the chip in the draft header shows
 			// the model BEFORE the first send — an invisible main-side
 			// substitution would make the header lie. Undefined when no

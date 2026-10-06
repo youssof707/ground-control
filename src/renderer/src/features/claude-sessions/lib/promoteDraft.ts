@@ -1,5 +1,4 @@
 import type { DraftSession } from "../stores/useDraftSessionsStore";
-import { useSettingsStore } from "../stores/useSettingsStore";
 
 /**
  * Convert a draft session into a real one. Subscribes to `session:started`
@@ -55,16 +54,6 @@ export function createSessionFromDraft(draft: DraftSession): Promise<string> {
 			off = null;
 			reject(new Error("Timed out waiting for the new session to start."));
 		}, 20_000);
-		// Remember which worktree this workspace was last actually used with,
-		// so the next New Session / Cmd+N here pre-attaches it. Recorded at
-		// promotion rather than at draft time because starting a session is
-		// the honest signal — a draft the user abandons shouldn't retarget
-		// anything. `draft.worktreeId` being undefined is meaningful and gets
-		// written through: a plain session in this folder means "I'm on the
-		// base checkout now", and forgets the previous pairing.
-		useSettingsStore
-			.getState()
-			.setLastUsedWorktree(draft.cwd, draft.worktreeId);
 		window.claude
 			.startSession({
 				title: expectedTitle,

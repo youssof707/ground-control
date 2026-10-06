@@ -150,10 +150,17 @@ async function transcribe(pcm: Float32Array): Promise<string> {
 		audio_ctx: 0,
 		max_len: 0,
 	});
-	return result.transcription
-		.map((row) => row[2] ?? "")
-		.join("")
-		.trim();
+	return (
+		result.transcription
+			.map((row) => row[2] ?? "")
+			.join("")
+			// whisper.cpp labels silence/noise "[BLANK_AUDIO]" (case and
+			// separator vary by build). It's a marker, not speech — strip it so
+			// a quiet take inserts nothing instead of a bracketed token.
+			.replace(/\[\s*blank[\s_-]*audio\s*\]/gi, "")
+			.replace(/\s{2,}/g, " ")
+			.trim()
+	);
 }
 
 export function registerDictationHandlers(): void {

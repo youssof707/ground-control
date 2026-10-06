@@ -5,7 +5,6 @@ import { appendPromptBlock } from "./composerActions";
 import { useDraftSessionsStore } from "../stores/useDraftSessionsStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { appDefaultModel, useSettingsStore } from "../stores/useSettingsStore";
-import { useWorktreesStore } from "../stores/useWorktreesStore";
 
 /**
  * Imperative "start a new session from a shortcut/skill" operations,
@@ -36,30 +35,14 @@ async function resolveDraftCwd(targetCwd: string | null): Promise<string | null>
 }
 
 /**
- * The worktree a new session in `cwd` should be pre-attached to: whichever
- * one was last actually used there (see `setLastUsedWorktree`'s write site in
- * `lib/promoteDraft.ts`), or undefined.
- *
- * Both validations matter. The worktree may have been deleted since it was
- * remembered — the settings file has no visibility into worktree lifecycle,
- * so pruning happens here on read instead. And the `baseDir === cwd` check
- * mirrors the guard `session:start` applies in `sessionsHandlers`: main drops
- * any worktreeId whose baseDir doesn't match the session cwd, so a mismatched
- * pairing would silently vanish at send time. Better to never show the chip
- * than to show one that disappears.
- */
-function resolveSeedWorktreeId(cwd: string): string | undefined {
-	const remembered =
-		useSettingsStore.getState().lastUsedWorktreeByWorkspace?.[cwd];
-	if (!remembered) return undefined;
-	const wt = useWorktreesStore.getState().worktrees[remembered];
-	return wt && wt.baseDir === cwd ? wt.id : undefined;
-}
-
-/**
  * Plain "New Session" — the shared implementation behind both the sidebar
- * button and the global Cmd+N hotkey, so the two can't drift on worktree
- * seeding.
+ * button and the global Cmd+N hotkey, so the two can't drift.
+ *
+ * The draft starts clean: the target workspace folder, but no worktree and
+ * no group. It's marked `floating` so its sidebar row sits at the top of the
+ * list rather than inside the workspace bucket — this isn't a "new session
+ * in this folder" intent (that's the bucket's own "+"). Attaching a worktree
+ * from the draft header still moves the row into that worktree's bucket.
  *
  * Same single-slot rule as the rest of New Session: an existing draft is
  * navigated to, not replaced. Unlike `startInCwd`'s retarget branch this
@@ -82,7 +65,7 @@ export async function startNewSessionDraft(
 	const d = drafts.createDraft({
 		cwd,
 		defaultTitle: `Session ${order.length + 1}`,
-		worktreeId: resolveSeedWorktreeId(cwd),
+		floating: true,
 	});
 	onWorkspaceRevealed?.(cwd);
 	navigate(`/sessions/${d.id}`);

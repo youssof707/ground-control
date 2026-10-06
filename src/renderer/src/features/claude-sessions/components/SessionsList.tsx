@@ -166,6 +166,28 @@ export function SessionsList({
 		return out;
 	}, [sqIdsKey, queue]);
 
+	// Live background-task counts per session, for the collapsed-section task
+	// badge. A string for the same reason as sqIdsKey: subscribing to
+	// `s.tasks` would re-render the whole sidebar on every task broadcast.
+	// Keyed by main-session id only — sidequest tasks live under the sidequest
+	// id and the per-row pill ignores them too, so a collapsed header never
+	// disagrees with the rows it hides.
+	const taskCountsKey = useLiveTasksStore((s) =>
+		Object.entries(s.tasks)
+			.filter(([, list]) => list.length > 0)
+			.map(([id, list]) => `${id}=${list.length}`)
+			.sort()
+			.join("|"),
+	);
+	const taskCounts = useMemo(() => {
+		const out = new Map<string, number>();
+		for (const pair of taskCountsKey ? taskCountsKey.split("|") : []) {
+			const [id, n] = pair.split("=");
+			out.set(id, Number(n));
+		}
+		return out;
+	}, [taskCountsKey]);
+
 	const sortedOrder = useMemo(() => {
 		return [...order].sort(
 			(a, b) =>
@@ -354,9 +376,9 @@ export function SessionsList({
 	};
 
 	// Shares `startNewSessionDraft` with the global Cmd+N hotkey so the button
-	// and the shortcut can't drift on worktree seeding. The helper handles the
-	// draft-reuse rule, the folder picker fallback, and pre-attaching the
-	// worktree last used in the target workspace; `onWorkspaceRevealed` keeps
+	// and the shortcut can't drift. The helper handles the draft-reuse rule
+	// and the folder picker fallback, and starts the draft with no worktree
+	// or group, floating at the top of the list; `onWorkspaceRevealed` keeps
 	// the new draft visible under a narrowed filter, the same reconciliation
 	// `createDraftAndNavigate` does inline.
 	const start = async () => {
@@ -391,14 +413,20 @@ export function SessionsList({
 			// otherwise draftHost (group beats cwd) keeps the row in the
 			// group box the user just clicked away from, and the real
 			// session is born inside a group nobody asked for.
+			//
+			// `floating` is cleared for the same reason: a draft from the
+			// top New Session button would otherwise stay pinned to the top
+			// of the list instead of landing in the bucket just clicked.
 			const patch: {
 				cwd?: string;
 				worktreeId?: string;
 				groupId?: string;
 				model?: string;
+				floating?: boolean;
 			} = {
 				model: appDefaultModel(),
 				groupId: undefined,
+				floating: false,
 			};
 			if (draft.cwd !== cwd) {
 				// A worktree is bound to a baseDir, so retargeting invalidates
@@ -430,15 +458,18 @@ export function SessionsList({
 			// not to nothing. `groupId` is disowned unconditionally for the
 			// same reason as startInCwd: targeting a worktree bucket is an
 			// ungrouped intent, and a stale groupId would keep the row
-			// rendering inside the group box instead.
+			// rendering inside the group box instead. `floating` is cleared
+			// as in startInCwd.
 			const patch: {
 				cwd?: string;
 				worktreeId?: string;
 				groupId?: string;
 				model?: string;
+				floating?: boolean;
 			} = {
 				model: appDefaultModel(),
 				groupId: undefined,
+				floating: false,
 			};
 			if (draft.cwd !== wt.baseDir || draft.worktreeId !== wt.id) {
 				patch.cwd = wt.baseDir;
@@ -489,13 +520,14 @@ export function SessionsList({
 			// Same disowning rule as startInCwd/startInWorktree: a fresh "new
 			// session in this group" intent must not carry a stale model
 			// override — reset the model to the app default rather than to
-			// nothing.
+			// nothing. `floating` is cleared as in startInCwd.
 			const patch: {
 				cwd?: string;
 				worktreeId?: string;
 				groupId?: string;
 				model?: string;
-			} = { model: appDefaultModel() };
+				floating?: boolean;
+			} = { model: appDefaultModel(), floating: false };
 			// Guarded like startInCwd: a draft ALREADY in this group on this
 			// folder keeps a worktree the user attached by hand in the draft
 			// header. Only a genuine retarget clears the binding.
@@ -904,6 +936,8 @@ export function SessionsList({
 		) {
 			return { kind: "worktree", id: draft.worktreeId };
 		}
+		// Plain top-button drafts aren't tied to their folder's bucket.
+		if (draft.floating) return { kind: "top" };
 		if (
 			sidebarRows.some(
 				(r) => r.kind === "cwdBucket" && r.cwd === draft.cwd,
@@ -1099,6 +1133,7 @@ export function SessionsList({
 								queue,
 								sqRunningParents,
 								sqWaitingParents,
+								taskCounts,
 							);
 							if (row.kind === "cwdBucket") {
 								return (
@@ -1127,6 +1162,7 @@ export function SessionsList({
 											collapsed={row.collapsed}
 											waiting={counts.waiting}
 											running={counts.running}
+											tasks={counts.tasks}
 											onToggle={() =>
 												toggleCwdCollapsed(row.cwd)
 											}
@@ -1171,6 +1207,7 @@ export function SessionsList({
 											collapsed={row.collapsed}
 											waiting={counts.waiting}
 											running={counts.running}
+											tasks={counts.tasks}
 											onToggle={() =>
 												toggleCwdCollapsed(
 													`wt:${row.worktree.id}`,
@@ -1206,6 +1243,7 @@ export function SessionsList({
 									queue={queue}
 									waiting={counts.waiting}
 									running={counts.running}
+									tasks={counts.tasks}
 									activeSessionId={activeSessionId}
 									onToggleCollapsed={() =>
 										toggleGroupCollapsed(group)
@@ -1293,6 +1331,10 @@ type SidebarRow =
  * each row, for the collapsed-section header badges. Kept in lockstep with
  * that hook's precedence — waiting beats running, each session counts once —
  * so a collapsed header can never disagree with the rows it expands into.
+ *
+ * `tasks` is a plain total of live background tasks across members, not a
+ * precedence slot: a running session can also own a dev server, and the
+ * header should still say so.
  */
 function sectionStatusCounts(
 	ids: string[],
@@ -1300,12 +1342,15 @@ function sectionStatusCounts(
 	queue: PermissionRequest[],
 	sqRunningParents: Set<string>,
 	sqWaitingParents: Set<string>,
-): { waiting: number; running: number } {
+	taskCounts: Map<string, number>,
+): { waiting: number; running: number; tasks: number } {
 	let waiting = 0;
 	let running = 0;
+	let tasks = 0;
 	for (const id of ids) {
 		const s = sessions[id];
 		if (!s) continue;
+		tasks += taskCounts.get(id) ?? 0;
 		// `awaiting_permission` is never a backend status — it's always
 		// derived from the permissions queue, on either thread.
 		if (
@@ -1317,7 +1362,7 @@ function sectionStatusCounts(
 		}
 		if (s.status === "running" || sqRunningParents.has(id)) running++;
 	}
-	return { waiting, running };
+	return { waiting, running, tasks };
 }
 
 /**
@@ -1629,6 +1674,7 @@ function GroupSection({
 	queue,
 	waiting,
 	running,
+	tasks,
 	activeSessionId,
 	onToggleCollapsed,
 	onNewSession,
@@ -1648,6 +1694,7 @@ function GroupSection({
 	 * counting stays in the sidebar's render map alongside the bucket rows. */
 	waiting: number;
 	running: number;
+	tasks: number;
 	activeSessionId?: string;
 	onToggleCollapsed: () => void;
 	/** New Session in this group. The folder is resolved HERE rather than by
@@ -1689,6 +1736,7 @@ function GroupSection({
 				group={group}
 				waiting={waiting}
 				running={running}
+				tasks={tasks}
 				onToggle={onToggleCollapsed}
 				onNewSession={
 					newSessionCwd
@@ -1738,16 +1786,20 @@ function GroupSection({
  * Geometry is the Inbox badge (`InboxToggle`, AppNav) one step down in scale,
  * to sit inside a 9px-padded header strip. Colors come from the canonical
  * status mapping in `STATUS_MAP` (design/Atoms): amber = waiting, green =
- * running. Digits and color only — no label, and per repo rule no `title`.
+ * running; the third, neutral white badge is the total of live background
+ * tasks across members (matches the row-level `BackgroundTasksPill` voice).
+ * Digits and color only — no label, and per repo rule no `title`.
  */
 function SectionStatusBadges({
 	waiting,
 	running,
+	tasks,
 }: {
 	waiting: number;
 	running: number;
+	tasks: number;
 }) {
-	if (waiting === 0 && running === 0) return null;
+	if (waiting === 0 && running === 0 && tasks === 0) return null;
 	return (
 		<span
 			style={{
@@ -1775,6 +1827,15 @@ function SectionStatusBadges({
 			) : null}
 			{running > 0 ? (
 				<SectionStatusBadge n={running} fg={T.ok} bg={T.okSoft} />
+			) : null}
+			{/* Tasks last — it's a total, not a status, so it trails the
+			    two precedence slots. */}
+			{tasks > 0 ? (
+				<SectionStatusBadge
+					n={tasks}
+					fg={T.text}
+					bg={`color-mix(in oklab, ${T.text} 14%, transparent)`}
+				/>
 			) : null}
 		</span>
 	);
@@ -1830,6 +1891,7 @@ function CwdHeaderRow({
 	collapsed,
 	waiting,
 	running,
+	tasks,
 	onToggle,
 	onNewSession,
 }: {
@@ -1842,6 +1904,8 @@ function CwdHeaderRow({
 	waiting: number;
 	/** Members with a live turn — shown only while collapsed. */
 	running: number;
+	/** Live background tasks across members — shown only while collapsed. */
+	tasks: number;
 	onToggle: () => void;
 	onNewSession: () => void;
 }) {
@@ -1934,6 +1998,7 @@ function CwdHeaderRow({
 					<SectionStatusBadges
 						waiting={waiting}
 						running={running}
+						tasks={tasks}
 					/>
 				) : null}
 			</button>
@@ -2002,6 +2067,7 @@ function GroupHeaderRow({
 	group,
 	waiting,
 	running,
+	tasks,
 	onToggle,
 	onNewSession,
 	onRename,
@@ -2011,6 +2077,8 @@ function GroupHeaderRow({
 	waiting: number;
 	/** Members with a live turn — shown only while collapsed. */
 	running: number;
+	/** Live background tasks across members — shown only while collapsed. */
+	tasks: number;
 	onToggle: () => void;
 	/** Omitted when no member has a cwd — the header then renders no "+" at
 	 * all rather than a button with nothing to target. */
@@ -2131,6 +2199,7 @@ function GroupHeaderRow({
 						<SectionStatusBadges
 							waiting={waiting}
 							running={running}
+							tasks={tasks}
 						/>
 					) : null}
 				</button>

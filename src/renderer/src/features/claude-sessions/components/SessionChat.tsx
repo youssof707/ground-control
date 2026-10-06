@@ -8,6 +8,7 @@ import { isDraftId } from "../stores/useDraftSessionsStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { stopSession } from "../lib/sessionControlActions";
 import { runHandoff } from "../lib/handoffActions";
+import { runForkAndDelete } from "../lib/forkActions";
 import { switchModelAndResume } from "../lib/modelSwitchActions";
 import { useComposerResize } from "../hooks/useComposerResize";
 import { PermissionCard } from "./PermissionCard";
@@ -163,6 +164,17 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 			const current = useSessionsStore.getState().sessions[sessionId];
 			if (!current) return;
 			runHandoff({ session: current, text, navigate });
+		},
+		[sessionId, navigate],
+	);
+
+	// One-click sibling of `fork`: no ConfirmModal, no pending state here —
+	// the work runs as a background task and ends in a navigation.
+	const forkAndDelete = useCallback(
+		(messageId: string) => {
+			const current = useSessionsStore.getState().sessions[sessionId];
+			if (!current) return;
+			runForkAndDelete({ session: current, messageId, navigate });
 		},
 		[sessionId, navigate],
 	);
@@ -458,6 +470,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 											onFork={fork}
 											forkPending={forkingId === u.message.id}
 											onHandoff={handoff}
+											onForkAndDelete={forkAndDelete}
 										/>
 									</div>
 								);

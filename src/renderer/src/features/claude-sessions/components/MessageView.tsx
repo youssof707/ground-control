@@ -32,6 +32,7 @@ export const MessageView = memo(function MessageView({
 	onFork,
 	forkPending,
 	onHandoff,
+	onForkAndDelete,
 }: {
 	m: SessionMessage;
 	onFork?: (messageId: string) => void;
@@ -39,9 +40,13 @@ export const MessageView = memo(function MessageView({
 	/** Hand off to a new session seeded with this message's text, deleting
 	 * the current one. Fires immediately on click — no confirm step. Unlike
 	 * Fork this needs no SDK uuid — any assistant message with text
-	 * qualifies. Omitted (e.g. inside a sidequest panel) simply hides the
-	 * menu item. */
+	 * qualifies. Omitted simply hides the menu item. */
 	onHandoff?: (text: string) => void;
+	/** Fork from this message, land on the fork, delete the current session.
+	 * Fires immediately — the undo buffer is the safety net, not a dialog.
+	 * Same SDK-uuid gate as Fork. In the sidequest panel it promotes the
+	 * branch and deletes the parent. Omitted simply hides the menu item. */
+	onForkAndDelete?: (messageId: string) => void;
 }) {
 	const sdk = m.content as SdkLike;
 	// Subagent traffic never renders as a message — tool blocks reach the
@@ -57,6 +62,7 @@ export const MessageView = memo(function MessageView({
 				onFork={onFork}
 				forkPending={forkPending}
 				onHandoff={onHandoff}
+				onForkAndDelete={onForkAndDelete}
 			/>
 		);
 	}
@@ -87,12 +93,14 @@ function AssistantMessage({
 	onFork,
 	forkPending,
 	onHandoff,
+	onForkAndDelete,
 }: {
 	sdk: SdkLike;
 	messageId: string;
 	onFork?: (messageId: string) => void;
 	forkPending?: boolean;
 	onHandoff?: (text: string) => void;
+	onForkAndDelete?: (messageId: string) => void;
 }) {
 	const [hovered, setHovered] = useState(false);
 	const blocks = blocksOfSdk(sdk);
@@ -102,8 +110,10 @@ function AssistantMessage({
 	// the SDK requires for `upToMessageId`). Skip the button otherwise so
 	// users don't click into a guaranteed-error path.
 	const sdkUuid = (sdk as { uuid?: unknown }).uuid;
-	const canFork =
-		!!onFork && typeof sdkUuid === "string" && sdkUuid.length > 0;
+	const hasSdkUuid = typeof sdkUuid === "string" && sdkUuid.length > 0;
+	const canFork = !!onFork && hasSdkUuid;
+	// Fork and delete goes through the same `forkFrom`, so the same gate.
+	const canForkAndDelete = !!onForkAndDelete && hasSdkUuid;
 	// Handoff needs no uuid — just something worth handing off. A tool-only
 	// reply (all blocks tool_use, no text) has nothing to quote.
 	const canHandoff = !!onHandoff && messageText.length > 0;
@@ -142,11 +152,10 @@ function AssistantMessage({
 				})}
 			</div>
 			{/* "Copy message" needs neither callback, so any reply with text
-			    gets the menu — that's what makes the sidequest panel (which
-			    passes no `onHandoff`, and no `onFork` mid-stream) still offer
-			    Copy. No-op for the main chat, where `canHandoff` is already
-			    exactly `messageText.length > 0`. */}
-			{canFork || canHandoff || messageText.length > 0 ? (
+			    gets the menu — that keeps Copy reachable even when every
+			    other item is withheld (e.g. a tool-only reply, or the
+			    sidequest mid-stream, where fork callbacks are withheld). */}
+			{canFork || canForkAndDelete || canHandoff || messageText.length > 0 ? (
 				<MessageActionsMenu
 					rowHovered={hovered}
 					pending={!!forkPending}
@@ -154,6 +163,8 @@ function AssistantMessage({
 					onFork={() => onFork?.(messageId)}
 					showHandoff={canHandoff}
 					onHandoff={() => onHandoff?.(messageText)}
+					showForkAndDelete={canForkAndDelete}
+					onForkAndDelete={() => onForkAndDelete?.(messageId)}
 					messageText={messageText}
 				/>
 			) : null}
@@ -162,8 +173,8 @@ function AssistantMessage({
 }
 
 // Rough on-screen height of the open menu panel (~26 px per item + 8 px
-// padding + 1 px border). Item count varies — the sidequest shows two, the
-// main chat three — and this only decides whether to flip the panel upward
+// padding + 1 px border). Item count varies (one to four, depending on which
+// callbacks the caller passes) — and this only decides whether to flip upward
 // when there isn't enough room below the trigger.
 const menuEstimatedHeight = (itemCount: number) => itemCount * 26 + 9;
 const MENU_VIEWPORT_MARGIN = 8;
@@ -176,6 +187,8 @@ function MessageActionsMenu({
 	onFork,
 	showHandoff,
 	onHandoff,
+	showForkAndDelete,
+	onForkAndDelete,
 	messageText,
 }: {
 	rowHovered: boolean;
@@ -184,6 +197,8 @@ function MessageActionsMenu({
 	onFork: () => void;
 	showHandoff: boolean;
 	onHandoff: () => void;
+	showForkAndDelete: boolean;
+	onForkAndDelete: () => void;
 	messageText: string;
 }) {
 	const [open, setOpen] = useState(false);
@@ -232,9 +247,12 @@ function MessageActionsMenu({
 		}
 		const rect = triggerRef.current?.getBoundingClientRect();
 		if (rect) {
-			// Copy is always rendered; Fork and Handoff are conditional.
+			// Copy is always rendered; the other three are conditional.
 			const height = menuEstimatedHeight(
-				1 + (showFork ? 1 : 0) + (showHandoff ? 1 : 0),
+				1 +
+					(showFork ? 1 : 0) +
+					(showHandoff ? 1 : 0) +
+					(showForkAndDelete ? 1 : 0),
 			);
 			const wouldOverflowBottom =
 				rect.bottom + MENU_TRIGGER_GAP + height + MENU_VIEWPORT_MARGIN >
@@ -260,6 +278,13 @@ function MessageActionsMenu({
 		e.stopPropagation();
 		setOpen(false);
 		onHandoff();
+	};
+
+	const handleForkAndDelete = (e: React.MouseEvent) => {
+		e.stopPropagation();
+		if (pending) return;
+		setOpen(false);
+		onForkAndDelete();
 	};
 
 	const handleCopy = async (e: React.MouseEvent) => {
@@ -342,6 +367,9 @@ function MessageActionsMenu({
 							flexDirection: "column",
 						}}
 					>
+						{showHandoff ? (
+							<MenuItem label="Handoff" onClick={handleHandoff} />
+						) : null}
 						{showFork ? (
 							<MenuItem
 								label={pending ? "Forking…" : "Fork"}
@@ -349,8 +377,12 @@ function MessageActionsMenu({
 								onClick={handleFork}
 							/>
 						) : null}
-						{showHandoff ? (
-							<MenuItem label="Handoff" onClick={handleHandoff} />
+						{showForkAndDelete ? (
+							<MenuItem
+								label="Fork and delete"
+								disabled={pending}
+								onClick={handleForkAndDelete}
+							/>
 						) : null}
 						<MenuItem
 							label={copied ? "Copied!" : "Copy message"}

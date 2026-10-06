@@ -8,11 +8,9 @@ import { useSettingsStore } from "../stores/useSettingsStore";
  * Mounted once, in `MainApp`, next to `useSidequestHotkey` /
  * `useComposerFocusHotkey`.
  *
- * The draft is seeded with the worktree last used in the target workspace
- * (see `resolveSeedWorktreeId`), so returning to a repo resumes on the branch
- * checkout you were working in rather than the bare base dir. Shares
- * `startNewSessionDraft` with the sidebar's own New Session button so the two
- * can't drift.
+ * The draft starts in the target workspace with no worktree and no group.
+ * Shares `startNewSessionDraft` with the sidebar's own New Session button so
+ * the two can't drift.
  *
  * Works from anywhere, session route or not — "new session" is not scoped to
  * an existing one. It does not require focus to be outside an editable field

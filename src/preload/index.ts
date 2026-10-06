@@ -85,8 +85,6 @@ const claude = {
 	getSettings: () => ipcRenderer.invoke("settings:get"),
 	setLastUsedWorkspace: (cwd: string) =>
 		ipcRenderer.invoke("settings:setLastUsedWorkspace", { cwd }),
-	setLastUsedWorktree: (cwd: string, worktreeId?: string) =>
-		ipcRenderer.invoke("settings:setLastUsedWorktree", { cwd, worktreeId }),
 	setDefaultModel: (model?: string) =>
 		ipcRenderer.invoke("settings:setDefaultModel", { model }),
 	setSessionsSidebarWidth: (width: number) =>

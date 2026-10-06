@@ -32,8 +32,11 @@ import type { DeletedSessionSnapshot } from "@shared/claude-sessions/undo";
  *             first turn landed. Worth its own wording: by then the user is
  *             looking at a brand-new session, and an unexplained "Deleted …"
  *             appearing there reads as an error report.
+ *   fork    — "Fork and delete" removed the source once the fork was
+ *             persisted. Same situation as handoff: the user is looking at
+ *             the fork, so the toast names it.
  */
-export type UndoKind = "delete" | "handoff";
+export type UndoKind = "delete" | "handoff" | "fork";
 
 export interface UndoEntry {
 	/** Buffer-entry id. Distinct from `sessionId` — the same session could in

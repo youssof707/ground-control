@@ -9,8 +9,8 @@ this file so the next session inherits it.
 **Whenever a keyboard shortcut is added, changed, or removed, update this list.** This is
 the single source of truth so shortcuts are easy to find.
 
-- `Cmd+N` — new session, pre-attached to the worktree last used in that
-  workspace
+- `Cmd+N` — new session in the last-used workspace, with no worktree or group
+  (same as the sidebar's New Session button)
 - `Cmd+S` — open a side quest
 - `Cmd+K` — open the shortcut menu
 - `Cmd+R` — quote the current selection into the composer and focus it

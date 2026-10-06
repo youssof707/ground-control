@@ -193,14 +193,17 @@ export function UndoToast() {
 			? `${remaining} more can be restored.`
 			: null;
 
-	// The handoff wording is deliberately different. By the time a
-	// "Handoff & delete" actually lands, the user is looking at a
-	// brand-new session, and an unexplained "Deleted …" appearing there reads
-	// as an error report. Naming the handoff explains why the toast is here.
+	// The handoff / fork wording is deliberately different. By the time a
+	// one-click "Handoff" or "Fork and delete" actually lands, the user is
+	// looking at a brand-new session, and an unexplained "Deleted …" appearing
+	// there reads as an error report. Naming the action explains why the toast
+	// is here.
 	const headline =
 		entry.kind === "handoff"
 			? `Handed off — deleted "${entry.title}"`
-			: `Deleted "${entry.title}"`;
+			: entry.kind === "fork"
+				? `Forked — deleted "${entry.title}"`
+				: `Deleted "${entry.title}"`;
 
 	return (
 		<div
