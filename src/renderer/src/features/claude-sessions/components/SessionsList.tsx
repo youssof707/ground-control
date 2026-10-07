@@ -17,6 +17,7 @@ import { useLiveTasksStore } from "../stores/useLiveTasksStore";
 import { BackgroundTasksPill } from "./BackgroundTasksChip";
 import { ConfirmModal } from "../../../components/ConfirmModal";
 import { RecentlyDeletedModal } from "./RecentlyDeletedModal";
+import { WorktreesModal } from "./WorktreesModal";
 import { runBackgroundTask } from "../../background-tasks/stores/useBackgroundTasksStore";
 import {
 	startNewSessionDraft,
@@ -101,6 +102,7 @@ export function SessionsList({
 	// "Recently deleted" list, also opened from the view-options dropdown —
 	// the durable surface for undo once the toast has expired.
 	const [recentlyDeletedOpen, setRecentlyDeletedOpen] = useState(false);
+	const [worktreesOpen, setWorktreesOpen] = useState(false);
 	const undoEntries = useUndoStore((s) => s.entries);
 	// Collapsed ungrouped buckets. Keys are cwd paths for cwd buckets and
 	// `wt:<worktreeId>` for worktree buckets (cwds are absolute paths or "",
@@ -1059,6 +1061,7 @@ export function SessionsList({
 							onOpenSettings={() => setSettingsOpen(true)}
 							onOpenRecentlyDeleted={() => setRecentlyDeletedOpen(true)}
 							recentlyDeletedCount={undoEntries.length}
+							onOpenWorktrees={() => setWorktreesOpen(true)}
 							alignRight={workspaces.length === 0}
 						/>
 					</div>
@@ -1297,6 +1300,10 @@ export function SessionsList({
 			<RecentlyDeletedModal
 				open={recentlyDeletedOpen}
 				onClose={() => setRecentlyDeletedOpen(false)}
+			/>
+			<WorktreesModal
+				open={worktreesOpen}
+				onClose={() => setWorktreesOpen(false)}
 			/>
 		</div>
 	);
@@ -2843,9 +2850,9 @@ function MenuItem({
  * Sidebar overflow-options dropdown. Visually a 32×32 icon button matching
  * FolderButton — stacks below it as the right-edge control of the second
  * header row, with the WorkspaceFilter taking the remaining width on the
- * left. Exposes "Recently deleted" (when the undo buffer has entries) plus
- * "Settings". Sized as a dropdown rather than an inline button so future
- * view controls can land here without crowding the header.
+ * left. Exposes "Recently deleted" (when the undo buffer has entries),
+ * "Worktrees", and "Settings". Sized as a dropdown rather than an inline
+ * button so future view controls can land here without crowding the header.
  *
  * `alignRight` pushes the button to the right edge when there's no
  * WorkspaceFilter sharing the row — keeps it stacked under FolderButton
@@ -2855,11 +2862,13 @@ function ViewOptionsButton({
 	onOpenSettings,
 	onOpenRecentlyDeleted,
 	recentlyDeletedCount,
+	onOpenWorktrees,
 	alignRight,
 }: {
 	onOpenSettings: () => void;
 	onOpenRecentlyDeleted: () => void;
 	recentlyDeletedCount: number;
+	onOpenWorktrees: () => void;
 	alignRight?: boolean;
 }) {
 	const [open, setOpen] = useState(false);
@@ -2938,6 +2947,17 @@ function ViewOptionsButton({
 							}}
 						/>
 					) : null}
+					{/* Always shown, even at zero worktrees — unlike Recently
+					    deleted, the empty state is informative (says where
+					    worktrees come from) rather than a dead end. */}
+					<MenuItem
+						active={false}
+						label="Worktrees"
+						onClick={() => {
+							setOpen(false);
+							onOpenWorktrees();
+						}}
+					/>
 					<MenuItem
 						active={false}
 						label="Settings"

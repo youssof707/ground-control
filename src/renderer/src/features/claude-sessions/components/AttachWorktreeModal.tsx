@@ -543,8 +543,11 @@ const CONFIRM_REVERT_MS = 3000;
  * reverts to the icon if the user doesn't follow through. Clicks are
  * stopped from bubbling so hitting the trash doesn't also fire the row's
  * attach handler.
+ *
+ * Exported for `WorktreesModal`, which lists every worktree app-wide and
+ * needs the identical delete affordance.
  */
-function DeleteWorktreeButton({
+export function DeleteWorktreeButton({
 	onDelete,
 }: {
 	onDelete: () => Promise<void>;
