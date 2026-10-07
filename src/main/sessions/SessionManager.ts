@@ -1265,6 +1265,15 @@ export class SessionManager {
 		return this.sidequests.get(parentSessionId);
 	}
 
+	/**
+	 * The main session a live sidequest was forked from, or undefined for any
+	 * other id (real sessions, discarded sidequests). Babysit mode uses this
+	 * so a session's rules also answer its sidequest's prompts.
+	 */
+	getSidequestParentId(sidequestId: string): string | undefined {
+		return this.sidequestRuns.get(sidequestId)?.parentSessionId;
+	}
+
 	async resume(wrapperId: string): Promise<void> {
 		// A "usage_limit" session still has a live loop — `sendTurn` treats
 		// any non-open status as closed and calls `resume` before sending,
@@ -2462,6 +2471,30 @@ export class SessionManager {
 	}
 
 	/**
+	 * Explicitly kill every live CLI background task for a session. Teardown
+	 * calls this before aborting, because an abort takes down the CLI before
+	 * it can reap its own tasks — orphaning dev servers and background shells.
+	 * Bounded per task: a wedged CLI must not be able to hang delete.
+	 */
+	async stopAllBackgroundTasks(
+		sessionId: string,
+		timeoutMs = 3000,
+	): Promise<void> {
+		const entry = this.sessions.get(sessionId);
+		const q = entry?.queryRef.current;
+		if (!entry || !q) return;
+		const tasks = entry.getLiveTasks();
+		if (tasks.length === 0) return;
+		await Promise.all(
+			tasks.map((t) =>
+				withTimeout(q.stopTask(t.id), timeoutMs, `stopTask ${t.id}`).catch(
+					(err) => console.error("[ccw] stopTask during teardown failed:", err),
+				),
+			),
+		);
+	}
+
+	/**
 	 * Snapshot of a session's live background tasks. Backs the renderer's
 	 * bootstrap re-prime: the `tasks` broadcasts are live-only, so a window
 	 * opened or reloaded mid-session has missed them all.
@@ -2485,6 +2518,8 @@ export class SessionManager {
 	 * (e.g. before deleting the session record).
 	 *
 	 * Steps:
+	 *   0. Explicitly kill live background tasks (dev servers, shells,
+	 *      subagents) while the CLI is still alive to reap them.
 	 *   1. Ask the SDK to stop in-flight tool/assistant work (interrupt).
 	 *   2. End the user-prompt async iterable so the SDK winds down naturally.
 	 *   3. Trigger the abort signal so the for-await loop breaks.
@@ -2497,6 +2532,7 @@ export class SessionManager {
 	async cancelAndWait(sessionId: string, timeoutMs = 5000): Promise<void> {
 		const entry = this.sessions.get(sessionId);
 		if (!entry) return;
+		await this.stopAllBackgroundTasks(sessionId);
 		try {
 			await entry.queryRef.current?.interrupt();
 		} catch (err) {

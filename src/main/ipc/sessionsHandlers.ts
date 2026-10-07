@@ -86,7 +86,15 @@ export function registerSessionsHandlers(): SessionManager {
 		// Keep the plan visible in the chat history after the card is gone.
 		(sessionId, planText) =>
 			manager?.appendPlanToTranscript(sessionId, planText),
-		(args) => babysitter.decide(args),
+		// One set of rules per session: a sidequest's prompts are judged by
+		// its parent's config. Only the lookup id changes — the broker still
+		// logs and records the plan under the sidequest's own id.
+		(args) =>
+			babysitter.decide({
+				...args,
+				sessionId:
+					manager?.getSidequestParentId(args.sessionId) ?? args.sessionId,
+			}),
 	);
 	manager = new SessionManager(broker);
 
@@ -268,15 +276,21 @@ export function registerSessionsHandlers(): SessionManager {
 			_e,
 			payload: { sessionId: string; config: BabysitConfig | null },
 		): BabysitConfig | null => {
-			// Real sessions only. Sidequests are ephemeral and have no store
-			// row, so this also keeps them out of babysit mode.
+			// Real sessions only. Sidequests have no store row and no config
+			// of their own — they follow their parent's rules (see the
+			// autoDecide wiring above).
 			if (!sessionStore.getSession(payload.sessionId)) {
 				throw new Error("Session not found");
 			}
 			const saved = babysitter.set(payload.sessionId, payload.config);
-			// Answer whatever is already on screen under the new rules,
-			// rather than leaving it stranded until the user clicks it.
-			if (saved) broker.answerPendingForSession(payload.sessionId);
+			// Answer whatever is already on screen under the new rules —
+			// in the main thread and its sidequest — rather than leaving it
+			// stranded until the user clicks it.
+			if (saved) {
+				broker.answerPendingForSession(payload.sessionId);
+				const sidequestId = manager.getSidequestId(payload.sessionId);
+				if (sidequestId) broker.answerPendingForSession(sidequestId);
+			}
 			return saved;
 		},
 	);
@@ -351,6 +365,11 @@ export function registerSessionsHandlers(): SessionManager {
 		// loop can't reach any window and lazy-resurrect the row via
 		// upsertSession.
 		manager.markDeleted(sessionId);
+		// Explicitly kill background tasks (dev servers, shells, subagents)
+		// BEFORE tripping the abort below. Aborting tears down the CLI before
+		// it can reap them, orphaning the processes. Awaited, but bounded
+		// inside stopAllBackgroundTasks so a wedged CLI can't hang delete.
+		await manager.stopAllBackgroundTasks(sessionId);
 		// Kill any sidequest forked off this session — its fork point is about
 		// to stop existing.
 		void manager.discardSidequest(sessionId);

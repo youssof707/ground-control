@@ -23,9 +23,10 @@ import * as windows from "../windows";
  * Quitting the app ends all babysitting. A reloaded window re-primes from
  * `babysit:list`, the same way the background-task chip does.
  *
- * Sidequests are deliberately out of scope. Configs are only ever set for
- * real session ids, and a sidequest asks the broker under its own id, so its
- * prompts miss the Map and keep their normal cards.
+ * One set of rules per session, covering its sidequest too. Configs are only
+ * ever set for real session ids; a sidequest asks the broker under its own
+ * id, so the `decide` wiring in `sessionsHandlers` maps it to its parent's id
+ * before the lookup here.
  */
 export class Babysitter {
 	private configs = new Map<string, BabysitConfig>();

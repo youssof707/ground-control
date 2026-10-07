@@ -24,6 +24,7 @@ import { registerSessionsHandlers } from "./ipc/sessionsHandlers";
 import { cleanupDuplicateInstalls } from "./updater";
 import type { SessionManager } from "./sessions/SessionManager";
 import * as windows from "./windows";
+import { attachContextMenu } from "./contextMenu";
 
 let server: FastifyInstance | null = null;
 let sessionManager: SessionManager | null = null;
@@ -177,6 +178,7 @@ app.whenReady().then(async () => {
 	// suppresses the menu accelerator, silently eating Cmd+R in packaged
 	// builds. We want that key free for the composer-focus hotkey instead.
 	app.on("browser-window-created", (_, window) => {
+		attachContextMenu(window);
 		window.webContents.on("before-input-event", (event, input) => {
 			if (input.type !== "keyDown") return;
 			if (!is.dev) {
