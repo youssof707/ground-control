@@ -10,10 +10,12 @@ import { useBackdropDismiss } from "../../../components/useBackdropDismiss";
 import { T } from "../../../design/tokens";
 import { WORKTREE_COLOR_MAP } from "../../../design/WorktreeChip";
 import { ColorPicker, LabeledInput } from "../../../design/FormControls";
-import type {
-	LocalBranch,
-	Worktree,
-	WorktreeColor,
+import {
+	DEFAULT_WORKTREE_COLOR,
+	type CreateWorktreeInput,
+	type LocalBranch,
+	type Worktree,
+	type WorktreeColor,
 } from "@shared/schemas/worktrees";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
 
@@ -28,8 +30,6 @@ type CreateMode = "new-branch" | "existing-branch";
  *        - "Existing branch": pick a local branch that isn't already
  *          checked out; app runs `git worktree add <path> <existingBranch>`.
  *
- * On success (any path), calls `onAttach(worktreeId)` and closes.
- *
  * Uses the same CSS classes as ConfirmModal (`modal-backdrop`,
  * `modal-card`, `modal-title`, `modal-actions`, `modal-error`) for
  * visual consistency, plus inline styles for the sections + form which
@@ -43,11 +43,13 @@ export function AttachWorktreeModal({
 	open,
 	baseDir,
 	onAttach,
+	onCreate,
 	onClose,
 }: {
 	open: boolean;
 	baseDir: string;
 	onAttach: (worktreeId: string) => void;
+	onCreate: (input: CreateWorktreeInput) => void;
 	onClose: () => void;
 }) {
 	const [existing, setExisting] = useState<Worktree[]>([]);
@@ -55,10 +57,9 @@ export function AttachWorktreeModal({
 	const [branches, setBranches] = useState<LocalBranch[]>([]);
 	const [mode, setMode] = useState<CreateMode>("new-branch");
 	const [displayName, setDisplayName] = useState("");
-	const [color, setColor] = useState<WorktreeColor>("blue");
+	const [color, setColor] = useState<WorktreeColor>(DEFAULT_WORKTREE_COLOR);
 	const [newBranch, setNewBranch] = useState("");
 	const [selectedBranch, setSelectedBranch] = useState<string>("");
-	const [creating, setCreating] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
 	// Cheap "monotonic seq" — drops stale IPC responses if the modal is
@@ -71,12 +72,11 @@ export function AttachWorktreeModal({
 	useEffect(() => {
 		if (!open) return;
 		setDisplayName("");
-		setColor("blue");
+		setColor(DEFAULT_WORKTREE_COLOR);
 		setNewBranch("");
 		setSelectedBranch("");
 		setMode("new-branch");
 		setError(null);
-		setCreating(false);
 		const my = ++fetchSeq.current;
 		void (async () => {
 			try {
@@ -196,57 +196,36 @@ export function AttachWorktreeModal({
 	}, [mode, newBranch]);
 
 	const canCreate = useMemo(() => {
-		if (creating) return false;
 		// displayName is optional — falls back to the branch name on submit.
 		if (mode === "new-branch") {
 			return newBranch.trim().length > 0 && !branchInvalid;
 		}
 		return selectedBranch.length > 0;
-	}, [creating, mode, newBranch, branchInvalid, selectedBranch]);
+	}, [mode, newBranch, branchInvalid, selectedBranch]);
 
-	const handleCreate = useCallback(async () => {
+	const handleCreate = useCallback(() => {
 		if (!canCreate) return;
-		setCreating(true);
-		setError(null);
-		try {
-			// Empty/whitespace displayName falls back to the branch name so
-			// the user doesn't have to type the same thing twice for the
-			// common case. Slugification (main-side) then produces the
-			// on-disk folder name from whichever we end up with.
-			const branchForFallback =
-				mode === "new-branch" ? newBranch.trim() : selectedBranch;
-			const effectiveDisplayName =
-				displayName.trim() || branchForFallback;
-			const input =
-				mode === "new-branch"
-					? {
-						mode: "new-branch" as const,
-						baseDir,
-						displayName: effectiveDisplayName,
-						color,
-						newBranch: newBranch.trim(),
-					}
-					: {
-						mode: "existing-branch" as const,
-						baseDir,
-						displayName: effectiveDisplayName,
-						color,
-						existingBranch: selectedBranch,
-					};
-			const wt = await window.claude.createWorktree(input);
-			// Hydrate the local worktrees store immediately so the draft's
-			// re-render (triggered by `onAttach` → `updateDraft`) can resolve
-			// `worktreeId` → chip in the same tick. Main broadcasts
-			// `state:changed` to other windows only (skip-self), so without
-			// this upsert the originating window would keep showing the
-			// "+ Add worktree" button until a reload.
-			useWorktreesStore.getState().upsert(wt);
-			onAttach(wt.id);
-			onClose();
-		} catch (err) {
-			setError((err as Error).message || "Failed to create worktree");
-			setCreating(false);
-		}
+		const branchForFallback =
+			mode === "new-branch" ? newBranch.trim() : selectedBranch;
+		const effectiveDisplayName = displayName.trim() || branchForFallback;
+		const input: CreateWorktreeInput =
+			mode === "new-branch"
+				? {
+					mode: "new-branch",
+					baseDir,
+					displayName: effectiveDisplayName,
+					color,
+					newBranch: newBranch.trim(),
+				}
+				: {
+					mode: "existing-branch",
+					baseDir,
+					displayName: effectiveDisplayName,
+					color,
+					existingBranch: selectedBranch,
+				};
+		onCreate(input);
+		onClose();
 	}, [
 		baseDir,
 		mode,
@@ -255,7 +234,7 @@ export function AttachWorktreeModal({
 		newBranch,
 		selectedBranch,
 		canCreate,
-		onAttach,
+		onCreate,
 		onClose,
 	]);
 
@@ -347,27 +326,20 @@ export function AttachWorktreeModal({
 								setMode(m);
 								setError(null);
 							}}
-							disabled={creating}
 						/>
 						<LabeledInput
 							label="Display name"
 							value={displayName}
 							onChange={setDisplayName}
 							autoFocus
-							disabled={creating}
 							maxLength={60}
 						/>
-						<ColorPicker
-							value={color}
-							onChange={setColor}
-							disabled={creating}
-						/>
+						<ColorPicker value={color} onChange={setColor} />
 						{mode === "new-branch" ? (
 							<LabeledInput
 								label="New branch"
 								value={newBranch}
 								onChange={setNewBranch}
-								disabled={creating}
 								maxLength={200}
 								hint={
 									branchInvalid ??
@@ -384,7 +356,6 @@ export function AttachWorktreeModal({
 								baseDir={baseDir}
 								selected={selectedBranch}
 								onSelect={setSelectedBranch}
-								disabled={creating}
 							/>
 						)}
 					</div>
@@ -393,7 +364,7 @@ export function AttachWorktreeModal({
 				{error ? <div className="modal-error">{error}</div> : null}
 
 				<div className="modal-actions">
-					<button className="btn" onClick={onClose} disabled={creating}>
+					<button className="btn" onClick={onClose}>
 						Cancel
 					</button>
 					<button
@@ -401,7 +372,7 @@ export function AttachWorktreeModal({
 						disabled={!canCreate}
 						onClick={handleCreate}
 					>
-						{creating ? "…" : "Create & attach"}
+						Create & attach
 					</button>
 				</div>
 			</div>

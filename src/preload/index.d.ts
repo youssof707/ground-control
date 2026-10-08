@@ -108,6 +108,7 @@ declare global {
 			getSettings: () => Promise<AppSettingsFile>;
 			setLastUsedWorkspace: (cwd: string) => Promise<void>;
 			setDefaultModel: (model?: string) => Promise<void>;
+			setDefaultBabysit: (config?: BabysitConfig) => Promise<void>;
 			setSessionsSidebarWidth: (width: number) => Promise<void>;
 			setNotesSidebarWidth: (width: number) => Promise<void>;
 			setSidequestSidebarWidth: (width: number) => Promise<void>;

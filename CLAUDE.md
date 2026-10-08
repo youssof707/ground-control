@@ -33,6 +33,18 @@ the single source of truth so shortcuts are easy to find.
   nothing is buffered. Not `Cmd+Z`: that's the most-used text shortcut in the
   app, and claiming it would mean hand-rebuilding the native Edit menu
 
+## Code rules
+
+**ZERO COMMENTS. EVER. No exceptions.** Code must explain itself.
+
+- No doc blocks, no inline comments, no JSX comments, no "why" comments, no TODOs.
+- If something needs a comment to be understood, the code is wrong: rename it, split it,
+  or restructure it until the comment is unnecessary.
+- The only tolerated exception is a single one-line comment where leaving it out would be
+  life-or-death (a non-obvious bug that *will* be reintroduced otherwise). Treat that as
+  almost never.
+- Do not add comments to code you touch, and do not leave your own comments behind.
+
 ## Verification rules
 
 **NEVER use Playwright. Ever.** No `playwright`, no `playwright-core`, no

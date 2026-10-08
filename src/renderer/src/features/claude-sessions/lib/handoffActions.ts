@@ -98,6 +98,7 @@ export function runHandoff(input: {
 		// deliberately NOT the app-wide default.
 		model: session.model,
 		groupId: session.groupId,
+		pendingActions: [],
 	};
 
 	runBackgroundTask({

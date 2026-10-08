@@ -12,6 +12,7 @@ import type {
 } from "../../shared/schemas/claude_session";
 import type { DeletedSessionSnapshot } from "../../shared/claude-sessions/undo";
 import type { BabysitConfig } from "../../shared/claude-sessions/babysit";
+import * as appSettings from "../core/store/app_settings";
 import * as sessionStore from "../core/store/claude_session";
 import * as notesStore from "../core/store/session_notes";
 import * as worktreesStore from "../core/store/worktrees";
@@ -96,7 +97,10 @@ export function registerSessionsHandlers(): SessionManager {
 					manager?.getSidequestParentId(args.sessionId) ?? args.sessionId,
 			}),
 	);
-	manager = new SessionManager(broker);
+	manager = new SessionManager(broker, (sessionId) => {
+		const defaults = appSettings.get().defaultBabysit;
+		if (defaults) babysitter.set(sessionId, defaults);
+	});
 
 	registerReadHandlers();
 	registerSettingsHandlers();

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { isBabysitArmed } from "@shared/claude-sessions/babysit";
 import { useBackdropDismiss } from "../../../components/useBackdropDismiss";
 import { Kbd } from "../../../design/Atoms";
 import { T } from "../../../design/tokens";
@@ -7,12 +8,15 @@ import {
 	parseModelIdentity,
 } from "@shared/claude-sessions/sessionModel";
 import { useSettingsStore } from "../stores/useSettingsStore";
+import {
+	BabysitOnPill,
+	BabysitRuleCards,
+	configFromDraft,
+	draftFromConfig,
+	type BabysitDraft,
+} from "./BabysitRules";
 import { ModelPickerModal } from "./ModelPickerModal";
 
-/**
- * Kept in sync with CLAUDE.md's "Keyboard shortcuts" section by hand; when
- * that list changes, update both.
- */
 const SHORTCUTS: { keys: string[]; label: string }[] = [
 	{ keys: ["⌘", "N"], label: "New session" },
 	{ keys: ["⌘", "S"], label: "Open a side quest" },
@@ -26,12 +30,10 @@ const SHORTCUTS: { keys: string[]; label: string }[] = [
 	{ keys: ["⌘", "⇧", "Z"], label: "Restore the most recently deleted session" },
 ];
 
-/**
- * App settings modal. Opened from the sidebar's view-options dropdown.
- * "Default model" plus a "Keyboard shortcuts" reference list. Follows the
- * same `.modal-backdrop` / `.modal-card` shell as `ConfirmModal` /
- * `EditShortcutsModal`, no dedicated `Modal` wrapper exists in this repo.
- */
+const BABYSIT_AUTOSAVE_DELAY_MS = 400;
+
+type SettingsTab = "general" | "babysitter";
+
 export function SettingsModal({
 	open,
 	onClose,
@@ -39,33 +41,34 @@ export function SettingsModal({
 	open: boolean;
 	onClose: () => void;
 }) {
+	if (!open) return null;
+	return <SettingsDialog onClose={onClose} />;
+}
+
+function SettingsDialog({ onClose }: { onClose: () => void }) {
+	const [tab, setTab] = useState<SettingsTab>("general");
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
 	const defaultModel = useSettingsStore((s) => s.defaultModel);
 	const setDefaultModel = useSettingsStore((s) => s.setDefaultModel);
 
+	const [babysitDraft, setBabysitDraft] = useState<BabysitDraft>(() =>
+		draftFromConfig(useSettingsStore.getState().defaultBabysit),
+	);
+	const babysitConfig = configFromDraft(babysitDraft);
+	const babysitArmed = isBabysitArmed(babysitConfig);
+	useAutosavedBabysitDefaults(babysitConfig);
+
 	useEffect(() => {
-		if (!open) return;
 		const handler = (e: KeyboardEvent) => {
-			// The model picker stacks on top of this modal and runs its own
-			// Escape listener. Without this guard, one Escape press would
-			// close both — dumping the user out of Settings when they only
-			// meant to back out of the model list.
 			if (modelPickerOpen) return;
 			if (e.key === "Escape") onClose();
 		};
 		window.addEventListener("keydown", handler);
 		return () => window.removeEventListener("keydown", handler);
-	}, [open, onClose, modelPickerOpen]);
+	}, [onClose, modelPickerOpen]);
 
 	const backdropProps = useBackdropDismiss(onClose);
 
-	if (!open) return null;
-
-	// `formatModelName` strips a trailing "[1m]" the same way it strips any
-	// other bracket decoration, so a 1M-context pick would otherwise render
-	// identically to its non-1M sibling — call that out explicitly rather
-	// than caching a display label (which would go stale, see the field's
-	// doc comment in app_settings.ts).
 	const modelLabel = defaultModel
 		? formatModelName(defaultModel) +
 			(parseModelIdentity(defaultModel)?.oneM ? " · 1M context" : "")
@@ -79,45 +82,69 @@ export function SettingsModal({
 					role="dialog"
 					aria-modal="true"
 					aria-labelledby="settings-title"
-					style={{ width: "min(420px, calc(100vw - 32px))" }}
+					style={{
+						width: "min(560px, calc(100vw - 32px))",
+						height: "min(640px, calc(91vh - 24px))",
+						alignSelf: "flex-start",
+						marginTop: "9vh",
+						display: "flex",
+						flexDirection: "column",
+						overflow: "hidden",
+						boxSizing: "border-box",
+					}}
 				>
-					<h2 id="settings-title" className="modal-title">
+					<h2 id="settings-title" className="modal-title" style={{ margin: 0 }}>
 						Settings
 					</h2>
 
-					<Section title="Default model">
-						<ModelPickerButton
-							label={modelLabel}
-							onClick={() => setModelPickerOpen(true)}
-						/>
-					</Section>
+					<TabStrip
+						tab={tab}
+						onChange={setTab}
+						babysitArmed={babysitArmed}
+					/>
 
-					<Section title="Keyboard shortcuts">
-						<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-							{SHORTCUTS.map((sc) => (
-								<div
-									key={sc.label}
-									style={{
-										display: "flex",
-										alignItems: "center",
-										gap: 10,
-										padding: "4px 2px",
-									}}
-								>
-									<div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
-										{sc.keys.map((k, i) => (
-											<Kbd key={i}>{k}</Kbd>
-										))}
-									</div>
-									<span style={{ fontSize: 12.5, color: T.text }}>
-										{sc.label}
-									</span>
-								</div>
-							))}
-						</div>
-					</Section>
+					<div
+						role="tabpanel"
+						aria-labelledby={`settings-tab-${tab}`}
+						style={{
+							flex: 1,
+							minHeight: 0,
+							overflowY: "auto",
+							margin: "0 -22px",
+							padding: "18px 22px 4px",
+						}}
+					>
+						{tab === "general" ? (
+							<GeneralPanel
+								modelLabel={modelLabel}
+								onPickModel={() => setModelPickerOpen(true)}
+							/>
+						) : (
+							<BabysitterPanel
+								draft={babysitDraft}
+								onChange={setBabysitDraft}
+								armed={babysitArmed}
+							/>
+						)}
+					</div>
 
-					<div className="modal-actions">
+					<div
+						className="modal-actions"
+						style={{
+							margin: "0 -22px",
+							padding: "14px 22px 0",
+							borderTop: `0.5px solid ${T.borderSoft}`,
+						}}
+					>
+						{tab === "babysitter" && babysitArmed ? (
+							<button
+								className="btn"
+								onClick={() => setBabysitDraft(draftFromConfig(undefined))}
+								style={{ marginRight: "auto", color: T.danger }}
+							>
+								Turn off defaults
+							</button>
+						) : null}
 						<button className="btn" onClick={onClose}>
 							Done
 						</button>
@@ -137,9 +164,274 @@ export function SettingsModal({
 	);
 }
 
-// Mirrors DraftModelBar's clickable label (DraftSessionChat.tsx): mono,
-// dim by default, brightens + underlines on hover. Not a tooltip — no
-// `title=`, the affordance is the visible underline-on-hover itself.
+function useAutosavedBabysitDefaults(
+	config: ReturnType<typeof configFromDraft>,
+) {
+	const latest = useRef(config);
+	latest.current = config;
+	const serialized = JSON.stringify(config);
+
+	useEffect(() => {
+		const timer = setTimeout(
+			() => useSettingsStore.getState().setDefaultBabysit(latest.current),
+			BABYSIT_AUTOSAVE_DELAY_MS,
+		);
+		return () => clearTimeout(timer);
+	}, [serialized]);
+
+	useEffect(
+		() => () => useSettingsStore.getState().setDefaultBabysit(latest.current),
+		[],
+	);
+}
+
+function TabStrip({
+	tab,
+	onChange,
+	babysitArmed,
+}: {
+	tab: SettingsTab;
+	onChange: (tab: SettingsTab) => void;
+	babysitArmed: boolean;
+}) {
+	return (
+		<div
+			role="tablist"
+			aria-label="Settings sections"
+			style={{
+				display: "flex",
+				gap: 20,
+				margin: "14px -22px 0",
+				padding: "0 22px",
+				borderBottom: `0.5px solid ${T.border}`,
+			}}
+		>
+			<Tab
+				id="general"
+				label="General"
+				active={tab === "general"}
+				accent={T.text}
+				onClick={() => onChange("general")}
+			/>
+			<Tab
+				id="babysitter"
+				label="Babysitter"
+				active={tab === "babysitter"}
+				accent={T.babysit}
+				onClick={() => onChange("babysitter")}
+				indicator={babysitArmed}
+			/>
+		</div>
+	);
+}
+
+function Tab({
+	id,
+	label,
+	active,
+	accent,
+	onClick,
+	indicator,
+}: {
+	id: SettingsTab;
+	label: string;
+	active: boolean;
+	accent: string;
+	onClick: () => void;
+	indicator?: boolean;
+}) {
+	const [hover, setHover] = useState(false);
+	return (
+		<button
+			type="button"
+			role="tab"
+			id={`settings-tab-${id}`}
+			aria-selected={active}
+			onClick={onClick}
+			onMouseEnter={() => setHover(true)}
+			onMouseLeave={() => setHover(false)}
+			style={{
+				position: "relative",
+				display: "inline-flex",
+				alignItems: "center",
+				gap: 6,
+				appearance: "none",
+				border: "none",
+				background: "none",
+				padding: "10px 0 11px",
+				fontFamily: "inherit",
+				fontSize: 13,
+				fontWeight: active ? 600 : 500,
+				color: active || hover ? T.text : T.textDim,
+				cursor: "pointer",
+				transition: "color 80ms ease",
+			}}
+		>
+			{label}
+			{indicator ? (
+				<span
+					aria-hidden
+					style={{
+						width: 6,
+						height: 6,
+						borderRadius: "50%",
+						background: T.babysit,
+						boxShadow: `0 0 0 3px ${T.babysitSoft}`,
+					}}
+				/>
+			) : null}
+			<span
+				aria-hidden
+				style={{
+					position: "absolute",
+					left: 0,
+					right: 0,
+					bottom: -0.5,
+					height: 2,
+					borderRadius: 1,
+					background: accent,
+					opacity: active ? 1 : 0,
+					transform: active ? "scaleX(1)" : "scaleX(0.6)",
+					transition: "opacity 120ms ease, transform 120ms ease",
+				}}
+			/>
+		</button>
+	);
+}
+
+function GeneralPanel({
+	modelLabel,
+	onPickModel,
+}: {
+	modelLabel: string;
+	onPickModel: () => void;
+}) {
+	return (
+		<>
+			<Section title="Default model">
+				<ModelPickerButton label={modelLabel} onClick={onPickModel} />
+			</Section>
+
+			<Section title="Keyboard shortcuts">
+				<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+					{SHORTCUTS.map((sc) => (
+						<div
+							key={sc.label}
+							style={{
+								display: "flex",
+								alignItems: "center",
+								gap: 10,
+								padding: "4px 2px",
+							}}
+						>
+							<div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
+								{sc.keys.map((k, i) => (
+									<Kbd key={i}>{k}</Kbd>
+								))}
+							</div>
+							<span style={{ fontSize: 12.5, color: T.text }}>{sc.label}</span>
+						</div>
+					))}
+				</div>
+			</Section>
+		</>
+	);
+}
+
+function BabysitterPanel({
+	draft,
+	onChange,
+	armed,
+}: {
+	draft: BabysitDraft;
+	onChange: (update: (draft: BabysitDraft) => BabysitDraft) => void;
+	armed: boolean;
+}) {
+	const answerMissing =
+		draft.question === "answer" && draft.questionMessage.trim().length === 0;
+
+	return (
+		<>
+			<div
+				style={{
+					display: "flex",
+					alignItems: "flex-start",
+					gap: 12,
+					marginBottom: 14,
+				}}
+			>
+				<div style={{ minWidth: 0, flex: 1 }}>
+					<div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>
+						Defaults for new sessions
+					</div>
+					<div
+						style={{
+							marginTop: 4,
+							fontSize: 12,
+							lineHeight: 1.5,
+							color: T.textMute,
+						}}
+					>
+						Every new session starts babysat with these rules. Adjust a single
+						session from its ⋯ menu or{" "}
+						<span
+							style={{
+								display: "inline-flex",
+								gap: 2,
+								verticalAlign: "middle",
+							}}
+						>
+							<Kbd>⌘</Kbd>
+							<Kbd>⇧</Kbd>
+							<Kbd>B</Kbd>
+						</span>
+						.
+					</div>
+				</div>
+				{armed ? <BabysitOnPill label="On" /> : <OffPill />}
+			</div>
+
+			<BabysitRuleCards draft={draft} onChange={onChange} />
+
+			<div
+				style={{
+					marginTop: 12,
+					fontSize: 11.5,
+					lineHeight: 1.45,
+					color: answerMissing ? T.warn : T.textMute,
+				}}
+			>
+				{answerMissing
+					? "Questions need an answer before they can be handled — until then they're left for you."
+					: armed
+						? "Changes save automatically. Sessions that already exist keep their current babysitter."
+						: "Everything is set to Do nothing, so new sessions start without a babysitter."}
+			</div>
+		</>
+	);
+}
+
+function OffPill() {
+	return (
+		<span
+			style={{
+				display: "inline-flex",
+				alignItems: "center",
+				height: 20,
+				padding: "0 8px",
+				borderRadius: 10,
+				border: `0.5px solid ${T.border}`,
+				color: T.textMute,
+				fontSize: 11,
+				fontWeight: 500,
+				flexShrink: 0,
+			}}
+		>
+			Off
+		</span>
+	);
+}
+
 function ModelPickerButton({
 	label,
 	onClick,
@@ -171,8 +463,6 @@ function ModelPickerButton({
 	);
 }
 
-// Intentionally duplicated in AddToGroupModal.tsx / EditShortcutsModal.tsx /
-// AttachWorktreeModal.tsx — 8 trivial lines, not worth a shared import.
 function Section({
 	title,
 	children,

@@ -2,7 +2,11 @@ import { useNavigate } from "react-router-dom";
 import type { SessionMode, UserContentBlock } from "@shared/claude-sessions/types";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { useDraftStore } from "../stores/useDraftStore";
-import { isDraftId, useDraftSessionsStore } from "../stores/useDraftSessionsStore";
+import {
+	currentDraft,
+	isDraftId,
+	useDraftSessionsStore,
+} from "../stores/useDraftSessionsStore";
 import { useRightPanelStore } from "../stores/useRightPanelStore";
 import {
 	isSidequestId,
@@ -13,6 +17,7 @@ import { draftFromBlocks } from "../lib/composerImages";
 import { sendTurn } from "../lib/sendTurn";
 import { sendToSidequest } from "../lib/sidequestActions";
 import { createSessionFromDraft } from "../lib/promoteDraft";
+import { awaitDraftActions } from "../lib/draftActions";
 
 export type ComposerKind = "session" | "draft" | "sidequest";
 
@@ -22,6 +27,8 @@ export interface ComposerTarget {
 	 * (`status === "starting"`) — no live query yet to accept a mode change,
 	 * and nothing to send to. Always false for the other two kinds. */
 	starting: boolean;
+	sending: boolean;
+	sendError: string | null;
 	mode: SessionMode;
 	isRunning: boolean;
 	/** Session kind only — undefined elsewhere, which reads as "not stale". */
@@ -73,6 +80,12 @@ export function useComposerTarget(sessionId: string): ComposerTarget {
 	// ── Draft ────────────────────────────────────────────────────────────────
 	const draftMode = useDraftSessionsStore((s) =>
 		s.draft && s.draft.id === sessionId ? s.draft.mode : undefined,
+	);
+	const draftSending = useDraftSessionsStore((s) =>
+		s.draft && s.draft.id === sessionId ? !!s.draft.sending : false,
+	);
+	const draftSendError = useDraftSessionsStore((s) =>
+		s.draft && s.draft.id === sessionId ? (s.draft.sendError ?? null) : null,
 	);
 
 	// ── Session ──────────────────────────────────────────────────────────────
@@ -182,45 +195,49 @@ export function useComposerTarget(sessionId: string): ComposerTarget {
 			return;
 		}
 
-		// Explicit annotation: `isDraftId`/`isSidequestId` are both typed as
-		// `id is string` (same type as the parameter, since there's no
-		// branded id type), which trips TS's aliased-condition narrowing —
-		// having already returned out of the `isSq` branch above, TS narrows
-		// `sessionId` itself to `never` here. It's still a plain string at
-		// runtime; the annotation just stops that from infecting `targetId`.
-		let targetId: string = sessionId;
 		if (isDraft) {
-			// Promote the draft to a real session before delivering the
-			// message. createSessionFromDraft subscribes to session:started
-			// BEFORE invoking startSession so we don't miss the broadcast;
-			// useSessionsBootstrap also handles it and upserts the full
-			// ClaudeSession into useSessionsStore, so by the time this
-			// resolves sendTurn's appendMessage call has a valid row.
-			const draft = useDraftSessionsStore.getState().draft;
-			if (!draft || draft.id !== sessionId) {
-				throw new Error("Draft session no longer exists");
-			}
-			targetId = await createSessionFromDraft(draft);
+			await sendDraft(sessionId, blocks);
+			return;
 		}
 		// sendTurn owns the resume-if-needed check, the sendUserMessage IPC
 		// call, and the optimistic local echo — shared with
 		// useQueuedMessageFlusher so a manually-sent turn and a flushed
 		// pre-move go through identical logic.
-		await sendTurn(targetId, blocks);
+		await sendTurn(sessionId, blocks);
 		useDraftStore.getState().clearDraft(sessionId);
-		if (isDraft) {
-			// Navigate BEFORE discardDraft so the DraftSessionChat doesn't
-			// briefly render its "Draft no longer exists" fallback. The route
-			// swap unmounts the draft view and mounts the real SessionChat for
-			// `targetId`. `replace` so the back button doesn't strand the user
-			// on the now-dead draft URL.
-			//
-			// Carry the right panel across with it: it's keyed by session id,
-			// so a Notes/Sidequest panel opened on the draft would otherwise
-			// silently vanish the moment the id changes. Same re-keying pattern
-			// as `moveDraft` / `moveSession` on a sidequest re-fork.
-			useRightPanelStore.getState().moveSession(sessionId, targetId);
+	};
+
+	const sendDraft = async (draftId: string, blocks: UserContentBlock[]) => {
+		const draft = currentDraft(draftId);
+		if (!draft) throw new Error("Draft session no longer exists");
+		if (draft.sending) return;
+		useDraftSessionsStore
+			.getState()
+			.updateDraft({ sending: true, sendError: null });
+
+		let targetId: string;
+		try {
+			await awaitDraftActions(draftId);
+			const ready = currentDraft(draftId);
+			if (!ready) throw new Error("Draft session no longer exists");
+			targetId = await createSessionFromDraft(ready);
+			await sendTurn(targetId, blocks);
+		} catch (err) {
+			if (currentDraft(draftId)) {
+				useDraftSessionsStore.getState().updateDraft({
+					sending: false,
+					sendError: err instanceof Error ? err.message : String(err),
+				});
+			}
+			throw err;
+		}
+
+		useDraftStore.getState().clearDraft(draftId);
+		useRightPanelStore.getState().moveSession(draftId, targetId);
+		if (window.location.hash === `#/sessions/${draftId}`) {
 			navigate(`/sessions/${targetId}`, { replace: true });
+		}
+		if (currentDraft(draftId)) {
 			useDraftSessionsStore.getState().discardDraft();
 		}
 	};
@@ -228,6 +245,8 @@ export function useComposerTarget(sessionId: string): ComposerTarget {
 	return {
 		kind: isSq ? "sidequest" : isDraft ? "draft" : "session",
 		starting,
+		sending: isDraft && draftSending,
+		sendError: isDraft ? draftSendError : null,
 		mode,
 		isRunning,
 		branch: isSq || isDraft ? undefined : sessBranch,

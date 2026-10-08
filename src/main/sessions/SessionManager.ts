@@ -514,7 +514,10 @@ export class SessionManager {
 	// on deletions that `discardSidequest` otherwise fires and forgets.
 	private pendingTranscriptDeletes = new Set<Promise<void>>();
 
-	constructor(private broker: PermissionBroker) {}
+	constructor(
+		private broker: PermissionBroker,
+		private onSessionCreated: (sessionId: string) => void,
+	) {}
 
 	/**
 	 * Mark a session id as deleted. After this point, `send()` drops any
@@ -643,6 +646,8 @@ export class SessionManager {
 		} catch (err) {
 			console.error("[ccw] failed to persist session:", err);
 		}
+
+		this.onSessionCreated(id);
 
 		// Reverse-index the session on its worktree so we can enforce
 		// "no delete while attached" and cascade-detach at delete time.

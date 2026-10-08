@@ -1,5 +1,9 @@
 import { create } from "zustand";
 import type { AppSettingsFile } from "@shared/schemas/app_settings";
+import {
+	isBabysitArmed,
+	type BabysitConfig,
+} from "@shared/claude-sessions/babysit";
 
 /**
  * App-wide user preferences. Source of truth lives in the main process
@@ -15,12 +19,14 @@ import type { AppSettingsFile } from "@shared/schemas/app_settings";
 interface State {
 	lastUsedWorkspace?: string;
 	defaultModel?: string;
+	defaultBabysit?: BabysitConfig;
 	sessionsSidebarWidth?: number;
 	notesSidebarWidth?: number;
 	sidequestSidebarWidth?: number;
 	hydrate: (settings: AppSettingsFile) => void;
 	setLastUsedWorkspace: (cwd: string) => void;
 	setDefaultModel: (model: string | undefined) => void;
+	setDefaultBabysit: (config: BabysitConfig | undefined) => void;
 	setSessionsSidebarWidth: (width: number) => void;
 	setNotesSidebarWidth: (width: number) => void;
 	setSidequestSidebarWidth: (width: number) => void;
@@ -36,6 +42,7 @@ export const useSettingsStore = create<State>((set, get) => ({
 		set({
 			lastUsedWorkspace: settings.lastUsedWorkspace,
 			defaultModel: settings.defaultModel,
+			defaultBabysit: settings.defaultBabysit,
 			sessionsSidebarWidth: settings.sessionsSidebarWidth,
 			notesSidebarWidth: settings.notesSidebarWidth,
 			sidequestSidebarWidth: settings.sidequestSidebarWidth,
@@ -53,6 +60,12 @@ export const useSettingsStore = create<State>((set, get) => ({
 		if (get().defaultModel === model) return;
 		void window.claude?.setDefaultModel(model);
 		set({ defaultModel: model });
+	},
+	setDefaultBabysit: (config) => {
+		const next = config && isBabysitArmed(config) ? config : undefined;
+		if (JSON.stringify(get().defaultBabysit) === JSON.stringify(next)) return;
+		void window.claude?.setDefaultBabysit(next);
+		set({ defaultBabysit: next });
 	},
 	setSessionsSidebarWidth: (width) => {
 		// Same pattern as setLastUsedWorkspace: no-op if unchanged, optimistic

@@ -152,6 +152,14 @@ export function ColorPicker({
 							aria-checked={selected}
 							aria-label={k}
 							disabled={disabled}
+							// Out of the tab order on purpose: the picker sits
+							// between two text inputs in the create-worktree /
+							// create-group modals, and Tab is expected to chain
+							// those inputs directly. Each swatch is a focusable
+							// <button> otherwise, so Tab would silently stop on
+							// all three (no focus ring) before reaching the next
+							// field. Swatches stay mouse-clickable.
+							tabIndex={-1}
 							onClick={() => onChange(k)}
 							style={{
 								width: 16,

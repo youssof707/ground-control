@@ -266,8 +266,10 @@ export function MessageComposer({
 		target.requestFocus();
 	};
 
+	const busy = sending || target.sending;
+
 	const send = async () => {
-		if (sending) return;
+		if (busy) return;
 		if (!text.trim() && images.length === 0) return;
 		const blocks = buildUserBlocks(text, images);
 
@@ -433,8 +435,10 @@ export function MessageComposer({
 	// does NOT gate the textarea: Cmd+S forks and immediately focuses the
 	// panel, so the user types straight into a still-starting sidequest.
 	// It only gates the settings row below.
-	const inputDisabled = disabled || sending;
-	const settingsDisabled = disabled || sending || target.starting;
+	const inputDisabled = disabled || busy;
+	const settingsDisabled = disabled || busy || target.starting;
+	const sendDisabled = disabled || busy || !canSend;
+	const shownError = error ?? target.sendError;
 
 	const sendAriaLabel =
 		branchStale && target.lastUserMessageBranch
@@ -444,7 +448,7 @@ export function MessageComposer({
 	// Shared between the plain and split renderings of the Send button below.
 	const sendContent = (
 		<>
-			{branchStale && !sending ? (
+			{branchStale && !busy ? (
 				<svg
 					width="12"
 					height="12"
@@ -468,8 +472,12 @@ export function MessageComposer({
 					<circle cx="6" cy="9" r="0.7" fill="currentColor" />
 				</svg>
 			) : null}
-			{sending ? "…" : "Send"}
-			{!sending ? (
+			{busy ? (
+				<span className="asyncy-btn-spinner" aria-hidden />
+			) : (
+				"Send"
+			)}
+			{!busy ? (
 				<svg width="11" height="11" viewBox="0 0 12 12" fill="none">
 					<path
 						d="M2 6h8M7 3l3 3-3 3"
@@ -540,7 +548,7 @@ export function MessageComposer({
 					onError={setError}
 				/>
 
-				{error ? (
+				{shownError ? (
 					<div
 						className="message message-error"
 						style={{
@@ -550,7 +558,7 @@ export function MessageComposer({
 							textAlign: "left",
 						}}
 					>
-						{error}
+						{shownError}
 					</div>
 				) : null}
 
@@ -634,7 +642,8 @@ export function MessageComposer({
 						>
 							<button
 								onClick={send}
-								disabled={disabled || sending || !canSend}
+								disabled={sendDisabled}
+								aria-busy={busy}
 								className={`btn ${branchStale ? "btn-destructive" : "btn-primary"}`}
 								aria-label={sendAriaLabel}
 								style={{
@@ -648,7 +657,7 @@ export function MessageComposer({
 							<button
 								type="button"
 								onClick={() => setSendMenuOpen((o) => !o)}
-								disabled={disabled || sending || !canSend}
+								disabled={sendDisabled}
 								className={`btn ${branchStale ? "btn-destructive" : "btn-primary"}`}
 								aria-haspopup="menu"
 								aria-expanded={sendMenuOpen}
@@ -665,7 +674,7 @@ export function MessageComposer({
 									// Full opacity while enabled — unlike the main half,
 									// this is the live control right now, so it must not
 									// read as disabled just because the turn is running.
-									opacity: disabled || sending || !canSend ? 0.55 : 1,
+									opacity: sendDisabled ? 0.55 : 1,
 								}}
 							>
 								<svg
@@ -710,7 +719,8 @@ export function MessageComposer({
 					) : (
 						<button
 							onClick={send}
-							disabled={disabled || sending || !canSend}
+							disabled={sendDisabled}
+							aria-busy={busy}
 							className={`btn ${branchStale ? "btn-destructive" : "btn-primary"}`}
 							aria-label={sendAriaLabel}
 						>

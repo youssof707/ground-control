@@ -3,7 +3,10 @@ import { useBackdropDismiss } from "../../../components/useBackdropDismiss";
 import { T } from "../../../design/tokens";
 import { WORKTREE_COLOR_MAP } from "../../../design/WorktreeChip";
 import { ColorPicker, LabeledInput } from "../../../design/FormControls";
-import type { WorktreeColor } from "@shared/schemas/worktrees";
+import {
+	DEFAULT_WORKTREE_COLOR,
+	type WorktreeColor,
+} from "@shared/schemas/worktrees";
 import type { SessionGroup } from "@shared/schemas/session_groups";
 import { useSessionGroupsStore } from "../stores/useSessionGroupsStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
@@ -34,7 +37,7 @@ export function AddToGroupModal({
 	const sessions = useSessionsStore((s) => s.sessions);
 
 	const [name, setName] = useState("");
-	const [color, setColor] = useState<WorktreeColor>("blue");
+	const [color, setColor] = useState<WorktreeColor>(DEFAULT_WORKTREE_COLOR);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
@@ -43,7 +46,7 @@ export function AddToGroupModal({
 	useEffect(() => {
 		if (!open) return;
 		setName("");
-		setColor("blue");
+		setColor(DEFAULT_WORKTREE_COLOR);
 		setBusy(false);
 		setError(null);
 	}, [open, sessionId]);

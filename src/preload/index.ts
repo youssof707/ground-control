@@ -87,6 +87,8 @@ const claude = {
 		ipcRenderer.invoke("settings:setLastUsedWorkspace", { cwd }),
 	setDefaultModel: (model?: string) =>
 		ipcRenderer.invoke("settings:setDefaultModel", { model }),
+	setDefaultBabysit: (config?: BabysitConfig) =>
+		ipcRenderer.invoke("settings:setDefaultBabysit", { config }),
 	setSessionsSidebarWidth: (width: number) =>
 		ipcRenderer.invoke("settings:setSessionsSidebarWidth", { width }),
 	setNotesSidebarWidth: (width: number) =>

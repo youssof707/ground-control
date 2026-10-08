@@ -1,5 +1,8 @@
 import type { CSSProperties } from "react";
-import type { WorktreeColor } from "@shared/schemas/worktrees";
+import {
+	DEFAULT_WORKTREE_COLOR,
+	type WorktreeColor,
+} from "@shared/schemas/worktrees";
 import { T } from "./tokens";
 
 /**
@@ -47,28 +50,35 @@ export const WORKTREE_COLOR_MAP: Record<
  *   - "readonly" (session header + sidebar rows): no ✕, no click
  *     handler. Sessions are bound to their worktree forever.
  *
- * `color` picks the tint from the 2-value palette above. Defaults to
- * "blue" (matches the previous hardcoded look) so an accidental drop
- * through still renders a valid chip.
+ * `color` picks the tint from the palette above. Defaults to
+ * `DEFAULT_WORKTREE_COLOR` (the same neutral a new worktree is born with)
+ * so an accidental drop-through still renders a valid chip.
  */
 export function WorktreeChip({
 	displayName,
 	variant,
-	color = "blue",
+	color = DEFAULT_WORKTREE_COLOR,
 	small = false,
+	status,
+	detachAriaLabel = "Detach worktree",
 	onDetach,
 }: {
 	displayName: string;
 	variant: "interactive" | "readonly";
 	color?: WorktreeColor;
 	small?: boolean;
+	status?: "pending" | "error";
+	detachAriaLabel?: string;
 	onDetach?: () => void;
 }) {
-	const c = WORKTREE_COLOR_MAP[color];
+	const c =
+		status === "error" ? WORKTREE_COLOR_MAP.red : WORKTREE_COLOR_MAP[color];
 	const height = small ? 18 : 22;
 	const fontSize = small ? 10.5 : 11.5;
 	const radius = height / 2;
-	const paddingRight = variant === "interactive" ? 2 : small ? 7 : 9;
+	const pending = status === "pending";
+	const paddingRight =
+		pending ? 6 : variant === "interactive" ? 2 : small ? 7 : 9;
 	const iconSize = small ? 9 : 11;
 
 	const baseStyle: CSSProperties = {
@@ -92,7 +102,7 @@ export function WorktreeChip({
 	};
 
 	return (
-		<span style={baseStyle}>
+		<span style={baseStyle} aria-busy={pending || undefined}>
 			<svg
 				width={iconSize}
 				height={iconSize}
@@ -126,7 +136,17 @@ export function WorktreeChip({
 			>
 				{displayName}
 			</span>
-			{variant === "interactive" && onDetach ? (
+			{pending ? (
+				<span
+					className="asyncy-btn-spinner bg-task-spinner"
+					aria-hidden
+					style={{
+						flexShrink: 0,
+						borderColor: c.border,
+						borderTopColor: c.fg,
+					}}
+				/>
+			) : variant === "interactive" && onDetach ? (
 				<button
 					type="button"
 					onClick={(e) => {
@@ -134,7 +154,7 @@ export function WorktreeChip({
 						e.stopPropagation();
 						onDetach();
 					}}
-					aria-label="Detach worktree"
+					aria-label={detachAriaLabel}
 					style={{
 						appearance: "none",
 						border: "none",

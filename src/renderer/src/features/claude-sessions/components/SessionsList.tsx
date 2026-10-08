@@ -6,6 +6,7 @@ import { useReadStore } from "../stores/useReadStore";
 import { appDefaultModel, useSettingsStore } from "../stores/useSettingsStore";
 import {
 	useDraftSessionsStore,
+	type DraftAction,
 	type DraftSession,
 } from "../stores/useDraftSessionsStore";
 import { useDraftStore } from "../stores/useDraftStore";
@@ -46,7 +47,20 @@ import {
 import type { SessionGroup } from "@shared/schemas/session_groups";
 import type { Shortcut } from "@shared/schemas/shortcuts";
 import type { Skill } from "@shared/schemas/skills";
-import type { Worktree } from "@shared/schemas/worktrees";
+import type { Worktree, WorktreeColor } from "@shared/schemas/worktrees";
+
+/**
+ * Header-weight tint for a colored section label (group or worktree
+ * bucket). Mixed toward `T.textMute` rather than the raw palette `fg`: a
+ * container label should read quieter than the session titles inside it,
+ * and full saturation right next to a neutral folder label read as a
+ * louder, unrelated widget. For "gray" this mixes `T.textMute` with itself,
+ * so a gray section is indistinguishable from a plain folder header — by
+ * design. Don't put this back to `c.fg`.
+ */
+function sectionLabelColor(color: WorktreeColor): string {
+	return `color-mix(in oklab, ${WORKTREE_COLOR_MAP[color].fg} 60%, ${T.textMute})`;
+}
 
 /**
  * Selected-row fill. Translucent rather than a fixed surface token so the row
@@ -425,6 +439,7 @@ export function SessionsList({
 				groupId?: string;
 				model?: string;
 				floating?: boolean;
+				pendingActions?: DraftAction[];
 			} = {
 				model: appDefaultModel(),
 				groupId: undefined,
@@ -435,6 +450,7 @@ export function SessionsList({
 				// the pairing — same rule as DraftSessionChat.changeFolder.
 				patch.cwd = cwd;
 				patch.worktreeId = undefined;
+				patch.pendingActions = [];
 			}
 			useDraftSessionsStore.getState().updateDraft(patch);
 			if (draft.cwd !== cwd) {
@@ -468,6 +484,7 @@ export function SessionsList({
 				groupId?: string;
 				model?: string;
 				floating?: boolean;
+				pendingActions?: DraftAction[];
 			} = {
 				model: appDefaultModel(),
 				groupId: undefined,
@@ -476,6 +493,7 @@ export function SessionsList({
 			if (draft.cwd !== wt.baseDir || draft.worktreeId !== wt.id) {
 				patch.cwd = wt.baseDir;
 				patch.worktreeId = wt.id;
+				patch.pendingActions = [];
 			}
 			useDraftSessionsStore.getState().updateDraft(patch);
 			if (draft.cwd !== wt.baseDir || draft.worktreeId !== wt.id) {
@@ -1207,6 +1225,7 @@ export function SessionsList({
 										<CwdHeaderRow
 											cwd={row.worktree.baseDir}
 											label={row.label}
+											color={row.worktree.color}
 											collapsed={row.collapsed}
 											waiting={counts.waiting}
 											running={counts.running}
@@ -1895,6 +1914,7 @@ function SectionStatusBadge({
 function CwdHeaderRow({
 	cwd,
 	label,
+	color,
 	collapsed,
 	waiting,
 	running,
@@ -1906,6 +1926,10 @@ function CwdHeaderRow({
 	/** Display override — worktree buckets pass "folder: worktree" (or the
 	 * bare worktree name) here; cwd buckets omit it and derive from `cwd`. */
 	label?: string;
+	/** Worktree buckets pass the worktree's color and get the same
+	 * name-only tint a group header has; cwd buckets omit it and stay
+	 * neutral. */
+	color?: WorktreeColor;
 	collapsed: boolean;
 	/** Members awaiting a permission decision — shown only while collapsed. */
 	waiting: number;
@@ -1988,7 +2012,9 @@ function CwdHeaderRow({
 						fontWeight: 600,
 						letterSpacing: 0.5,
 						textTransform: "uppercase",
-						color: T.textMute,
+						// Color on the name only — chevron and "+" stay
+						// T.textFaint, exactly like GroupHeaderRow.
+						color: color ? sectionLabelColor(color) : T.textMute,
 						overflow: "hidden",
 						textOverflow: "ellipsis",
 						whiteSpace: "nowrap",
@@ -2098,7 +2124,6 @@ function GroupHeaderRow({
 	const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(
 		null,
 	);
-	const c = WORKTREE_COLOR_MAP[group.color];
 	return (
 		<>
 			{/* A flex ROW, not a single button: the "+" must be a sibling of
@@ -2175,23 +2200,18 @@ function GroupHeaderRow({
 					</svg>
 					{/* Group color lives on the name itself — no separate dot,
 					    and no color on the chevron or the "+" (otherwise
-					    identical to CwdHeaderRow's label). The only other
+					    identical to CwdHeaderRow's label, which uses the same
+					    sectionLabelColor for worktree buckets). The only other
 					    thing on this strip is the collapsed-only status count
 					    at the far right, which is status-colored, never
-					    group-colored. Muted to header weight (mixed
-					    toward T.textMute, landing near T.textDim) rather than
-					    the raw palette color: a container label should read
-					    quieter than the session titles inside it, and full
-					    saturation right next to a neutral folder label read
-					    as a louder, unrelated widget. Don't put this back to
-					    c.fg. */}
+					    group-colored. */}
 					<span
 						style={{
 							fontSize: 11,
 							fontWeight: 600,
 							letterSpacing: 0.5,
 							textTransform: "uppercase",
-							color: `color-mix(in oklab, ${c.fg} 60%, ${T.textMute})`,
+							color: sectionLabelColor(group.color),
 							overflow: "hidden",
 							textOverflow: "ellipsis",
 							whiteSpace: "nowrap",

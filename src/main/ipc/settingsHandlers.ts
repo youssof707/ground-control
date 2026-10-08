@@ -1,5 +1,6 @@
 import { ipcMain } from "electron";
 import * as appSettings from "../core/store/app_settings";
+import type { BabysitConfig } from "../../shared/claude-sessions/babysit";
 import { broadcast } from "../windows";
 
 export function registerSettingsHandlers(): void {
@@ -17,6 +18,13 @@ export function registerSettingsHandlers(): void {
 		"settings:setDefaultModel",
 		async (e, payload: { model?: string }) => {
 			await appSettings.setDefaultModel(payload.model);
+			broadcast("state:changed", undefined, e.sender.id);
+		},
+	);
+	ipcMain.handle(
+		"settings:setDefaultBabysit",
+		async (e, payload: { config?: BabysitConfig }) => {
+			await appSettings.setDefaultBabysit(payload.config);
 			broadcast("state:changed", undefined, e.sender.id);
 		},
 	);

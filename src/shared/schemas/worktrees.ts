@@ -37,6 +37,15 @@ export const WorktreeColorSchema = z.enum(["blue", "red", "gray"]);
 export type WorktreeColor = z.infer<typeof WorktreeColorSchema>;
 
 /**
+ * Pre-selected color for a *new* group or worktree. Gray is the neutral
+ * entry (it renders exactly like a plain folder header in the sidebar), so
+ * color is something the user opts into rather than every new thing turning
+ * blue. Distinct from `normalizeWorktreeColor`'s fallback, which is a
+ * read-side migration for legacy / garbage persisted values.
+ */
+export const DEFAULT_WORKTREE_COLOR: WorktreeColor = "gray";
+
+/**
  * Legacy palette → current palette. Keyed loosely (`string`) so retired
  * values and unknown junk both flow through the same lookup; the `??`
  * is the catch-all. Values map by semantics: green was "ok" (→ blue,

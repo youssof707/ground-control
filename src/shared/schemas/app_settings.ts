@@ -20,6 +20,23 @@ const sidebarWidth = (min: number, max: number) =>
 		)
 		.optional();
 
+const BabysitGateRuleSchema = z.discriminatedUnion("action", [
+	z.object({ action: z.literal("none") }),
+	z.object({ action: z.literal("approve") }),
+	z.object({ action: z.literal("deny"), message: z.string() }),
+]);
+
+const BabysitQuestionRuleSchema = z.discriminatedUnion("action", [
+	z.object({ action: z.literal("none") }),
+	z.object({ action: z.literal("answer"), message: z.string() }),
+]);
+
+const BabysitConfigSchema = z.object({
+	plan: BabysitGateRuleSchema,
+	permission: BabysitGateRuleSchema,
+	question: BabysitQuestionRuleSchema,
+});
+
 export const AppSettingsFileSchema = z.object({
 	lastUsedWorkspace: z.string().optional(),
 	/**
@@ -35,6 +52,7 @@ export const AppSettingsFileSchema = z.object({
 	 * and the CLI resolves its own default — the pre-existing behaviour.
 	 */
 	defaultModel: z.string().min(1).optional(),
+	defaultBabysit: BabysitConfigSchema.optional().catch(undefined),
 	sessionsSidebarWidth: sidebarWidth(200, 800),
 	notesSidebarWidth: sidebarWidth(280, 900),
 	sidequestSidebarWidth: sidebarWidth(280, 900),

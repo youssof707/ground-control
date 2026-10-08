@@ -5,6 +5,11 @@ import {
 	AppSettingsFileSchema,
 	type AppSettingsFile,
 } from "../../../shared/schemas/app_settings";
+import {
+	isBabysitArmed,
+	normalizeBabysitConfig,
+	type BabysitConfig,
+} from "../../../shared/claude-sessions/babysit";
 import { enqueue } from "./write_queue";
 
 let initialized = false;
@@ -77,6 +82,20 @@ export async function setDefaultModel(model: string | undefined): Promise<void> 
 	return enqueue(async () => {
 		if (db.defaultModel === model) return;
 		db = { ...db, defaultModel: model };
+		await persist();
+	});
+}
+
+export async function setDefaultBabysit(
+	config: BabysitConfig | undefined,
+): Promise<void> {
+	assertInitialized();
+	const normalized = config ? normalizeBabysitConfig(config) : undefined;
+	const next =
+		normalized && isBabysitArmed(normalized) ? normalized : undefined;
+	return enqueue(async () => {
+		if (JSON.stringify(db.defaultBabysit) === JSON.stringify(next)) return;
+		db = { ...db, defaultBabysit: next };
 		await persist();
 	});
 }

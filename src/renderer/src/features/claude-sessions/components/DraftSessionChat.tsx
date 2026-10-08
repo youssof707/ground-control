@@ -9,6 +9,10 @@ import { MessageComposer } from "./MessageComposer";
 import { ComposerDivider } from "./ComposerDivider";
 import { AttachWorktreeModal } from "./AttachWorktreeModal";
 import { ModelPickerModal } from "./ModelPickerModal";
+import {
+	dismissDraftAction,
+	startCreateWorktreeAction,
+} from "../lib/draftActions";
 import { WorktreeChip } from "../../../design/WorktreeChip";
 import { T } from "../../../design/tokens";
 import { formatModelName } from "@shared/claude-sessions/sessionModel";
@@ -57,6 +61,10 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 	const attachedWorktree = useWorktreesStore((s) =>
 		draft?.worktreeId ? s.worktrees[draft.worktreeId] : undefined,
 	);
+	const pendingWorktree = draft?.pendingActions.find(
+		(a) => a.kind === "create-worktree",
+	);
+	const sending = !!draft?.sending;
 
 	// Change the draft's cwd via the native picker. Only reachable while the
 	// session is still a draft — once promoted to a real session by the first
@@ -80,9 +88,11 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 			// is bound to a specific baseDir, so changing folder invalidates
 			// the pairing. The user can attach a new one (or an existing one
 			// matching the new baseDir) after the change.
-			useDraftSessionsStore
-				.getState()
-				.updateDraft({ cwd: picked, worktreeId: undefined });
+			useDraftSessionsStore.getState().updateDraft({
+				cwd: picked,
+				worktreeId: undefined,
+				pendingActions: [],
+			});
 			// Match the New Session flow so the next click of the sidebar
 			// button pre-fills this folder too.
 			useSettingsStore.getState().setLastUsedWorkspace(picked);
@@ -141,6 +151,8 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 			// it silently on navigate-away would be surprising.
 			const empty =
 				current.title.trim() === "" &&
+				current.pendingActions.length === 0 &&
+				!current.sending &&
 				(!textDraft ||
 					(textDraft.text.trim() === "" && textDraft.images.length === 0));
 			if (empty) {
@@ -302,7 +314,7 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 							onClick={changeFolder}
 							onMouseEnter={() => setFolderHover(true)}
 							onMouseLeave={() => setFolderHover(false)}
-							disabled={pickingFolder}
+							disabled={pickingFolder || sending}
 							aria-label={`${draft.cwd} — click to change folder`}
 							style={{
 								// Reset native button chrome.
@@ -358,18 +370,49 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 							displayName={attachedWorktree.displayName}
 							color={attachedWorktree.color}
 							variant="interactive"
-							onDetach={() =>
-								useDraftSessionsStore
-									.getState()
-									.updateDraft({ worktreeId: undefined })
+							onDetach={
+								sending
+									? undefined
+									: () =>
+										useDraftSessionsStore
+											.getState()
+											.updateDraft({ worktreeId: undefined })
 							}
 						/>
-					) : isGitRepo ? (
+					) : pendingWorktree ? (
+						<WorktreeChip
+							displayName={pendingWorktree.displayName}
+							color={pendingWorktree.color}
+							variant="interactive"
+							status={
+								pendingWorktree.status === "error" ? "error" : "pending"
+							}
+							detachAriaLabel="Dismiss failed worktree"
+							onDetach={() =>
+								dismissDraftAction(draftId, pendingWorktree.id)
+							}
+						/>
+					) : isGitRepo && !sending ? (
 						<AddWorktreeButton
 							onClick={() => setWorktreeModalOpen(true)}
 						/>
 					) : null}
 				</div>
+				{pendingWorktree?.status === "error" ? (
+					<div
+						className="message message-error"
+						style={{
+							padding: 8,
+							fontSize: 12,
+							textAlign: "left",
+							whiteSpace: "pre-wrap",
+							wordBreak: "break-word",
+						}}
+					>
+						Couldn't create worktree "{pendingWorktree.displayName}":{" "}
+						{pendingWorktree.error}
+					</div>
+				) : null}
 			</div>
 
 			<AttachWorktreeModal
@@ -380,6 +423,7 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 						.getState()
 						.updateDraft({ worktreeId: id })
 				}
+				onCreate={(input) => startCreateWorktreeAction(draftId, input)}
 				onClose={() => setWorktreeModalOpen(false)}
 			/>
 

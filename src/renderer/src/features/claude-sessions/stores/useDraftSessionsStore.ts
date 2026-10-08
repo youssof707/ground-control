@@ -1,6 +1,23 @@
 import { create } from "zustand";
 import type { SessionMode } from "@shared/claude-sessions/types";
+import type { WorktreeColor } from "@shared/schemas/worktrees";
 import { appDefaultModel } from "./useSettingsStore";
+
+export type DraftActionStatus = "running" | "error";
+
+interface DraftActionBase {
+	id: string;
+	status: DraftActionStatus;
+	error: string | null;
+}
+
+export interface CreateWorktreeDraftAction extends DraftActionBase {
+	kind: "create-worktree";
+	displayName: string;
+	color: WorktreeColor;
+}
+
+export type DraftAction = CreateWorktreeDraftAction;
 
 /**
  * Single-slot in-memory store for the "draft session" — a session the user
@@ -66,6 +83,9 @@ export interface DraftSession {
 	 * per-bucket "+" retargets clear it. UI-only — never forwarded to
 	 * `startSession`. */
 	floating?: boolean;
+	pendingActions: DraftAction[];
+	sending?: boolean;
+	sendError?: string | null;
 }
 
 interface State {
@@ -97,6 +117,9 @@ interface State {
 				| "model"
 				| "groupId"
 				| "floating"
+				| "pendingActions"
+				| "sending"
+				| "sendError"
 			>
 		>,
 	) => void;
@@ -105,6 +128,11 @@ interface State {
 
 export function isDraftId(id: string | undefined | null): id is string {
 	return !!id && id.startsWith("draft-");
+}
+
+export function currentDraft(draftId: string): DraftSession | null {
+	const draft = useDraftSessionsStore.getState().draft;
+	return draft && draft.id === draftId ? draft : null;
 }
 
 export const useDraftSessionsStore = create<State>((set) => ({
@@ -127,6 +155,7 @@ export const useDraftSessionsStore = create<State>((set) => ({
 			worktreeId,
 			groupId,
 			floating,
+			pendingActions: [],
 			// Seed the app-wide default so the chip in the draft header shows
 			// the model BEFORE the first send — an invisible main-side
 			// substitution would make the header lie. Undefined when no
