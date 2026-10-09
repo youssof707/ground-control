@@ -25,6 +25,10 @@ the single source of truth so shortcuts are easy to find.
   Ground Control's auto-answers for that session's plan / permission /
   question prompts are configured. No-op off a session route and on a draft
   session
+- `Cmd+Enter` — inside the Babysitter modal, start/save (same as the primary
+  button), even while typing in its text box. Plain `Enter` does the same
+  when no text field has focus (a focused Cancel / Stop button keeps its
+  native Enter). No-op when the primary button is disabled
 - `Cmd+Shift+M` — open the model picker for the active session (picking a
   model while a turn is running interrupts it, switches, and resumes
   automatically)

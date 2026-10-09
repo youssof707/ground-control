@@ -342,14 +342,36 @@ function sdkPermissionModeFor(mode: SessionMode): "plan" | "acceptEdits" {
 // budget and truncate away the part the user actually wrote. Strip them before
 // truncating so the prose survives. Only scheme-bearing URLs (`something://…`)
 // count: bare hosts like `foo.io` are too easy to confuse with filenames.
+const OPENER_FOR_CLOSER: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
+
+function countChar(text: string, char: string): number {
+	return text.split(char).length - 1;
+}
+
+function trailingUnbalancedSuffix(url: string): string {
+	let end = url.length;
+	while (end > 0) {
+		const last = url[end - 1];
+		const body = url.slice(0, end);
+		const opener = OPENER_FOR_CLOSER[last];
+		const isTrailingPunctuation = /[.,;:!?]/.test(last);
+		const isUnbalancedCloser =
+			opener !== undefined && countChar(body, last) > countChar(body, opener);
+		if (!isTrailingPunctuation && !isUnbalancedCloser) break;
+		end--;
+	}
+	return url.slice(end);
+}
+
 function stripUrls(text: string): string {
 	return (
 		text
 			// `[label](https://…)` keeps its label — that text is the human part.
 			.replace(/\[([^\]]+)\]\([a-z][a-z0-9+.-]*:\/\/[^)\s]*\)/gi, "$1")
-			// Stop at closing wrappers/quotes rather than running to the next
-			// space, so `(https://x.com)` doesn't leave a widowed `(` behind.
-			.replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s)\]>"'`]*/gi, " ")
+			.replace(
+				/\b[a-z][a-z0-9+.-]*:\/\/[^\s<>"'`]+/gi,
+				(url) => " " + trailingUnbalancedSuffix(url),
+			)
 			// The now-empty wrapper itself: `see (<>)` → `see`, `quote "" ` → `quote`.
 			.replace(/[([<]\s*[)\]>]/g, " ")
 			.replace(/(["'`])\s*\1/g, " ")
@@ -384,7 +406,7 @@ function deriveTitle(text: string, maxLen = 60): string {
 				// Leaves `?`/`!`/`.` alone so a question keeps reading like one.
 				.replace(/^[\s,;:·|/\\–—-]+|[\s,;:·|/\\–—-]+$/g, "")
 				.trim();
-			if (!title) continue; // nothing left once the URL is gone
+			if (!/[\p{L}\p{N}]/u.test(title)) continue;
 		}
 
 		return title.length <= maxLen ? title : title.slice(0, maxLen - 1) + "…";

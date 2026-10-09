@@ -544,15 +544,6 @@ function UserMessage({ sdk }: { sdk: SdkLike }) {
 	);
 }
 
-/**
- * An image block in the transcript, with a hover-revealed copy button in the
- * top-right corner (same affordance as code blocks) and double-click to open
- * full-size in Preview.
- *
- * The wrapper is `inline-block` so it shrink-wraps the image — a block-level
- * div would stretch to the bubble's full width and float the copy button far
- * from a narrow image.
- */
 function TranscriptImage({
 	mediaType,
 	data,
@@ -563,7 +554,7 @@ function TranscriptImage({
 	const [hovered, setHovered] = useState(false);
 	return (
 		<div
-			style={{ position: "relative", display: "inline-block" }}
+			style={{ position: "relative", alignSelf: "flex-start" }}
 			onMouseEnter={() => setHovered(true)}
 			onMouseLeave={() => setHovered(false)}
 		>

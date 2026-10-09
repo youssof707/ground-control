@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
 	babysitRuleKindForTool,
 	isBabysitArmed,
@@ -40,6 +40,7 @@ function BabysitDialog({ sessionId }: { sessionId: string }) {
 	);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const submitRef = useRef<(() => void) | null>(null);
 
 	useEffect(() => {
 		if (!sessionExists) close();
@@ -50,7 +51,19 @@ function BabysitDialog({ sessionId }: { sessionId: string }) {
 			if (e.key === "Escape" && !busy) {
 				e.preventDefault();
 				close();
+				return;
 			}
+			if (e.key !== "Enter" || e.ctrlKey || e.altKey || e.shiftKey) return;
+			if (!e.metaKey) {
+				const el = document.activeElement as HTMLElement | null;
+				const isEditable =
+					!!el &&
+					(el.isContentEditable ||
+						["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
+				if (isEditable || el?.closest(".modal-actions")) return;
+			}
+			e.preventDefault();
+			submitRef.current?.();
 		};
 		window.addEventListener("keydown", handler);
 		return () => window.removeEventListener("keydown", handler);
@@ -89,6 +102,10 @@ function BabysitDialog({ sessionId }: { sessionId: string }) {
 	const canSubmit = active
 		? !busy && dirty && !answerMissing
 		: !busy && armed && !answerMissing;
+
+	useEffect(() => {
+		submitRef.current = canSubmit ? () => void commit(config) : null;
+	});
 
 	let footnote: { text: string; color: string } | null = null;
 	if (waitingCount > 0) {
