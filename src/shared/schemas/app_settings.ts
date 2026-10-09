@@ -53,6 +53,7 @@ export const AppSettingsFileSchema = z.object({
 	 */
 	defaultModel: z.string().min(1).optional(),
 	defaultBabysit: BabysitConfigSchema.optional().catch(undefined),
+	autoBabysitNewSessions: z.boolean().optional().catch(undefined),
 	sessionsSidebarWidth: sidebarWidth(200, 800),
 	notesSidebarWidth: sidebarWidth(280, 900),
 	sidequestSidebarWidth: sidebarWidth(280, 900),

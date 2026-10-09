@@ -127,6 +127,7 @@ async function probeSupportedModels(): Promise<ModelInfo[]> {
 		options: {
 			cwd: homedir(),
 			pathToClaudeCodeExecutable: resolveClaudeBinary(),
+			spawnClaudeCodeProcess: spawnClaudeProcess,
 			abortController: abort,
 		},
 	});
@@ -170,7 +171,12 @@ import {
 	isSubagentContent,
 	isSubagentProse,
 } from "../../shared/claude-sessions/transcript";
-import { transcriptHasUuid, waitForUuid } from "./transcriptIndex";
+import {
+	transcriptCanResumeAt,
+	waitForResumableUuid,
+	type TranscriptChainCache,
+} from "./transcriptIndex";
+import { spawnClaudeProcess } from "./spawnClaudeProcess";
 import {
 	assistantStreamModel,
 	identityMatches,
@@ -763,69 +769,53 @@ export class SessionManager {
 		return { sdkUuid, sourceSdkId };
 	}
 
-	/**
-	 * Like `resolveForkSource`, but guaranteed (as far as the disk can tell) to
-	 * name a uuid the resuming CLI will actually find.
-	 *
-	 * `resolveForkSource` reads our *in-memory* copy of the SDK stream, while
-	 * the CLI resolves `--resume-session-at` against the JSONL it writes
-	 * asynchronously. The sidequest panel branches at the newest assistant
-	 * reply, so those two views disagree for a beat after every message lands —
-	 * and the CLI's response to a miss is to exit 1, leaving a dead sidequest.
-	 *
-	 * So: wait briefly for the flush, and if the uuid still isn't there, walk
-	 * back to the newest message that *is*. Branching one reply earlier costs
-	 * the user nothing they can see; an error banner costs them their draft.
-	 *
-	 * Only used by `startSidequest`. `forkFrom` races the same flush but can
-	 * guard it with a plain `retryOnce` around `sdkForkSession`, because there
-	 * the failure is a rejected promise rather than a CLI that exits inside the
-	 * SDK loop.
-	 */
 	private async resolveViableForkSource(
 		parent: ClaudeSessionFull,
 		wrapperMessageId: string,
 	): Promise<{ sdkUuid: string; sourceSdkId: string }> {
-		// Throws with a user-facing message when the parent has no SDK session
-		// id yet or the target isn't a forkable assistant message.
 		const preferred = this.resolveForkSource(parent, wrapperMessageId);
 
-		if (await waitForUuid(preferred.sourceSdkId, preferred.sdkUuid)) {
+		if (await waitForResumableUuid(preferred.sourceSdkId, preferred.sdkUuid)) {
 			return preferred;
 		}
 
-		// One read per transcript for the whole walk — these files run to
-		// megabytes, and ancestor routing means the candidates may span more
-		// than one of them.
-		const cache = new Map<string, Set<string> | null>();
+		const cache: TranscriptChainCache = new Map();
 		const idx = parent.messages.findIndex((m) => m.id === wrapperMessageId);
-		for (let i = idx - 1; i >= 0; i--) {
-			const m = parent.messages[i];
-			if (m.role !== "assistant") continue;
-			if (isSubagentContent(m.content)) continue;
-			let candidate: { sdkUuid: string; sourceSdkId: string };
-			try {
-				candidate = this.resolveForkSource(parent, m.id);
-			} catch {
-				continue; // no uuid on this one — keep walking back
-			}
-			if (
-				(await transcriptHasUuid(
-					candidate.sourceSdkId,
-					candidate.sdkUuid,
-					cache,
-				)) !== false
-			) {
-				console.warn(
-					`[ccw] sidequest fork point ${preferred.sdkUuid} not in transcript ${preferred.sourceSdkId}; branching at ${candidate.sdkUuid} instead`,
-				);
-				return candidate;
-			}
+		const earlierFirst = parent.messages.slice(0, idx).reverse();
+		const laterFirst = parent.messages.slice(idx + 1);
+		for (const m of [...earlierFirst, ...laterFirst]) {
+			const candidate = await this.resumableForkSource(parent, m, cache);
+			if (!candidate) continue;
+			console.warn(
+				`[ccw] sidequest fork point ${preferred.sdkUuid} not resumable in transcript ${preferred.sourceSdkId}; branching at ${candidate.sdkUuid} instead`,
+			);
+			return candidate;
 		}
 
 		throw new Error(
 			"Couldn't find a branch point in this session's Claude transcript yet — wait for the current reply to finish and try again.",
 		);
+	}
+
+	private async resumableForkSource(
+		parent: ClaudeSessionFull,
+		message: SessionMessage,
+		cache: TranscriptChainCache,
+	): Promise<{ sdkUuid: string; sourceSdkId: string } | null> {
+		if (message.role !== "assistant") return null;
+		if (isSubagentContent(message.content)) return null;
+		let candidate: { sdkUuid: string; sourceSdkId: string };
+		try {
+			candidate = this.resolveForkSource(parent, message.id);
+		} catch {
+			return null;
+		}
+		const resumable = await transcriptCanResumeAt(
+			candidate.sourceSdkId,
+			candidate.sdkUuid,
+			cache,
+		);
+		return resumable === false ? null : candidate;
 	}
 
 	/**
@@ -1628,6 +1618,7 @@ export class SessionManager {
 				//                                    other tools still hit the broker)
 				permissionMode: sdkPermissionModeFor(session.mode),
 				pathToClaudeCodeExecutable: resolveClaudeBinary(),
+				spawnClaudeCodeProcess: spawnClaudeProcess,
 				// Per-session model override. Unset = the CLI default model, so
 				// we only pass the key when the user picked one explicitly.
 				...(session.model ? { model: session.model } : {}),

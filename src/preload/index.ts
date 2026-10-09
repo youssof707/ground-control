@@ -89,6 +89,8 @@ const claude = {
 		ipcRenderer.invoke("settings:setDefaultModel", { model }),
 	setDefaultBabysit: (config?: BabysitConfig) =>
 		ipcRenderer.invoke("settings:setDefaultBabysit", { config }),
+	setAutoBabysitNewSessions: (on: boolean) =>
+		ipcRenderer.invoke("settings:setAutoBabysitNewSessions", { on }),
 	setSessionsSidebarWidth: (width: number) =>
 		ipcRenderer.invoke("settings:setSessionsSidebarWidth", { width }),
 	setNotesSidebarWidth: (width: number) =>

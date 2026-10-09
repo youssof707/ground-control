@@ -29,6 +29,13 @@ export function registerSettingsHandlers(): void {
 		},
 	);
 	ipcMain.handle(
+		"settings:setAutoBabysitNewSessions",
+		async (e, payload: { on: boolean }) => {
+			await appSettings.setAutoBabysitNewSessions(payload.on);
+			broadcast("state:changed", undefined, e.sender.id);
+		},
+	);
+	ipcMain.handle(
 		"settings:setSessionsSidebarWidth",
 		async (e, payload: { width: number }) => {
 			await appSettings.setSessionsSidebarWidth(payload.width);

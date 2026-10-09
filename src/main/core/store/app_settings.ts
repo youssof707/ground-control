@@ -100,6 +100,15 @@ export async function setDefaultBabysit(
 	});
 }
 
+export async function setAutoBabysitNewSessions(on: boolean): Promise<void> {
+	assertInitialized();
+	return enqueue(async () => {
+		if (db.autoBabysitNewSessions === on) return;
+		db = { ...db, autoBabysitNewSessions: on };
+		await persist();
+	});
+}
+
 export async function setSessionsSidebarWidth(width: number): Promise<void> {
 	assertInitialized();
 	// Pointer events on high-DPI displays produce fractional clientX values,

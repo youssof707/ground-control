@@ -9,8 +9,8 @@ import {
 } from "@shared/claude-sessions/sessionModel";
 import { useSettingsStore } from "../stores/useSettingsStore";
 import {
-	BabysitOnPill,
 	BabysitRuleCards,
+	Segmented,
 	configFromDraft,
 	draftFromConfig,
 	type BabysitDraft,
@@ -34,6 +34,13 @@ const BABYSIT_AUTOSAVE_DELAY_MS = 400;
 
 type SettingsTab = "general" | "babysitter";
 
+type AutoStartValue = "off" | "on";
+
+const AUTO_START_OPTIONS = [
+	{ value: "off", label: "Off", tone: T.textDim },
+	{ value: "on", label: "On", tone: T.babysit },
+] as const satisfies readonly { value: AutoStartValue; label: string; tone: string }[];
+
 export function SettingsModal({
 	open,
 	onClose,
@@ -50,6 +57,8 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
 	const defaultModel = useSettingsStore((s) => s.defaultModel);
 	const setDefaultModel = useSettingsStore((s) => s.setDefaultModel);
+	const autoStart = useSettingsStore((s) => s.autoBabysitNewSessions ?? false);
+	const setAutoStart = useSettingsStore((s) => s.setAutoBabysitNewSessions);
 
 	const [babysitDraft, setBabysitDraft] = useState<BabysitDraft>(() =>
 		draftFromConfig(useSettingsStore.getState().defaultBabysit),
@@ -100,7 +109,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
 					<TabStrip
 						tab={tab}
 						onChange={setTab}
-						babysitArmed={babysitArmed}
+						autoStart={autoStart}
 					/>
 
 					<div
@@ -124,6 +133,8 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
 								draft={babysitDraft}
 								onChange={setBabysitDraft}
 								armed={babysitArmed}
+								autoStart={autoStart}
+								onAutoStartChange={setAutoStart}
 							/>
 						)}
 					</div>
@@ -136,15 +147,6 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
 							borderTop: `0.5px solid ${T.borderSoft}`,
 						}}
 					>
-						{tab === "babysitter" && babysitArmed ? (
-							<button
-								className="btn"
-								onClick={() => setBabysitDraft(draftFromConfig(undefined))}
-								style={{ marginRight: "auto", color: T.danger }}
-							>
-								Turn off defaults
-							</button>
-						) : null}
 						<button className="btn" onClick={onClose}>
 							Done
 						</button>
@@ -188,11 +190,11 @@ function useAutosavedBabysitDefaults(
 function TabStrip({
 	tab,
 	onChange,
-	babysitArmed,
+	autoStart,
 }: {
 	tab: SettingsTab;
 	onChange: (tab: SettingsTab) => void;
-	babysitArmed: boolean;
+	autoStart: boolean;
 }) {
 	return (
 		<div
@@ -219,7 +221,7 @@ function TabStrip({
 				active={tab === "babysitter"}
 				accent={T.babysit}
 				onClick={() => onChange("babysitter")}
-				indicator={babysitArmed}
+				indicator={autoStart}
 			/>
 		</div>
 	);
@@ -342,10 +344,14 @@ function BabysitterPanel({
 	draft,
 	onChange,
 	armed,
+	autoStart,
+	onAutoStartChange,
 }: {
 	draft: BabysitDraft;
 	onChange: (update: (draft: BabysitDraft) => BabysitDraft) => void;
 	armed: boolean;
+	autoStart: boolean;
+	onAutoStartChange: (on: boolean) => void;
 }) {
 	const answerMissing =
 		draft.question === "answer" && draft.questionMessage.trim().length === 0;
@@ -372,8 +378,8 @@ function BabysitterPanel({
 							color: T.textMute,
 						}}
 					>
-						Every new session starts babysat with these rules. Adjust a single
-						session from its ⋯ menu or{" "}
+						These rules prefill the babysitter whenever you start one from a
+						session's ⋯ menu or{" "}
 						<span
 							style={{
 								display: "inline-flex",
@@ -385,10 +391,15 @@ function BabysitterPanel({
 							<Kbd>⇧</Kbd>
 							<Kbd>B</Kbd>
 						</span>
-						.
+						. Turn auto-start on to babysit every new session with them.
 					</div>
 				</div>
-				{armed ? <BabysitOnPill label="On" /> : <OffPill />}
+				<Segmented<AutoStartValue>
+					label="Auto-start babysitter for new sessions"
+					value={autoStart ? "on" : "off"}
+					options={AUTO_START_OPTIONS}
+					onChange={(value) => onAutoStartChange(value === "on")}
+				/>
 			</div>
 
 			<BabysitRuleCards draft={draft} onChange={onChange} />
@@ -403,32 +414,13 @@ function BabysitterPanel({
 			>
 				{answerMissing
 					? "Questions need an answer before they can be handled — until then they're left for you."
-					: armed
-						? "Changes save automatically. Sessions that already exist keep their current babysitter."
-						: "Everything is set to Do nothing, so new sessions start without a babysitter."}
+					: !autoStart
+						? "Changes save automatically. New sessions start without a babysitter until you turn one on."
+						: armed
+							? "Every new session starts babysat with these rules. Sessions that already exist keep their current babysitter."
+							: "Auto-start is on, but every rule is Do nothing, so new sessions start without a babysitter."}
 			</div>
 		</>
-	);
-}
-
-function OffPill() {
-	return (
-		<span
-			style={{
-				display: "inline-flex",
-				alignItems: "center",
-				height: 20,
-				padding: "0 8px",
-				borderRadius: 10,
-				border: `0.5px solid ${T.border}`,
-				color: T.textMute,
-				fontSize: 11,
-				fontWeight: 500,
-				flexShrink: 0,
-			}}
-		>
-			Off
-		</span>
 	);
 }
 

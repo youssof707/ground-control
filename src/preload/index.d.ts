@@ -109,6 +109,7 @@ declare global {
 			setLastUsedWorkspace: (cwd: string) => Promise<void>;
 			setDefaultModel: (model?: string) => Promise<void>;
 			setDefaultBabysit: (config?: BabysitConfig) => Promise<void>;
+			setAutoBabysitNewSessions: (on: boolean) => Promise<void>;
 			setSessionsSidebarWidth: (width: number) => Promise<void>;
 			setNotesSidebarWidth: (width: number) => Promise<void>;
 			setSidequestSidebarWidth: (width: number) => Promise<void>;

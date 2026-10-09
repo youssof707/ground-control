@@ -98,8 +98,10 @@ export function registerSessionsHandlers(): SessionManager {
 			}),
 	);
 	manager = new SessionManager(broker, (sessionId) => {
-		const defaults = appSettings.get().defaultBabysit;
-		if (defaults) babysitter.set(sessionId, defaults);
+		const { autoBabysitNewSessions, defaultBabysit } = appSettings.get();
+		if (autoBabysitNewSessions && defaultBabysit) {
+			babysitter.set(sessionId, defaultBabysit);
+		}
 	});
 
 	registerReadHandlers();

@@ -289,7 +289,7 @@ function MessageField({
 	);
 }
 
-function Segmented<V extends string>({
+export function Segmented<V extends string>({
 	label,
 	value,
 	options,

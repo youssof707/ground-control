@@ -20,6 +20,7 @@ interface State {
 	lastUsedWorkspace?: string;
 	defaultModel?: string;
 	defaultBabysit?: BabysitConfig;
+	autoBabysitNewSessions?: boolean;
 	sessionsSidebarWidth?: number;
 	notesSidebarWidth?: number;
 	sidequestSidebarWidth?: number;
@@ -27,6 +28,7 @@ interface State {
 	setLastUsedWorkspace: (cwd: string) => void;
 	setDefaultModel: (model: string | undefined) => void;
 	setDefaultBabysit: (config: BabysitConfig | undefined) => void;
+	setAutoBabysitNewSessions: (on: boolean) => void;
 	setSessionsSidebarWidth: (width: number) => void;
 	setNotesSidebarWidth: (width: number) => void;
 	setSidequestSidebarWidth: (width: number) => void;
@@ -35,6 +37,7 @@ interface State {
 export const useSettingsStore = create<State>((set, get) => ({
 	lastUsedWorkspace: undefined,
 	defaultModel: undefined,
+	autoBabysitNewSessions: undefined,
 	sessionsSidebarWidth: undefined,
 	notesSidebarWidth: undefined,
 	sidequestSidebarWidth: undefined,
@@ -43,6 +46,7 @@ export const useSettingsStore = create<State>((set, get) => ({
 			lastUsedWorkspace: settings.lastUsedWorkspace,
 			defaultModel: settings.defaultModel,
 			defaultBabysit: settings.defaultBabysit,
+			autoBabysitNewSessions: settings.autoBabysitNewSessions,
 			sessionsSidebarWidth: settings.sessionsSidebarWidth,
 			notesSidebarWidth: settings.notesSidebarWidth,
 			sidequestSidebarWidth: settings.sidequestSidebarWidth,
@@ -66,6 +70,11 @@ export const useSettingsStore = create<State>((set, get) => ({
 		if (JSON.stringify(get().defaultBabysit) === JSON.stringify(next)) return;
 		void window.claude?.setDefaultBabysit(next);
 		set({ defaultBabysit: next });
+	},
+	setAutoBabysitNewSessions: (on) => {
+		if (get().autoBabysitNewSessions === on) return;
+		void window.claude?.setAutoBabysitNewSessions(on);
+		set({ autoBabysitNewSessions: on });
 	},
 	setSessionsSidebarWidth: (width) => {
 		// Same pattern as setLastUsedWorkspace: no-op if unchanged, optimistic
