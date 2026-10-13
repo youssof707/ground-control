@@ -21,6 +21,8 @@ interface State {
 	defaultModel?: string;
 	defaultBabysit?: BabysitConfig;
 	autoBabysitNewSessions?: boolean;
+	showIoTokens?: boolean;
+	showContextTokens?: boolean;
 	sessionsSidebarWidth?: number;
 	notesSidebarWidth?: number;
 	sidequestSidebarWidth?: number;
@@ -29,6 +31,8 @@ interface State {
 	setDefaultModel: (model: string | undefined) => void;
 	setDefaultBabysit: (config: BabysitConfig | undefined) => void;
 	setAutoBabysitNewSessions: (on: boolean) => void;
+	setShowIoTokens: (on: boolean) => void;
+	setShowContextTokens: (on: boolean) => void;
 	setSessionsSidebarWidth: (width: number) => void;
 	setNotesSidebarWidth: (width: number) => void;
 	setSidequestSidebarWidth: (width: number) => void;
@@ -47,6 +51,8 @@ export const useSettingsStore = create<State>((set, get) => ({
 			defaultModel: settings.defaultModel,
 			defaultBabysit: settings.defaultBabysit,
 			autoBabysitNewSessions: settings.autoBabysitNewSessions,
+			showIoTokens: settings.showIoTokens,
+			showContextTokens: settings.showContextTokens,
 			sessionsSidebarWidth: settings.sessionsSidebarWidth,
 			notesSidebarWidth: settings.notesSidebarWidth,
 			sidequestSidebarWidth: settings.sidequestSidebarWidth,
@@ -75,6 +81,16 @@ export const useSettingsStore = create<State>((set, get) => ({
 		if (get().autoBabysitNewSessions === on) return;
 		void window.claude?.setAutoBabysitNewSessions(on);
 		set({ autoBabysitNewSessions: on });
+	},
+	setShowIoTokens: (on) => {
+		if ((get().showIoTokens ?? true) === on) return;
+		void window.claude?.setShowIoTokens(on);
+		set({ showIoTokens: on });
+	},
+	setShowContextTokens: (on) => {
+		if ((get().showContextTokens ?? true) === on) return;
+		void window.claude?.setShowContextTokens(on);
+		set({ showContextTokens: on });
 	},
 	setSessionsSidebarWidth: (width) => {
 		// Same pattern as setLastUsedWorkspace: no-op if unchanged, optimistic

@@ -16,6 +16,7 @@ import {
 } from "../lib/messageContent";
 import { openImageInPreview } from "../lib/imageActions";
 import { CopyImageButton } from "./CopyImageButton";
+import { formatMessageTime } from "../lib/messageTime";
 
 // Re-exported for existing consumers (ToolRunGroup, groupMessages) that
 // import the type from this module.
@@ -59,6 +60,7 @@ export const MessageView = memo(function MessageView({
 			<AssistantMessage
 				sdk={sdk}
 				messageId={m.id}
+				ts={m.ts}
 				onFork={onFork}
 				forkPending={forkPending}
 				onHandoff={onHandoff}
@@ -80,7 +82,7 @@ export const MessageView = memo(function MessageView({
 		// compaction summaries) must never wear the user bubble. Normally
 		// filtered upstream in groupMessages; kept as a guard here too.
 		if (isInjectedUserProse(m.content)) return null;
-		return <UserMessage sdk={sdk} />;
+		return <UserMessage sdk={sdk} ts={m.ts} />;
 	}
 	if (m.role === "system") return null;
 	if (m.role === "result") return null;
@@ -90,6 +92,7 @@ export const MessageView = memo(function MessageView({
 function AssistantMessage({
 	sdk,
 	messageId,
+	ts,
 	onFork,
 	forkPending,
 	onHandoff,
@@ -97,6 +100,7 @@ function AssistantMessage({
 }: {
 	sdk: SdkLike;
 	messageId: string;
+	ts: number;
 	onFork?: (messageId: string) => void;
 	forkPending?: boolean;
 	onHandoff?: (text: string) => void;
@@ -151,6 +155,7 @@ function AssistantMessage({
 					return <RawBlock key={i} block={b} />;
 				})}
 			</div>
+			<MessageTimestamp ts={ts} visible={hovered} position={{ bottom: -17, left: 42 }} />
 			{/* "Copy message" needs neither callback, so any reply with text
 			    gets the menu — that keeps Copy reachable even when every
 			    other item is withheld (e.g. a tool-only reply, or the
@@ -462,7 +467,36 @@ function InterruptMarker({ text }: { text: string }) {
 	);
 }
 
-function UserMessage({ sdk }: { sdk: SdkLike }) {
+function MessageTimestamp({
+	ts,
+	visible,
+	position,
+}: {
+	ts: number;
+	visible: boolean;
+	position: React.CSSProperties;
+}) {
+	return (
+		<span
+			style={{
+				position: "absolute",
+				...position,
+				fontSize: 11,
+				fontFamily: T.mono,
+				color: T.textFaint,
+				whiteSpace: "nowrap",
+				pointerEvents: "none",
+				opacity: visible ? 1 : 0,
+				transition: "opacity 0.12s",
+			}}
+		>
+			{formatMessageTime(ts)}
+		</span>
+	);
+}
+
+function UserMessage({ sdk, ts }: { sdk: SdkLike; ts: number }) {
+	const [hovered, setHovered] = useState(false);
 	const blocks = blocksOfSdk(sdk);
 	// Skip user turns with nothing to show — the SDK synthesises empty
 	// user messages around some flows (failed `setModel`, cancelled turns,
@@ -500,7 +534,10 @@ function UserMessage({ sdk }: { sdk: SdkLike }) {
 
 	return (
 		<div
+			onMouseEnter={() => setHovered(true)}
+			onMouseLeave={() => setHovered(false)}
 			style={{
+				position: "relative",
 				display: "flex",
 				justifyContent: "flex-end",
 				marginBottom: 18,
@@ -540,6 +577,7 @@ function UserMessage({ sdk }: { sdk: SdkLike }) {
 					return <RawBlock key={i} block={b} />;
 				})}
 			</div>
+			<MessageTimestamp ts={ts} visible={hovered} position={{ bottom: -15, right: 0 }} />
 		</div>
 	);
 }

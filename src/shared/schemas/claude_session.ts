@@ -45,6 +45,12 @@ export const SessionMessageSchema = z.object({
 });
 export type SessionMessage = z.infer<typeof SessionMessageSchema>;
 
+export const SessionUsageSchema = z.object({
+	input: z.number(),
+	output: z.number(),
+});
+export type SessionUsage = z.infer<typeof SessionUsageSchema>;
+
 // ─── User input content blocks ───────────────────────────────────────────────
 
 export const UserImageMediaTypeSchema = z.enum([
@@ -186,6 +192,7 @@ export const ClaudeSessionSchema = z.object({
 	 * until the first successful capture: fresh sessions, fresh forks, and
 	 * rows persisted before this field existed. */
 	contextTokens: z.number().optional(),
+	usage: SessionUsageSchema.optional(),
 	/** Sidebar session group the row is filed under. Mutable (unlike
 	 * `worktreeId`): set/cleared via `groups:setSessionGroup`. When the
 	 * last member leaves a group (removed or deleted), main auto-deletes

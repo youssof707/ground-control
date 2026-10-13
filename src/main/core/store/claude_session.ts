@@ -126,6 +126,7 @@ export type SessionPatch = Partial<
 		| "model"
 		| "modelChangedAt"
 		| "contextTokens"
+		| "usage"
 		| "groupId"
 	>
 >;

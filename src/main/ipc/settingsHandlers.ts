@@ -36,6 +36,20 @@ export function registerSettingsHandlers(): void {
 		},
 	);
 	ipcMain.handle(
+		"settings:setShowIoTokens",
+		async (e, payload: { on: boolean }) => {
+			await appSettings.setShowIoTokens(payload.on);
+			broadcast("state:changed", undefined, e.sender.id);
+		},
+	);
+	ipcMain.handle(
+		"settings:setShowContextTokens",
+		async (e, payload: { on: boolean }) => {
+			await appSettings.setShowContextTokens(payload.on);
+			broadcast("state:changed", undefined, e.sender.id);
+		},
+	);
+	ipcMain.handle(
 		"settings:setSessionsSidebarWidth",
 		async (e, payload: { width: number }) => {
 			await appSettings.setSessionsSidebarWidth(payload.width);

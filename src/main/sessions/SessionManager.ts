@@ -183,6 +183,14 @@ import {
 	parseModelIdentity,
 } from "../../shared/claude-sessions/sessionModel";
 import { isSidequestId } from "../../shared/claude-sessions/sidequest";
+import {
+	addUsage,
+	EMPTY_USAGE,
+	estimateUsageFromTranscript,
+	subtractUsage,
+	sumModelUsage,
+	usageTotal,
+} from "../../shared/claude-sessions/sessionUsage";
 import type { LiveBackgroundTask } from "../../shared/claude-sessions/types";
 import { PermissionBroker } from "./PermissionBroker";
 import {
@@ -1334,6 +1342,8 @@ export class SessionManager {
 			// into the SDK options below.
 			model: persisted.model,
 			modelChangedAt: persisted.modelChangedAt,
+			usage:
+				persisted.usage ?? estimateUsageFromTranscript(persisted.messages),
 		};
 
 		await sessionStore.updateSession(persisted.id, {
@@ -1708,6 +1718,25 @@ export class SessionManager {
 					});
 			};
 
+			let processUsage = EMPTY_USAGE;
+			const recordUsage = (modelUsage: unknown) => {
+				const cumulative = sumModelUsage(modelUsage);
+				if (
+					cumulative == null ||
+					usageTotal(cumulative) <= usageTotal(processUsage)
+				) {
+					return;
+				}
+				const usage = addUsage(
+					session.usage ?? EMPTY_USAGE,
+					subtractUsage(cumulative, processUsage),
+				);
+				processUsage = cumulative;
+				session.usage = usage;
+				this.send(ch("patch"), { sessionId: id, usage });
+				if (persist) void sessionStore.updateSession(id, { usage });
+			};
+
 			for await (const msg of q) {
 				if (abort.signal.aborted) break;
 
@@ -1736,6 +1765,7 @@ export class SessionManager {
 				if (msg.type === "result" || systemSubtype(msg) === "init") {
 					refreshContextTokens();
 				}
+				if (msg.type === "result") recordUsage(msg.modelUsage);
 
 				// A turn cut off by a usage limit reports as a normal
 				// (non-thrown) `result` — the loop above just parked status at

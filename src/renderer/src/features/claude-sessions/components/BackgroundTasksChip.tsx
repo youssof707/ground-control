@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { T } from "../../../design/tokens";
 import { useLiveTasksStore } from "../stores/useLiveTasksStore";
 import { stopBackgroundTask } from "../lib/sessionControlActions";
+import type { LiveBackgroundTask } from "@shared/claude-sessions/types";
 
 /**
  * The floating "N background tasks" chip, shown next to `ActivityChip` in
@@ -204,7 +205,7 @@ function BackgroundTasksCard({
 						>
 							{t.description || "Background task"}
 						</span>
-						{stopping[t.id] ? (
+						{isScheduled(t) ? null : stopping[t.id] ? (
 							<span
 								aria-hidden
 								className="asyncy-btn-spinner bg-task-spinner"
@@ -243,10 +244,7 @@ function BackgroundTasksCard({
 							fontVariantNumeric: "tabular-nums",
 						}}
 					>
-						{kindLabel(t.type)}
-						{t.startedAt > 0
-							? ` · ${formatElapsed(Math.floor((Date.now() - t.startedAt) / 1000))}`
-							: ""}
+						{taskMeta(t)}
 					</span>
 				</div>
 			))}
@@ -418,9 +416,30 @@ export function BackgroundTasksPill({ sessionId }: { sessionId: string }) {
 	);
 }
 
+function isScheduled(t: LiveBackgroundTask): boolean {
+	return t.type === "wakeup" || t.type === "cron";
+}
+
+function taskMeta(t: LiveBackgroundTask): string {
+	const parts = [kindLabel(t.type)];
+	if (t.schedule) parts.push(t.schedule);
+	if (isScheduled(t)) {
+		if (t.dueAt !== undefined) {
+			const left = Math.ceil((t.dueAt - Date.now()) / 1000);
+			const countdown = left > 0 ? `in ${formatElapsed(left)}` : "due";
+			parts.push(t.type === "cron" ? `next ${countdown}` : countdown);
+		}
+	} else if (t.startedAt > 0) {
+		parts.push(formatElapsed(Math.floor((Date.now() - t.startedAt) / 1000)));
+	}
+	return parts.join(" · ");
+}
+
 /** Human word for a CLI `task_type`. Unknown types show as "task". */
 function kindLabel(type: string | undefined): string {
 	if (!type) return "task";
+	if (type === "wakeup") return "wakeup";
+	if (type === "cron") return "loop";
 	if (/bash|shell/i.test(type)) return "shell";
 	if (/agent/i.test(type)) return "agent";
 	if (/workflow/i.test(type)) return "workflow";

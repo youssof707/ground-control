@@ -534,6 +534,7 @@ export function SidequestPanel({
 							modelChangedAt: sq.modelChangedAt,
 							status: sq.status,
 							contextTokens: sq.contextTokens,
+							usage: sq.usage,
 						}}
 						density="compact"
 						onAfterSelect={() => openSidequestPanelAndFocus(sessionId)}

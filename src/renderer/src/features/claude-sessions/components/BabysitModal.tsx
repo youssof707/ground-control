@@ -41,32 +41,44 @@ function BabysitDialog({ sessionId }: { sessionId: string }) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const submitRef = useRef<(() => void) | null>(null);
+	const cardRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
 		if (!sessionExists) close();
 	}, [sessionExists, close]);
 
 	useEffect(() => {
+		const card = cardRef.current;
+		if (card && !card.contains(document.activeElement)) card.focus();
+	}, []);
+
+	useEffect(() => {
 		const handler = (e: KeyboardEvent) => {
-			if (e.key === "Escape" && !busy) {
+			if (e.key === "Escape") {
 				e.preventDefault();
-				close();
+				e.stopPropagation();
+				if (!busy) close();
 				return;
 			}
 			if (e.key !== "Enter" || e.ctrlKey || e.altKey || e.shiftKey) return;
 			if (!e.metaKey) {
 				const el = document.activeElement as HTMLElement | null;
-				const isEditable =
-					!!el &&
+				const insideCard = !!el && !!cardRef.current?.contains(el);
+				const isTextField =
+					insideCard &&
 					(el.isContentEditable ||
 						["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
-				if (isEditable || el?.closest(".modal-actions")) return;
+				if (isTextField || (insideCard && el.closest(".modal-actions"))) {
+					e.stopPropagation();
+					return;
+				}
 			}
 			e.preventDefault();
+			e.stopPropagation();
 			submitRef.current?.();
 		};
-		window.addEventListener("keydown", handler);
-		return () => window.removeEventListener("keydown", handler);
+		window.addEventListener("keydown", handler, true);
+		return () => window.removeEventListener("keydown", handler, true);
 	}, [busy, close]);
 
 	const backdropProps = useBackdropDismiss(busy ? undefined : close);
@@ -123,6 +135,8 @@ function BabysitDialog({ sessionId }: { sessionId: string }) {
 	return (
 		<div className="modal-backdrop" {...backdropProps}>
 			<div
+				ref={cardRef}
+				tabIndex={-1}
 				className="modal-card"
 				role="dialog"
 				aria-modal="true"
@@ -133,6 +147,7 @@ function BabysitDialog({ sessionId }: { sessionId: string }) {
 					marginTop: "9vh",
 					maxHeight: "calc(91vh - 24px)",
 					overflowY: "auto",
+					outline: "none",
 				}}
 			>
 				<div

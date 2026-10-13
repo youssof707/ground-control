@@ -19,6 +19,8 @@ export interface LiveBackgroundTask {
 	description: string;
 	/** When main first learned of the task (epoch ms) — drives elapsed time. */
 	startedAt: number;
+	dueAt?: number;
+	schedule?: string;
 }
 
 export type {
@@ -26,6 +28,7 @@ export type {
 	ClaudeSessionFull,
 	SessionStatus,
 	SessionMode,
+	SessionUsage,
 	SessionMessage,
 	SessionMessageRole,
 	StartSessionInput,

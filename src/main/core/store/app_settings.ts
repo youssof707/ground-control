@@ -109,6 +109,24 @@ export async function setAutoBabysitNewSessions(on: boolean): Promise<void> {
 	});
 }
 
+export async function setShowIoTokens(on: boolean): Promise<void> {
+	assertInitialized();
+	return enqueue(async () => {
+		if (db.showIoTokens === on) return;
+		db = { ...db, showIoTokens: on };
+		await persist();
+	});
+}
+
+export async function setShowContextTokens(on: boolean): Promise<void> {
+	assertInitialized();
+	return enqueue(async () => {
+		if (db.showContextTokens === on) return;
+		db = { ...db, showContextTokens: on };
+		await persist();
+	});
+}
+
 export async function setSessionsSidebarWidth(width: number): Promise<void> {
 	assertInitialized();
 	// Pointer events on high-DPI displays produce fractional clientX values,

@@ -1,5 +1,6 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { LiveBackgroundTask } from "../../shared/claude-sessions/types";
+import { ScheduledWork } from "./scheduledWork";
 
 /**
  * How long a *provisional* background task (one we only ever learned about
@@ -228,6 +229,7 @@ export class SessionActivity {
 	 * broken that. This flag keeps it true.
 	 */
 	#hardStopped = false;
+	readonly #scheduled = new ScheduledWork();
 	readonly #onChange: () => void;
 	readonly #now: () => number;
 	readonly #ttlMs: number;
@@ -284,6 +286,7 @@ export class SessionActivity {
 			});
 		}
 		out.sort((a, b) => a.startedAt - b.startedAt);
+		out.push(...this.#scheduled.tasks);
 		return out;
 	}
 
@@ -303,6 +306,7 @@ export class SessionActivity {
 		this.#messagesSeen++;
 		const now = this.#now();
 		this.#sweep(now);
+		this.#scheduled.apply(msg, now);
 
 		// Heartbeat. Every message a subagent emits carries the tool_use id of
 		// the Agent call that spawned it, so a live `local_agent` task is
@@ -459,7 +463,7 @@ export class SessionActivity {
 
 	/** Returns true if anything was evicted. */
 	#sweep(now: number): boolean {
-		let evicted = false;
+		let evicted = this.#scheduled.sweep(now);
 		for (const [tid, entry] of this.#provisional) {
 			if (now - entry.lastSeen >= this.#ttlMs) {
 				this.#provisional.delete(tid);

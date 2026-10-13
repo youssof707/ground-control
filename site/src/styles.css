@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+@theme {
+	--color-gc-bg: oklch(0.16 0.005 60);
+	--color-gc-win: oklch(0.19 0.006 60);
+	--color-gc-surface: oklch(0.215 0.007 60);
+	--color-gc-surface-hi: oklch(0.245 0.008 60);
+	--color-gc-surface-low: oklch(0.20 0.006 60);
+	--color-gc-border: oklch(0.30 0.008 60);
+	--color-gc-border-soft: oklch(0.255 0.007 60);
+
+	--color-gc-text: oklch(0.94 0.005 80);
+	--color-gc-text-dim: oklch(0.72 0.008 70);
+	--color-gc-text-mute: oklch(0.56 0.010 70);
+	--color-gc-text-faint: oklch(0.42 0.010 70);
+
+	--color-gc-accent: oklch(0.76 0.10 250);
+	--color-gc-accent-ink: #1a1410;
+
+	--color-gc-ok: oklch(0.78 0.13 155);
+	--color-gc-warn: oklch(0.75 0.15 60);
+	--color-gc-info: oklch(0.80 0.09 210);
+	--color-gc-danger: oklch(0.70 0.18 25);
+	--color-gc-neutral: oklch(0.72 0.008 70);
+	--color-gc-babysit: oklch(0.78 0.12 315);
+
+	--font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	--font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+	--animate-ring: ring 2.4s ease-in-out infinite;
+	--animate-spin-slow: spin 1.4s linear infinite;
+	--animate-fill: fill 2.8s ease-out forwards;
+
+	@keyframes ring {
+		0%, 100% { box-shadow: 0 0 0 3px oklch(0.78 0.13 155 / 0.14); }
+		50% { box-shadow: 0 0 0 5px oklch(0.78 0.13 155 / 0.26); }
+	}
+	@keyframes fill {
+		from { width: 0; }
+	}
+}
+
+html {
+	scroll-behavior: smooth;
+	overflow-x: clip;
+}
+
+body {
+	background-color: var(--color-gc-bg);
+	background-image:
+		radial-gradient(90% 50% at 50% -5%, oklch(0.76 0.10 250 / 0.08), transparent 60%),
+		radial-gradient(60% 35% at 92% 102%, oklch(0.78 0.12 315 / 0.05), transparent 65%);
+	background-attachment: fixed;
+	color: var(--color-gc-text);
+	font-family: var(--font-sans);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+	background: oklch(0.76 0.10 250 / 0.35);
+}

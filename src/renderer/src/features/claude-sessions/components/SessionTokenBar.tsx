@@ -1,12 +1,20 @@
 import { useMemo, useState } from "react";
-import type { SessionStatus } from "@shared/schemas/claude_session";
+import type {
+	SessionStatus,
+	SessionUsage,
+} from "@shared/schemas/claude_session";
 import { T } from "../../../design/tokens";
 import {
 	deriveDisplayedModel,
 	formatModelName,
 	type ModelDerivable,
 } from "@shared/claude-sessions/sessionModel";
+import {
+	estimateUsageFromTranscript,
+	usageTotal,
+} from "@shared/claude-sessions/sessionUsage";
 import { useModelPickerStore } from "../stores/useModelPickerStore";
+import { useSettingsStore } from "../stores/useSettingsStore";
 import { ModelPickerModal } from "./ModelPickerModal";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -37,6 +45,7 @@ export interface TokenBarTarget extends ModelDerivable {
 	 * `SidequestState.contextTokens` for forks). Undefined until the first
 	 * capture, in which case the count is simply not rendered. */
 	contextTokens?: number;
+	usage?: SessionUsage;
 }
 
 type Density = "full" | "compact";
@@ -71,6 +80,10 @@ export function SessionTokenBar({
 		() => deriveDisplayedModel(target),
 		[target.messages, target.model, target.modelChangedAt],
 	);
+	const usage = useMemo(() => {
+		const u = target.usage ?? estimateUsageFromTranscript(target.messages);
+		return usageTotal(u) > 0 ? u : null;
+	}, [target.usage, target.messages]);
 	// Lifted to a store rather than local state so the global Cmd+Shift+M
 	// hotkey can open this same modal instance from outside this component's
 	// subtree — see useModelPickerStore.ts. Shared by both the main chat's
@@ -80,6 +93,10 @@ export function SessionTokenBar({
 		(s) => s.openForSessionId === target.id,
 	);
 	const [modelHover, setModelHover] = useState(false);
+	const showIo = useSettingsStore((s) => s.showIoTokens ?? true);
+	const showContext = useSettingsStore((s) => s.showContextTokens ?? true);
+	const ioVisible = showIo && usage != null;
+	const contextVisible = showContext && target.contextTokens != null;
 
 	const modelLabel = displayed.model
 		? formatModelName(displayed.model)
@@ -144,22 +161,41 @@ export function SessionTokenBar({
 					{modelLabel}
 					{displayed.pending ? "…" : ""}
 				</button>
-				{target.contextTokens != null && (
-					// Pinned to the right edge (lining up with the composer box's
-					// right border below) instead of trailing the model label —
-					// two mono strings 12px apart read as one run-on line.
+				{(ioVisible || contextVisible) && (
 					<span
 						style={{
 							marginLeft: "auto",
 							paddingLeft: 16,
 							flexShrink: 0,
+							display: "flex",
+							gap: 16,
 							color: T.textMute,
 						}}
 					>
-						Context:{" "}
-						<span style={{ color: T.textDim }}>
-							{fmtTokens(target.contextTokens)} tok
-						</span>
+						{ioVisible && usage != null && (
+							<>
+								<span>
+									Input:{" "}
+									<span style={{ color: T.textDim }}>
+										{fmtTokens(usage.input)} tok
+									</span>
+								</span>
+								<span>
+									Output:{" "}
+									<span style={{ color: T.textDim }}>
+										{fmtTokens(usage.output)} tok
+									</span>
+								</span>
+							</>
+						)}
+						{contextVisible && target.contextTokens != null && (
+							<span>
+								Context:{" "}
+								<span style={{ color: T.textDim }}>
+									{fmtTokens(target.contextTokens)} tok
+								</span>
+							</span>
+						)}
 					</span>
 				)}
 			</div>

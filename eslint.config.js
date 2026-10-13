@@ -12,6 +12,8 @@ export default tseslint.config(
 			"build/**",
 			"node_modules/**",
 			".dev-store/**",
+			"site/node_modules/**",
+			"site/dist/**",
 		],
 	},
 	{

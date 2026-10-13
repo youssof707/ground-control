@@ -41,6 +41,13 @@ const AUTO_START_OPTIONS = [
 	{ value: "on", label: "On", tone: T.babysit },
 ] as const satisfies readonly { value: AutoStartValue; label: string; tone: string }[];
 
+type VisibilityValue = "hidden" | "shown";
+
+const VISIBILITY_OPTIONS = [
+	{ value: "hidden", label: "Hidden", tone: T.textDim },
+	{ value: "shown", label: "Shown", tone: T.text },
+] as const satisfies readonly { value: VisibilityValue; label: string; tone: string }[];
+
 export function SettingsModal({
 	open,
 	onClose,
@@ -308,10 +315,30 @@ function GeneralPanel({
 	modelLabel: string;
 	onPickModel: () => void;
 }) {
+	const showIo = useSettingsStore((s) => s.showIoTokens ?? true);
+	const setShowIo = useSettingsStore((s) => s.setShowIoTokens);
+	const showContext = useSettingsStore((s) => s.showContextTokens ?? true);
+	const setShowContext = useSettingsStore((s) => s.setShowContextTokens);
+
 	return (
 		<>
 			<Section title="Default model">
 				<ModelPickerButton label={modelLabel} onClick={onPickModel} />
+			</Section>
+
+			<Section title="Token bar">
+				<div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+					<VisibilityRow
+						label="Input / output tokens"
+						shown={showIo}
+						onChange={setShowIo}
+					/>
+					<VisibilityRow
+						label="Context tokens"
+						shown={showContext}
+						onChange={setShowContext}
+					/>
+				</div>
 			</Section>
 
 			<Section title="Keyboard shortcuts">
@@ -434,24 +461,88 @@ function ModelPickerButton({
 	const [hover, setHover] = useState(false);
 	return (
 		<button
+			type="button"
+			aria-haspopup="dialog"
 			onClick={onClick}
 			onMouseEnter={() => setHover(true)}
 			onMouseLeave={() => setHover(false)}
 			style={{
 				alignSelf: "flex-start",
-				padding: 0,
-				border: "none",
-				background: "none",
+				display: "inline-flex",
+				alignItems: "center",
+				gap: 8,
+				maxWidth: 280,
+				padding: "5px 8px 5px 10px",
+				borderRadius: 7,
+				border: `0.5px solid ${hover ? T.textFaint : T.border}`,
+				background: hover ? T.surface : T.bg,
 				fontFamily: T.mono,
 				fontSize: 12,
-				color: hover ? T.text : T.textDim,
-				textDecoration: hover ? "underline" : "none",
-				textUnderlineOffset: 3,
+				color: T.text,
 				cursor: "pointer",
+				transition: "background 120ms ease, border-color 120ms ease",
 			}}
 		>
-			{label}
+			<span
+				style={{
+					minWidth: 0,
+					overflow: "hidden",
+					textOverflow: "ellipsis",
+					whiteSpace: "nowrap",
+				}}
+			>
+				{label}
+			</span>
+			<svg
+				width="8"
+				height="8"
+				viewBox="0 0 8 8"
+				fill="none"
+				aria-hidden
+				style={{
+					flexShrink: 0,
+					color: hover ? T.textDim : T.textMute,
+					transition: "color 120ms ease",
+				}}
+			>
+				<path
+					d="M1.5 2.75L4 5.25L6.5 2.75"
+					stroke="currentColor"
+					strokeWidth="1.4"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+				/>
+			</svg>
 		</button>
+	);
+}
+
+function VisibilityRow({
+	label,
+	shown,
+	onChange,
+}: {
+	label: string;
+	shown: boolean;
+	onChange: (shown: boolean) => void;
+}) {
+	return (
+		<div
+			style={{
+				display: "flex",
+				alignItems: "center",
+				justifyContent: "space-between",
+				gap: 12,
+			}}
+		>
+			<span style={{ fontSize: 12.5, color: T.text }}>{label}</span>
+			<Segmented<VisibilityValue>
+				label={label}
+				value={shown ? "shown" : "hidden"}
+				options={VISIBILITY_OPTIONS}
+				onChange={(value) => onChange(value === "shown")}
+			/>
+		</div>
 	);
 }
 

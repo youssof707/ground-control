@@ -5,6 +5,7 @@ import type {
 	PermissionRequest,
 	SessionMessage,
 	SessionMode,
+	SessionUsage,
 	SessionStatus,
 } from "@shared/claude-sessions/types";
 import type { BabysitConfig } from "@shared/claude-sessions/babysit";
@@ -260,6 +261,7 @@ export function useSessionsBootstrap() {
 					model?: string;
 					modelChangedAt?: number;
 					contextTokens?: number;
+					usage?: SessionUsage;
 				};
 				useSidequestsStore.getState().patch(sessionId, fields);
 			}),

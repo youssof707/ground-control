@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type {
 	SessionMessage,
 	SessionMode,
+	SessionUsage,
 	SessionStatus,
 } from "@shared/claude-sessions/types";
 
@@ -56,6 +57,7 @@ export interface SidequestState {
 	 * via `sidequest:patch`. Same ownership story as `mode`/`model`: nothing
 	 * is persisted, this store is the only record. */
 	contextTokens?: number;
+	usage?: SessionUsage;
 	error?: string;
 	createdAt: number;
 }
@@ -90,6 +92,7 @@ interface State {
 			model?: string;
 			modelChangedAt?: number;
 			contextTokens?: number;
+			usage?: SessionUsage;
 		},
 	) => void;
 	setStatus: (sidequestId: string, status: SessionStatus) => void;
@@ -202,6 +205,7 @@ export const useSidequestsStore = create<State>((set, get) => ({
 						...("contextTokens" in fields
 							? { contextTokens: fields.contextTokens }
 							: {}),
+						...("usage" in fields ? { usage: fields.usage } : {}),
 					},
 				},
 			};
