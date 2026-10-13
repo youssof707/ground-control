@@ -28,6 +28,7 @@ import type {
 	UpdateShortcutInput,
 } from "../shared/schemas/shortcuts";
 import type { Skill } from "../shared/schemas/skills";
+import type { McpAuthStart, McpServerView } from "../shared/schemas/mcp";
 import type {
 	ModelInfo,
 	SDKRateLimitInfo,
@@ -178,6 +179,11 @@ declare global {
 			downloadDictationModel: () => Promise<void>;
 			requestMicAccess: () => Promise<boolean>;
 			transcribeDictation: (pcm: Float32Array) => Promise<string>;
+			mcpStatus: (cwd: string) => Promise<McpServerView[]>;
+			mcpReconnect: (cwd: string, name: string) => Promise<void>;
+			mcpToggle: (cwd: string, name: string, enabled: boolean) => Promise<void>;
+			mcpAuthenticate: (cwd: string, name: string) => Promise<McpAuthStart>;
+			mcpRelease: (cwd: string) => Promise<void>;
 			on: (channel: string, fn: (payload: unknown) => void) => () => void;
 		};
 	}

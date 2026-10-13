@@ -16,6 +16,11 @@ import {
 	type BabysitDraft,
 } from "./BabysitRules";
 import { ModelPickerModal } from "./ModelPickerModal";
+import { McpServersPanel } from "./McpServersPanel";
+import {
+	useSettingsModalStore,
+	type SettingsTab,
+} from "../stores/useSettingsModalStore";
 
 const SHORTCUTS: { keys: string[]; label: string }[] = [
 	{ keys: ["⌘", "N"], label: "New session" },
@@ -32,8 +37,6 @@ const SHORTCUTS: { keys: string[]; label: string }[] = [
 
 const BABYSIT_AUTOSAVE_DELAY_MS = 400;
 
-type SettingsTab = "general" | "babysitter";
-
 type AutoStartValue = "off" | "on";
 
 const AUTO_START_OPTIONS = [
@@ -48,19 +51,31 @@ const VISIBILITY_OPTIONS = [
 	{ value: "shown", label: "Shown", tone: T.text },
 ] as const satisfies readonly { value: VisibilityValue; label: string; tone: string }[];
 
-export function SettingsModal({
-	open,
-	onClose,
-}: {
-	open: boolean;
-	onClose: () => void;
-}) {
-	if (!open) return null;
-	return <SettingsDialog onClose={onClose} />;
+export function SettingsModal() {
+	const openTab = useSettingsModalStore((s) => s.openTab);
+	const mcpCwd = useSettingsModalStore((s) => s.mcpCwd);
+	const close = useSettingsModalStore((s) => s.close);
+	if (!openTab) return null;
+	return (
+		<SettingsDialog
+			key={`${openTab}:${mcpCwd ?? ""}`}
+			initialTab={openTab}
+			initialMcpCwd={mcpCwd}
+			onClose={close}
+		/>
+	);
 }
 
-function SettingsDialog({ onClose }: { onClose: () => void }) {
-	const [tab, setTab] = useState<SettingsTab>("general");
+function SettingsDialog({
+	initialTab,
+	initialMcpCwd,
+	onClose,
+}: {
+	initialTab: SettingsTab;
+	initialMcpCwd: string | null;
+	onClose: () => void;
+}) {
+	const [tab, setTab] = useState<SettingsTab>(initialTab);
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
 	const defaultModel = useSettingsStore((s) => s.defaultModel);
 	const setDefaultModel = useSettingsStore((s) => s.setDefaultModel);
@@ -135,6 +150,8 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
 								modelLabel={modelLabel}
 								onPickModel={() => setModelPickerOpen(true)}
 							/>
+						) : tab === "mcp" ? (
+							<McpServersPanel initialCwd={initialMcpCwd} />
 						) : (
 							<BabysitterPanel
 								draft={babysitDraft}
@@ -229,6 +246,13 @@ function TabStrip({
 				accent={T.babysit}
 				onClick={() => onChange("babysitter")}
 				indicator={autoStart}
+			/>
+			<Tab
+				id="mcp"
+				label="MCP servers"
+				active={tab === "mcp"}
+				accent={T.text}
+				onClick={() => onChange("mcp")}
 			/>
 		</div>
 	);

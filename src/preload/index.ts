@@ -151,6 +151,14 @@ const claude = {
 	requestMicAccess: () => ipcRenderer.invoke("dictation:requestMicAccess"),
 	transcribeDictation: (pcm: Float32Array) =>
 		ipcRenderer.invoke("dictation:transcribe", pcm),
+	mcpStatus: (cwd: string) => ipcRenderer.invoke("mcp:status", { cwd }),
+	mcpReconnect: (cwd: string, name: string) =>
+		ipcRenderer.invoke("mcp:reconnect", { cwd, name }),
+	mcpToggle: (cwd: string, name: string, enabled: boolean) =>
+		ipcRenderer.invoke("mcp:toggle", { cwd, name, enabled }),
+	mcpAuthenticate: (cwd: string, name: string) =>
+		ipcRenderer.invoke("mcp:authenticate", { cwd, name }),
+	mcpRelease: (cwd: string) => ipcRenderer.invoke("mcp:release", { cwd }),
 	on: (channel: string, fn: (payload: unknown) => void) => {
 		const listener = (_e: IpcRendererEvent, payload: unknown) => fn(payload);
 		ipcRenderer.on(channel, listener);

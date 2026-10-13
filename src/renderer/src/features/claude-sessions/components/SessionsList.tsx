@@ -31,6 +31,8 @@ import { BabysitModal } from "./BabysitModal";
 import { useBabysitStore } from "../stores/useBabysitStore";
 import { RenameGroupModal } from "./RenameGroupModal";
 import { SettingsModal } from "./SettingsModal";
+import { useSettingsModalStore } from "../stores/useSettingsModalStore";
+import { useWorkspaces } from "../hooks/useWorkspaces";
 import { ShortcutsMenuButton } from "./ShortcutsMenu";
 import { T } from "../../../design/tokens";
 import { BranchChipWithDelta, StatusPill } from "../../../design/Atoms";
@@ -112,7 +114,6 @@ export function SessionsList({
 	const groups = useSessionGroupsStore((s) => s.groups);
 	const [workspaceFilter, setWorkspaceFilter] = useState<string[]>([]);
 	// Read-only settings modal, opened from the view-options dropdown.
-	const [settingsOpen, setSettingsOpen] = useState(false);
 	// "Recently deleted" list, also opened from the view-options dropdown —
 	// the durable surface for undo once the toast has expired.
 	const [recentlyDeletedOpen, setRecentlyDeletedOpen] = useState(false);
@@ -216,17 +217,7 @@ export function SessionsList({
 	// session, which the derivation from `sessions` did not.
 	const lastUsedCwd = useSettingsStore((s) => s.lastUsedWorkspace);
 
-	const workspaces = useMemo(() => {
-		const set = new Set<string>();
-		for (const id of sortedOrder) {
-			const s = sessions[id];
-			if (!s) continue;
-			if (s.cwd) set.add(s.cwd);
-		}
-		return Array.from(set).sort((a, b) =>
-			folderName(a).localeCompare(folderName(b)),
-		);
-	}, [sortedOrder, sessions]);
+	const workspaces = useWorkspaces();
 
 	// Whether to render the filter/view-options row under the New Session
 	// button. `undoEntries.length` counts because that row holds the kebab,
@@ -1076,7 +1067,7 @@ export function SessionsList({
 							</div>
 						) : null}
 						<ViewOptionsButton
-							onOpenSettings={() => setSettingsOpen(true)}
+							onOpenSettings={() => useSettingsModalStore.getState().open()}
 							onOpenRecentlyDeleted={() => setRecentlyDeletedOpen(true)}
 							recentlyDeletedCount={undoEntries.length}
 							onOpenWorktrees={() => setWorktreesOpen(true)}
@@ -1313,8 +1304,6 @@ export function SessionsList({
 			    a row's ⋯ menu or its babysitting badge. */}
 			<BabysitModal />
 			<SettingsModal
-				open={settingsOpen}
-				onClose={() => setSettingsOpen(false)}
 			/>
 			<RecentlyDeletedModal
 				open={recentlyDeletedOpen}

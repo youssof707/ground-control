@@ -44,7 +44,7 @@ import {
  * because "which binary am I actually running?" is otherwise invisible.
  */
 let cachedClaudeBinary: string | null = null;
-function resolveClaudeBinary(): string {
+export function resolveClaudeBinary(): string {
 	if (cachedClaudeBinary) return cachedClaudeBinary;
 
 	const isWin = process.platform === "win32";
@@ -148,7 +148,7 @@ async function probeSupportedModels(): Promise<ModelInfo[]> {
  * setModel swallow-and-continue; supportedModels surfaces the message in the
  * picker). Same `Promise.race` pattern as `cancelAndWait`.
  */
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+export function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 	let timer: NodeJS.Timeout;
 	const timeout = new Promise<never>((_, reject) => {
 		timer = setTimeout(
@@ -610,6 +610,15 @@ export class SessionManager {
 
 	listActive(): ClaudeSession[] {
 		return Array.from(this.sessions.values()).map((e) => e.session);
+	}
+
+	liveQueriesIn(cwd: string): Query[] {
+		const queries: Query[] = [];
+		for (const entry of this.sessions.values()) {
+			const q = entry.queryRef.current;
+			if (q && entry.session.cwd === cwd) queries.push(q);
+		}
+		return queries;
 	}
 
 	async run(input: StartSessionInput): Promise<ClaudeSession> {

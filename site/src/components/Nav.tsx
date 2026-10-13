@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { cx } from "../lib/cx";
+import { GitHubButton } from "./GitHubButton";
 
 export function Nav() {
 	const [scrolled, setScrolled] = useState(false);
@@ -25,24 +26,14 @@ export function Nav() {
 				</a>
 				<div className="flex items-center gap-1">
 					<a
-						href="#overview"
+						href="#babysitter"
 						className="rounded-xl px-2.5 py-1.5 text-[14px] font-medium text-gc-text-dim transition-colors hover:bg-white/5 hover:text-gc-text"
 					>
 						Features
 					</a>
-					<a
-						href="#"
-						className="rounded-xl px-2.5 py-1.5 text-[14px] font-medium text-gc-text-dim transition-colors hover:bg-white/5 hover:text-gc-text"
-					>
-						GitHub
-					</a>
-					<a
-						href="#"
-						className="group ml-2 inline-flex items-center gap-1.5 rounded-xl bg-gc-text px-4 py-2 text-[14px] font-semibold text-gc-accent-ink transition-colors hover:bg-gc-accent"
-					>
-						Download
-						<span aria-hidden="true" className="transition-transform group-hover:translate-x-0.5">→</span>
-					</a>
+					<span className="ml-2">
+						<GitHubButton size="sm" />
+					</span>
 				</div>
 			</nav>
 		</header>

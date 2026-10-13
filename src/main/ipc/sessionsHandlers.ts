@@ -33,6 +33,7 @@ import { registerSkillsHandlers } from "./skillsHandlers";
 import { registerUpdaterHandlers } from "./updaterHandlers";
 import { registerDictationHandlers } from "./dictationHandlers";
 import { registerImageHandlers } from "./imageHandlers";
+import { registerMcpHandlers } from "./mcpHandlers";
 
 /**
  * Open the native macOS "choose a directory" dialog. Returns the absolute
@@ -116,6 +117,7 @@ export function registerSessionsHandlers(): SessionManager {
 	registerUpdaterHandlers();
 	registerDictationHandlers();
 	registerImageHandlers();
+	registerMcpHandlers(manager);
 
 	ipcMain.handle("session:start", async (e, input: StartSessionInput) => {
 		// Guard against stale `cwd` values (e.g. a `lastUsedWorkspace` whose

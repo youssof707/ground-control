@@ -1,3 +1,5 @@
+import { GITHUB_URL, GitHubMark } from "./GitHubButton";
+
 export function Footer() {
 	return (
 		<footer className="border-t border-white/5 pt-12 pb-10">
@@ -7,11 +9,10 @@ export function Footer() {
 					<span className="text-[13px] font-semibold text-gc-text">Ground Control</span>
 					<span className="text-[13px] text-gc-text-mute">A desktop app for Claude Code sessions.</span>
 				</div>
-				<div className="flex items-center gap-5 text-[13px] text-gc-text-mute">
-					<a href="#" className="transition-colors hover:text-gc-text">GitHub</a>
-					<a href="#" className="transition-colors hover:text-gc-text">Download</a>
-					<span className="font-mono text-[11px] text-gc-text-faint">macOS · Apple Silicon</span>
-				</div>
+				<a href={GITHUB_URL} className="inline-flex items-center gap-2 text-[13px] text-gc-text-mute transition-colors hover:text-gc-text">
+					<GitHubMark size={15} />
+					GitHub
+				</a>
 			</div>
 		</footer>
 	);

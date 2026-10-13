@@ -1,5 +1,6 @@
 import { FeaturePanel } from "./components/FeaturePanel";
 import { Footer } from "./components/Footer";
+import { GitHubButton } from "./components/GitHubButton";
 import { glows } from "./components/Glow";
 import { Hero } from "./components/Hero";
 import { Nav } from "./components/Nav";
@@ -33,18 +34,21 @@ export function App() {
 				<Hero />
 				<div className="mx-auto flex max-w-[80rem] flex-col gap-14 px-6 py-16 lg:gap-16 lg:px-8 lg:py-24">
 					<FeaturePanel
-						id="overview"
-						lead="All your sessions in one window."
-						body="Sessions on the left, the conversation on the right. Unread replies get a dot so you can see which ones need you."
-						bullets={["Each session is its own Claude Code process.", "Counts at the top show how many are running, editing, or waiting."]}
-						glow={[glows.accent, glows.info, glows.neutral]}
-						canvas={{ width: 960, height: 600 }}
+						id="babysitter"
+						title="Babysitter"
+						lead="Let it answer for you."
+						body="Per session, pick what happens to plan approvals, permission requests, and questions while you're away."
+						bullets={["Approve, deny, or answer with a message you wrote.", "Prompts already waiting get answered when you save."]}
+						hint={<Shortcut keys="⌘⇧B" label="Open the babysitter for the active session" />}
+						glow={[glows.babysit, glows.accent, glows.neutral]}
+						canvas={{ width: 620, height: 520 }}
 					>
-						<AppShellMock />
+						<BabysitMock />
 					</FeaturePanel>
 
 					<FeaturePanel
 						id="sidequest"
+						title="Sidequest"
 						flip
 						lead="Ask a side question without touching the main thread."
 						body="Select some text and press ⌘S. A temporary fork opens on the right with the same context up to that point."
@@ -61,7 +65,21 @@ export function App() {
 					</FeaturePanel>
 
 					<FeaturePanel
+						id="overview"
+						title="Overview"
+						lead="All your sessions in one window."
+						body="Sessions on the left, the conversation on the right. Unread replies get a dot so you can see which ones need you."
+						bullets={["Each session is its own Claude Code process.", "Counts at the top show how many are running, editing, or waiting."]}
+						glow={[glows.accent, glows.info, glows.neutral]}
+						canvas={{ width: 1120, height: 660 }}
+					>
+						<AppShellMock />
+					</FeaturePanel>
+
+					<FeaturePanel
 						id="statuses"
+						title="Statuses"
+						flip
 						lead="See what every session is doing."
 						body="Running, planning, planning complete, waiting for input, done, errored. The pill on each row tells you without opening it."
 						glow={[glows.ok, glows.warn, glows.info]}
@@ -72,7 +90,7 @@ export function App() {
 
 					<FeaturePanel
 						id="inbox"
-						flip
+						title="Inbox"
 						lead="Everything waiting on you, in one list."
 						body="Plan approvals, permission requests, and questions from every session. Answer them here instead of switching sessions to find them."
 						glow={[glows.warn, glows.accent, glows.neutral]}
@@ -82,19 +100,8 @@ export function App() {
 					</FeaturePanel>
 
 					<FeaturePanel
-						id="babysitter"
-						lead="Let it answer for you."
-						body="Per session, pick what happens to plan approvals, permission requests, and questions while you're away."
-						bullets={["Approve, deny, or answer with a message you wrote.", "Prompts already waiting get answered when you save."]}
-						hint={<Shortcut keys="⌘⇧B" label="Open the babysitter for the active session" />}
-						glow={[glows.babysit, glows.accent, glows.neutral]}
-						canvas={{ width: 620, height: 520 }}
-					>
-						<BabysitMock />
-					</FeaturePanel>
-
-					<FeaturePanel
 						id="tasks"
+						title="Background tasks"
 						flip
 						lead="Background work, listed."
 						body="Shell commands, agents, and workflows that are still running, with how long they've been going. Stop any of them from the list."
@@ -106,6 +113,7 @@ export function App() {
 
 					<FeaturePanel
 						id="worktrees"
+						title="Worktrees"
 						lead="One session, one checkout."
 						body="Give a session its own git worktree and branch so parallel sessions don't edit the same files."
 						bullets={["See which sessions use each worktree.", "Remove the ones nothing is using."]}
@@ -117,6 +125,7 @@ export function App() {
 
 					<FeaturePanel
 						id="groups"
+						title="Session groups"
 						flip
 						lead="Group related sessions."
 						body="Put sessions in named, colored groups. Collapse a group and its header still shows how many are running or waiting."
@@ -128,6 +137,7 @@ export function App() {
 
 					<FeaturePanel
 						id="tokens"
+						title="Tokens and context"
 						lead="Know how much context is left."
 						body="Input, output, and context tokens for every session, next to the model it's using. Rate-limit reset time sits in the sidebar."
 						glow={[glows.warn, glows.ok, glows.info]}
@@ -138,6 +148,7 @@ export function App() {
 
 					<FeaturePanel
 						id="model"
+						title="Model picker"
 						flip
 						lead="Switch models mid-session."
 						body="Changing model while Claude is working stops the turn, switches, and continues on its own."
@@ -150,6 +161,7 @@ export function App() {
 
 					<FeaturePanel
 						id="skills"
+						title="Skills and shortcuts"
 						lead="Skills and your own shortcuts, one menu."
 						body="Lists the skills in ~/.claude/skills and the prompts you've saved. Pick one and it goes into the composer."
 						bullets={["A shortcut is a name, a prompt, and a mode.", "Skills come straight from your Claude Code setup."]}
@@ -166,19 +178,7 @@ export function App() {
 						<h2 className="text-[26px] font-semibold tracking-tight text-balance text-gc-text md:text-3xl lg:text-[34px]">
 							That's the app.
 						</h2>
-						<p className="max-w-md text-[16px] leading-relaxed text-gc-text-dim">Free, runs on your Mac, uses your own Claude Code login.</p>
-						<div className="flex flex-wrap items-center justify-center gap-3">
-							<a
-								href="#"
-								className="group inline-flex h-12 items-center gap-1.5 rounded-[14px] bg-gc-text px-5 text-[15px] font-semibold text-gc-accent-ink transition-colors hover:bg-gc-accent"
-							>
-								Download for macOS
-								<span aria-hidden="true" className="transition-transform group-hover:translate-x-0.5">→</span>
-							</a>
-							<a href="#" className="inline-flex h-12 items-center rounded-[14px] px-4 text-[15px] font-medium text-gc-text-dim transition-colors hover:text-gc-text">
-								GitHub →
-							</a>
-						</div>
+						<GitHubButton />
 					</div>
 				</section>
 			</main>

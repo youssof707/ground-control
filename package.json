@@ -18,9 +18,9 @@
 		"typecheck": "npm run typecheck:node && npm run typecheck:web",
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",
-		"site:dev": "npm --prefix site run dev",
-		"site:build": "npm --prefix site run build",
-		"site:typecheck": "npm --prefix site run typecheck",
+		"landing": "npm --prefix site run dev",
+		"landing:build": "npm --prefix site run build",
+		"landing:typecheck": "npm --prefix site run typecheck",
 		"postinstall": "node scripts/fix-whisper-rpath.mjs"
 	},
 	"dependencies": {

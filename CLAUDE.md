@@ -4,6 +4,16 @@ Living rules for Claude working in this repo. Prefer patterns here over inventin
 ones. When a rule or convention changes — or a new durable one gets established — edit
 this file so the next session inherits it.
 
+## Landing page (`site/`)
+
+`site/` is a separate Vite + React package for the marketing page. It is the only place
+Tailwind is allowed; the app itself stays plain CSS. Its deps live in `site/node_modules`,
+never at the root. Run it with `npm run landing` / `landing:build` / `landing:typecheck`
+from the repo root. Feature showcases are hand-built DOM mocks in `site/src/mocks/` on a fixed
+pixel canvas (`MockCanvas`) scaled by container query, never screenshots. Colors come from
+the `gc-*` theme in `site/src/styles.css`, which mirrors `src/renderer/src/design/tokens.ts`;
+keep them in sync. The same zero-comments and no-tooltip rules apply.
+
 ## Keyboard shortcuts
 
 **Whenever a keyboard shortcut is added, changed, or removed, update this list.** This is

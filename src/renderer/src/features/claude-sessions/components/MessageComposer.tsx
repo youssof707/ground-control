@@ -15,6 +15,7 @@ import { buildUserBlocks, draftFromBlocks } from "../lib/composerImages";
 import { useComposerImages } from "../hooks/useComposerImages";
 import { useComposerTarget } from "../hooks/useComposerTarget";
 import { appendPromptBlock } from "../lib/composerActions";
+import { isMcpCommand, openMcpSettingsFor } from "../lib/openMcpSettings";
 import { T } from "../../../design/tokens";
 import { ModeToggle, isBranchStale } from "../../../design/Atoms";
 import { DictationButton, type DictationHandle } from "./DictationButton";
@@ -271,6 +272,11 @@ export function MessageComposer({
 	const send = async () => {
 		if (busy) return;
 		if (!text.trim() && images.length === 0) return;
+		if (images.length === 0 && isMcpCommand(text)) {
+			useDraftStore.getState().clearDraft(sessionId);
+			openMcpSettingsFor(sessionId);
+			return;
+		}
 		const blocks = buildUserBlocks(text, images);
 
 		setSending(true);
