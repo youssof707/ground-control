@@ -148,7 +148,12 @@ export function EditShortcutsModal({
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="edit-shortcuts-title"
-				style={{ width: "min(480px, calc(100vw - 32px))" }}
+				style={{
+					width:
+						view.kind === "edit"
+							? "calc(100vw - 64px)"
+							: "min(480px, calc(100vw - 32px))",
+				}}
 			>
 				{view.kind === "list" ? (
 					<>

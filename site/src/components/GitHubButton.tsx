@@ -1,6 +1,6 @@
 import { cx } from "../lib/cx";
 
-export const GITHUB_URL = "#";
+export const GITHUB_URL = "https://github.com/youssof707/ground-control";
 
 export function GitHubMark({ size = 18 }: { size?: number }) {
 	return (

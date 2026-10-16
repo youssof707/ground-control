@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { PermissionRequest } from "@shared/claude-sessions/types";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
+import { stopSession } from "../lib/sessionControlActions";
 import { T } from "../../../design/tokens";
 
 interface OptionDef {
@@ -86,13 +87,14 @@ export function AskUserQuestionCard({
 		remove(req.requestId);
 	};
 
-	const skip = () => {
+	const stopAndDeny = () => {
 		window.claude.respondPermission({
 			requestId: req.requestId,
 			behavior: "deny",
-			message: "User skipped the question.",
+			message: "Stopped by user.",
 		});
 		remove(req.requestId);
+		void stopSession(req.sessionId);
 	};
 
 	const single = questions.length === 1 ? questions[0] : null;
@@ -227,8 +229,8 @@ export function AskUserQuestionCard({
 					gap: 8,
 				}}
 			>
-				<button className="btn" onClick={skip} disabled={submitting}>
-					Skip
+				<button className="btn" onClick={stopAndDeny} disabled={submitting}>
+					Stop
 				</button>
 				<button
 					className="btn btn-warn"

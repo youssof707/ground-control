@@ -2,6 +2,8 @@
 
 A desktop app for running many Claude Code sessions side by side.
 
+Website: https://ground-control-eosin.vercel.app
+
 ## Babysitter
 
 **Let it answer for you.** Per session, pick what happens to plan approvals, permission requests, and questions while you're away.

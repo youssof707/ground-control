@@ -5,3 +5,4 @@ out
 *.log
 *.tsbuildinfo
 .dev-store
+.vercel
