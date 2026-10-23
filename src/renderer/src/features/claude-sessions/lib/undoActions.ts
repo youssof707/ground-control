@@ -9,7 +9,7 @@ import { runBackgroundTask } from "../../background-tasks/stores/useBackgroundTa
  * they can run from a plain click handler, a global keydown listener, or a
  * modal row — exactly like lib/handoffActions.ts.
  *
- * There is deliberately ONE restore path. The toast button, Shift+Cmd+Z, and
+ * There is deliberately ONE restore path. The toast button, Shift+Cmd+T, and
  * the "Recently deleted" list all funnel through `restoreEntry`, so the button
  * and the key can never drift into meaning different things — which is the
  * whole reason this reads as an undo stack rather than a dialog.

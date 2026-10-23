@@ -11,7 +11,7 @@ import { runBackgroundTask } from "../../background-tasks/stores/useBackgroundTa
  * session with a fork branched at that message. Store-only (no hooks) so it
  * runs from a plain click handler, exactly like lib/handoffActions.ts.
  *
- * No confirm step — deletes are undoable (⇧⌘Z / Recently deleted), so the
+ * No confirm step — deletes are undoable (⇧⌘T / Recently deleted), so the
  * undo buffer is the safety net rather than a dialog.
  *
  * Unlike `runHandoff` this does NOT remove the source optimistically. Fork

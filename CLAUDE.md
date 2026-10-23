@@ -19,7 +19,7 @@ keep them in sync. The same zero-comments and no-tooltip rules apply.
 **Whenever a keyboard shortcut is added, changed, or removed, update this list.** This is
 the single source of truth so shortcuts are easy to find.
 
-- `Cmd+N` — new session in the last-used workspace, with no worktree or group
+- `Cmd+T` — new session in the last-used workspace, with no worktree or group
   (same as the sidebar's New Session button)
 - `Cmd+S` — open a side quest
 - `Cmd+K` — open the shortcut menu
@@ -39,13 +39,16 @@ the single source of truth so shortcuts are easy to find.
   button), even while typing in its text box. Plain `Enter` does the same
   when no text field has focus (a focused Cancel / Stop button keeps its
   native Enter). No-op when the primary button is disabled
-- `Cmd+Shift+M` — open the model picker for the active session (picking a
-  model while a turn is running interrupts it, switches, and resumes
-  automatically)
-- `Cmd+Shift+Z` — restore the most recently deleted / handed-off
-  session. Ignored while a text field has focus (native redo wins) and when
-  nothing is buffered. Not `Cmd+Z`: that's the most-used text shortcut in the
-  app, and claiming it would mean hand-rebuilding the native Edit menu
+- `Cmd+Shift+M` — open the model picker for the active session or draft
+  (picking a model while a turn is running interrupts it, switches, and
+  resumes automatically). The modal closes instantly and the switch runs in
+  the background, with animated dots on the model label until it lands
+- Letter keys inside the model picker — pick the model whose badge shows that
+  letter. Each row gets the first letter of its name not already taken by an
+  earlier row; rows with no free letter get no key
+- `Cmd+Shift+T` — restore the most recently deleted / handed-off
+  session, from anywhere (including inside a composer). No-op when nothing
+  is buffered
 
 ## Code rules
 

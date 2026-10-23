@@ -36,7 +36,7 @@ async function resolveDraftCwd(targetCwd: string | null): Promise<string | null>
 
 /**
  * Plain "New Session" — the shared implementation behind both the sidebar
- * button and the global Cmd+N hotkey, so the two can't drift.
+ * button and the global Cmd+T hotkey, so the two can't drift.
  *
  * The draft starts clean: the target workspace folder, but no worktree and
  * no group. It's marked `floating` so its sidebar row sits at the top of the

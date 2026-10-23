@@ -23,7 +23,7 @@ import {
 } from "../stores/useSettingsModalStore";
 
 const SHORTCUTS: { keys: string[]; label: string }[] = [
-	{ keys: ["⌘", "N"], label: "New session" },
+	{ keys: ["⌘", "T"], label: "New session" },
 	{ keys: ["⌘", "S"], label: "Open a side quest" },
 	{ keys: ["⌘", "K"], label: "Open the shortcut menu" },
 	{ keys: ["⌘", "R"], label: "Quote selection into the composer" },
@@ -32,7 +32,7 @@ const SHORTCUTS: { keys: string[]; label: string }[] = [
 	{ keys: ["⌘", "D"], label: "Start / stop voice dictation" },
 	{ keys: ["⌘", "⇧", "B"], label: "Open the babysitter" },
 	{ keys: ["⌘", "⇧", "M"], label: "Open the model picker" },
-	{ keys: ["⌘", "⇧", "Z"], label: "Restore the most recently deleted session" },
+	{ keys: ["⌘", "⇧", "T"], label: "Restore the most recently deleted session" },
 ];
 
 const BABYSIT_AUTOSAVE_DELAY_MS = 400;

@@ -23,7 +23,7 @@ import { restoreEntry } from "../lib/undoActions";
  * geometry of that component's expanded error panel instead.
  *
  * The toast is a NOTIFICATION, not the mechanism. Dismissing it with × (or
- * letting it time out) never drops the undo — Shift+Cmd+Z and the "Recently
+ * letting it time out) never drops the undo — Shift+Cmd+T and the "Recently
  * deleted" list keep working for as long as the buffer holds the entry.
  *
  * This is the app's first toast and it should stay the only one: it knows
@@ -31,7 +31,7 @@ import { restoreEntry } from "../lib/undoActions";
  * `showToast(message)` entry point. The moment it goes generic, a deliberately
  * quiet app starts growing a notification corner.
  *
- * NOTE: no-tooltip rule. The Shift+Cmd+Z hint is always-rendered text, never a
+ * NOTE: no-tooltip rule. The Shift+Cmd+T hint is always-rendered text, never a
  * hover reveal — a keyboard hint that only appears on hover is exactly what
  * that rule forbids.
  *
@@ -304,7 +304,7 @@ export function UndoToast() {
 					>
 						Undo
 					</button>
-					<Kbd>⇧⌘Z</Kbd>
+					<Kbd>⇧⌘T</Kbd>
 					<button
 						type="button"
 						onClick={dismissToast}

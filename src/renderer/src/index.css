@@ -366,6 +366,29 @@ input::placeholder {
 	}
 }
 
+.model-switching-dots span {
+	opacity: 0.2;
+	animation: model-switching-dot 1.2s ease-in-out infinite;
+}
+
+.model-switching-dots span:nth-child(2) {
+	animation-delay: 0.2s;
+}
+
+.model-switching-dots span:nth-child(3) {
+	animation-delay: 0.4s;
+}
+
+@keyframes model-switching-dot {
+	0%,
+	100% {
+		opacity: 0.2;
+	}
+	40% {
+		opacity: 1;
+	}
+}
+
 /* ─── Background tasks indicator ─────────────────────────────────────────── */
 
 /* Size modifier on .asyncy-btn-spinner — the base 14x14 is a touch heavy for

@@ -16,7 +16,7 @@ import type { DeletedSessionSnapshot } from "@shared/claude-sessions/undo";
  *
  * Three surfaces read this store:
  *   1. `UndoToast`          — the ~8s prompt after each delete
- *   2. `useUndoHotkey`      — Shift+Cmd+Z, for as long as an entry survives
+ *   2. `useUndoHotkey`      — Shift+Cmd+T, for as long as an entry survives
  *   3. `RecentlyDeletedModal` — the "I noticed twenty minutes later" list
  *
  * All three call the same `restoreEntry` in `lib/undoActions.ts`, so there is
@@ -67,7 +67,7 @@ const MAX_ENTRIES = 20;
 let seq = 0;
 
 interface State {
-	/** Newest first. `entries[0]` is what Shift+Cmd+Z and the toast act on. */
+	/** Newest first. `entries[0]` is what Shift+Cmd+T and the toast act on. */
 	entries: UndoEntry[];
 	/**
 	 * The entry the toast is currently showing, or null for "no toast".

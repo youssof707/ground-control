@@ -92,15 +92,17 @@ export function SessionTokenBar({
 	const pickerOpen = useModelPickerStore(
 		(s) => s.openForSessionId === target.id,
 	);
+	const switching = useModelPickerStore((s) => s.switching[target.id]);
+	const switchFailed = useModelPickerStore((s) => !!s.failed[target.id]);
 	const [modelHover, setModelHover] = useState(false);
 	const showIo = useSettingsStore((s) => s.showIoTokens ?? true);
 	const showContext = useSettingsStore((s) => s.showContextTokens ?? true);
 	const ioVisible = showIo && usage != null;
 	const contextVisible = showContext && target.contextTokens != null;
 
-	const modelLabel = displayed.model
-		? formatModelName(displayed.model)
-		: "Default";
+	const labelModel = switching ? switching.model : displayed.model;
+	const modelLabel = labelModel ? formatModelName(labelModel) : "Default";
+	const showPending = !switching && displayed.pending;
 	// awaiting_permission counts as "running" here too: a turn is still in
 	// flight, just paused on a permission/plan/question card — interrupting
 	// it (which switchModelAndResume does) cancels that pending decision the
@@ -143,12 +145,14 @@ export function SessionTokenBar({
 						border: "none",
 						background: "none",
 						font: "inherit",
-						fontStyle: displayed.pending ? "italic" : "normal",
-						color: displayed.pending
-							? T.textMute
-							: modelHover
-								? T.text
-								: T.textDim,
+						fontStyle: showPending ? "italic" : "normal",
+						color: switchFailed
+							? T.danger
+							: switching || showPending
+								? T.textMute
+								: modelHover
+									? T.text
+									: T.textDim,
 						textDecoration: modelHover ? "underline" : "none",
 						textUnderlineOffset: 3,
 						cursor: "pointer",
@@ -159,7 +163,17 @@ export function SessionTokenBar({
 					}}
 				>
 					{modelLabel}
-					{displayed.pending ? "…" : ""}
+					{switching ? (
+						<span className="model-switching-dots" aria-hidden>
+							<span>.</span>
+							<span>.</span>
+							<span>.</span>
+						</span>
+					) : showPending ? (
+						"…"
+					) : (
+						""
+					)}
 				</button>
 				{(ioVisible || contextVisible) && (
 					<span
@@ -205,15 +219,21 @@ export function SessionTokenBar({
 				effectiveModel={displayed.model}
 				isRunning={isRunning}
 				focusComposerAfterSelect={!onAfterSelect}
-				onSelect={async (value) => {
-					await window.claude.setSessionModel(target.id, value);
+				onSelect={(value) => {
 					onAfterSelect?.();
+					return useModelPickerStore
+						.getState()
+						.runSwitch(target.id, value, () =>
+							window.claude.setSessionModel(target.id, value),
+						);
 				}}
 				onSwitchAndResume={
 					onSwitchAndResume
-						? async (value) => {
-							await onSwitchAndResume(value);
+						? (value) => {
 							onAfterSelect?.();
+							return useModelPickerStore
+								.getState()
+								.runSwitch(target.id, value, () => onSwitchAndResume(value));
 						}
 						: undefined
 				}

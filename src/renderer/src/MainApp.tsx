@@ -67,14 +67,13 @@ export default function MainApp() {
 	// Global ⌘. — interrupts the active session's running turn (the macOS
 	// "cancel" idiom). No-op unless that session is actually running.
 	useStopSessionHotkey();
-	// Global ⌘N — opens a new session draft, pre-attached to the worktree
+	// Global ⌘T — opens a new session draft, pre-attached to the worktree
 	// last used in the target workspace.
 	useNewSessionHotkey();
 	// ⌘P — toggles Plan ⇄ Auto-edit, but only while a session composer has
 	// focus (scoped via the composer's data-composer-session-id attribute).
 	usePlanModeHotkey();
-	// ⇧⌘Z — restores the most recently deleted/handed-off session.
-	// Skips editable targets so native text redo is untouched, and falls
+	// ⇧⌘T — restores the most recently deleted/handed-off session. Falls
 	// through entirely when there's nothing buffered.
 	useUndoHotkey();
 	// Global ⌘D — starts/stops voice dictation in the focused composer, or

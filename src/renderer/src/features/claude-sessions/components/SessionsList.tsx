@@ -382,7 +382,7 @@ export function SessionsList({
 		navigate(`/sessions/${d.id}`);
 	};
 
-	// Shares `startNewSessionDraft` with the global Cmd+N hotkey so the button
+	// Shares `startNewSessionDraft` with the global Cmd+T hotkey so the button
 	// and the shortcut can't drift. The helper handles the draft-reuse rule
 	// and the folder picker fallback, and starts the draft with no worktree
 	// or group, floating at the top of the list; `onWorkspaceRevealed` keeps
@@ -2933,7 +2933,7 @@ function ViewOptionsButton({
 						boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
 					}}
 				>
-					{/* The undo toast is gone in 8s and Shift+Cmd+Z is invisible,
+					{/* The undo toast is gone in 8s and Shift+Cmd+T is invisible,
 					    so without this nothing on screen would ever suggest a
 					    deleted session is still recoverable. Hidden entirely at
 					    zero, so it only appears when it has something to offer. */}

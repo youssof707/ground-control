@@ -14,7 +14,7 @@ import { sendTurn } from "./sendTurn";
  * with a fresh one seeded from that message. Store-only (no hooks) so it can
  * run from a plain click handler exactly like lib/composerActions.ts.
  *
- * No confirm step, no draft stop-over. Deletes are undoable (⇧⌘Z / Recently
+ * No confirm step, no draft stop-over. Deletes are undoable (⇧⌘T / Recently
  * deleted), so the undo buffer is the safety net rather than a dialog.
  */
 

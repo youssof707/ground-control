@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useDraftSessionsStore } from "../stores/useDraftSessionsStore";
 import { useDraftStore } from "../stores/useDraftStore";
+import { useModelPickerStore } from "../stores/useModelPickerStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { useComposerResize } from "../hooks/useComposerResize";
@@ -48,8 +49,9 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 	const [folderHover, setFolderHover] = useState(false);
 	// Worktree modal state — opens on "Add worktree" button click.
 	const [worktreeModalOpen, setWorktreeModalOpen] = useState(false);
-	// Model picker modal state — opens on the model chip click.
-	const [modelPickerOpen, setModelPickerOpen] = useState(false);
+	const modelPickerOpen = useModelPickerStore(
+		(s) => s.openForSessionId === draftId,
+	);
 	// Whether the draft's cwd is a git repo. Determines whether the
 	// "Add worktree" button is visible at all — worktrees are a git
 	// concept, so we hide the affordance entirely for non-git folders
@@ -458,7 +460,7 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 
 			<DraftModelBar
 				model={draft.model}
-				onOpen={() => setModelPickerOpen(true)}
+				onOpen={() => useModelPickerStore.getState().open(draftId)}
 			/>
 
 			<ModelPickerModal
@@ -468,7 +470,7 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 				onSelect={(value) =>
 					useDraftSessionsStore.getState().updateDraft({ model: value })
 				}
-				onClose={() => setModelPickerOpen(false)}
+				onClose={() => useModelPickerStore.getState().close()}
 			/>
 
 			<MessageComposer

@@ -9,7 +9,7 @@ import { restoreEntry } from "../lib/undoActions";
  * The durable half of undo, opened from "Recently deleted (n)" in the
  * sidebar's view-options menu.
  *
- * The toast is gone in eight seconds and Shift+Cmd+Z is invisible, so without
+ * The toast is gone in eight seconds and Shift+Cmd+T is invisible, so without
  * this nothing on screen would ever suggest a deleted session is still
  * recoverable. This is the surface for "I noticed twenty minutes later."
  *
