@@ -267,14 +267,10 @@ async function findAppInMount(mountpoint: string): Promise<string> {
 
 /**
  * Silently sweep `/Applications/` for sibling duplicate installs and
- * remove them. Called from two places:
- *
- *   1. `app.whenReady()` on every launch, so any lingering
- *      `Ground Control 2.app` from a previous botched update or a
- *      user's manual drag-and-drop disappears on next start with zero
- *      UI prompts.
- *   2. Inside the swap script, post-copy, so a fresh update also mops
- *      up before relaunching.
+ * remove them. Called from `app.whenReady()` on every launch, so any
+ * lingering `Ground Control 2.app` from a previous botched update or a
+ * user's manual drag-and-drop disappears on next start with zero UI
+ * prompts.
  *
  * Failure to remove any individual duplicate is warned-and-swallowed —
  * we don't want to block startup on a permissions edge case. Returns
@@ -309,8 +305,7 @@ export async function cleanupDuplicateInstalls(): Promise<string[]> {
  * exit, (2) stages the new app under `<install>.new`, (3) rms the old app and
  * mv's the staged copy over it (never nests — cp -R over an existing dir
  * would create `<install>/<install>` and then `open -n` would launch the
- * stale binary), (4) sweeps any `Ground Control N.app` siblings from prior
- * botched updates, (5) detaches the DMG, (6) relaunches. Spawn it detached,
+ * stale binary), (4) relaunches, (5) detaches the DMG. Spawn it detached,
  * then `app.quit()`.
  *
  * `set -eo pipefail` on top means any step's failure halts the script — no
@@ -387,28 +382,13 @@ rm -rf "$INSTALL"
 mv "$STAGE" "$INSTALL"
 echo "[updater] swap complete"
 
-# Reap any lingering "Ground Control 2.app" / "Ground Control (1).app"
-# siblings from past botched updates or manual Finder drag+drop. Match
-# is intentionally narrow — numeric suffix or (N) suffix only — so a
-# hypothetical "Ground Control Beta.app" wouldn't get nuked.
-shopt -s nullglob
-for dupe in /Applications/"Ground Control "*.app /Applications/"Ground Control ("*").app"; do
-  [ -d "$dupe" ] || continue
-  [ "$dupe" = "$INSTALL" ] && continue
-  base=$(basename "$dupe")
-  if [[ "$base" =~ ^Ground\ Control\ ([0-9]+|\([0-9]+\))\.app$ ]]; then
-    echo "[updater] removing duplicate: $dupe"
-    rm -rf "$dupe" || echo "[updater]   (failed, continuing)"
-  fi
-done
-shopt -u nullglob
+echo "[updater] relaunching $INSTALL"
+open -n "$INSTALL"
 
 echo "[updater] detaching dmg"
 hdiutil detach ${sq(mountpoint)} -quiet -force || true
-rm -f ${sq(dmgPath)}
-rm -f ${sq(scriptPath)}
-echo "[updater] relaunching $INSTALL"
-open -n "$INSTALL"
+rm -f ${sq(dmgPath)} || true
+rm -f ${sq(scriptPath)} || true
 `;
 	await fs.writeFile(scriptPath, script, { mode: 0o755 });
 	// Spawn detached so the script survives the parent quitting.
