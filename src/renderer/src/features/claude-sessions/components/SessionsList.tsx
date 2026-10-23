@@ -35,7 +35,7 @@ import { useSettingsModalStore } from "../stores/useSettingsModalStore";
 import { useWorkspaces } from "../hooks/useWorkspaces";
 import { ShortcutsMenuButton } from "./ShortcutsMenu";
 import { T } from "../../../design/tokens";
-import { BranchChipWithDelta, StatusPill } from "../../../design/Atoms";
+import { StatusPill } from "../../../design/Atoms";
 import { WORKTREE_COLOR_MAP } from "../../../design/WorktreeChip";
 import type {
 	ClaudeSessionFull,
@@ -1590,7 +1590,6 @@ function SessionRowSidebar({
 					>
 						{summary}
 					</div>
-					{/* Chips row — status + branch pair. */}
 					<div
 						style={{
 							display: "flex",
@@ -1645,14 +1644,6 @@ function SessionRowSidebar({
 						    status itself. Renders nothing unless this session is
 						    being babysat; clicking it opens the Babysitter modal. */}
 						<BabysitBadge sessionId={session.id} />
-						{session.branch ? (
-							<BranchChipWithDelta
-								branch={session.branch}
-								lastUserMessageBranch={session.lastUserMessageBranch}
-								showCurrentHint={false}
-								suppressStale
-							/>
-						) : null}
 					</div>
 					{session.cwd && !hideCwd ? (
 						<div
