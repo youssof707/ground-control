@@ -45,6 +45,7 @@ export function useQueuedMessageFlusher() {
 
 		const release = (id: string) =>
 			useQueuedMessagesStore.getState().release(id);
+		const hold = (id: string) => useQueuedMessagesStore.getState().hold(id);
 
 		// Deliver a queued message. Sessions go through `sendTurn`; sidequests
 		// go through `sendToSidequest`, which self-heals by re-forking a dead
@@ -124,6 +125,8 @@ export function useQueuedMessageFlusher() {
 					// message) — any interrupt latch from a previous turn no
 					// longer applies.
 					release(id);
+				} else if (nextStatus === "usage_limit") {
+					hold(id);
 				} else if (prevStatus === "running" && nextStatus === "idle") {
 					tryFlush(id);
 				}
@@ -157,6 +160,8 @@ export function useQueuedMessageFlusher() {
 				if (before.status === next.status) continue;
 				if (next.status === "running") {
 					release(next.sidequestId);
+				} else if (next.status === "usage_limit") {
+					hold(next.sidequestId);
 				} else if (before.status === "running" && next.status === "idle") {
 					tryFlush(next.sidequestId);
 				}

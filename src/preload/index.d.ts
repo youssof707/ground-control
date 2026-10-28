@@ -123,6 +123,7 @@ declare global {
 			listPermissions: () => Promise<PermissionRequest[]>;
 			/** Every session currently being babysat, keyed by session id. */
 			listBabysit: () => Promise<Record<string, BabysitConfig>>;
+			listAutoResumes: () => Promise<Record<string, number>>;
 			/**
 			 * Start, update or stop (`null`) babysitting a session. Resolves
 			 * to the stored config, or null when babysitting is now off —

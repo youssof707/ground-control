@@ -23,6 +23,7 @@ import { resolveDataDir } from "./core/store/data_dir";
 import { registerSessionsHandlers } from "./ipc/sessionsHandlers";
 import { cleanupDuplicateInstalls } from "./updater";
 import type { SessionManager } from "./sessions/SessionManager";
+import { cancelAllWakes } from "./sessions/wakeScheduler";
 import * as windows from "./windows";
 import { attachContextMenu } from "./contextMenu";
 
@@ -372,6 +373,11 @@ app.on("will-quit", (event) => {
 			await sessionManager?.discardAllSidequests();
 		} catch (err) {
 			console.error("[ccw] error discarding sidequests:", err);
+		}
+		try {
+			await cancelAllWakes();
+		} catch (err) {
+			console.error("[ccw] error cancelling scheduled wakes:", err);
 		}
 		app.exit(0);
 	})();

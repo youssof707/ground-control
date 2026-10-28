@@ -348,6 +348,25 @@ function isModelRejection(msg: SDKMessage): boolean {
 	return (msg as unknown as { error?: unknown }).error === "model_not_found";
 }
 
+function isRateLimitedAssistant(msg: SDKMessage): boolean {
+	if (msg.type !== "assistant") return false;
+	return (msg as unknown as { error?: unknown }).error === "rate_limit";
+}
+
+function resultIsError(msg: SDKMessage): boolean {
+	if (msg.type !== "result") return false;
+	return (msg as unknown as { is_error?: unknown }).is_error === true;
+}
+
+export interface UsageLimitHit {
+	resetsAt?: number;
+}
+
+export type UsageLimitListener = (
+	runtimeId: string,
+	hit: UsageLimitHit | null,
+) => void;
+
 function sdkPermissionModeFor(mode: SessionMode): "plan" | "acceptEdits" {
 	return mode === "plan" ? "plan" : "acceptEdits";
 }
@@ -554,6 +573,7 @@ export class SessionManager {
 		private broker: PermissionBroker,
 		private onSessionCreated: (sessionId: string) => void,
 		private onBusyChange: (runtimeId: string, busy: boolean) => void = () => {},
+		private onUsageLimitChange: UsageLimitListener = () => {},
 	) {}
 
 	/**
@@ -1473,6 +1493,13 @@ export class SessionManager {
 			},
 		});
 
+		let limitHit = false;
+		let rejectedEventSeen = false;
+		let lastRejectedResetMs: number | undefined;
+		const currentUsageLimitHit = (): UsageLimitHit => ({
+			resetsAt: lastRejectedResetMs ?? rateLimitTracker.latestRejectedResetMs(),
+		});
+
 		// The single writer of session.status for the lifetime of this loop.
 		// SessionActivity deliberately never dedupes its own notifications —
 		// the comparison against `session.status` lives here, which is what
@@ -1495,7 +1522,11 @@ export class SessionManager {
 			) {
 				return;
 			}
-			const next = activity.isActive ? "running" : "idle";
+			const next = activity.isActive
+				? "running"
+				: limitHit
+					? "usage_limit"
+					: "idle";
 			if (session.status === next) return;
 			// A flagged session is idle by definition, so every later
 			// notification that doesn't start a turn (a trailing background
@@ -1503,6 +1534,7 @@ export class SessionManager {
 			// "idle" here and silently erase the badge seconds after it
 			// appeared. Only real work clears the flag.
 			if (session.status === "usage_limit" && next !== "running") return;
+			const wasLimited = session.status === "usage_limit";
 			session.status = next;
 			const d = activity.debug;
 			console.log(
@@ -1510,6 +1542,11 @@ export class SessionManager {
 			);
 			this.send(ch("status"), { sessionId: id, status: next });
 			if (persist) void sessionStore.updateSession(id, { status: next });
+			if (next === "usage_limit") {
+				this.onUsageLimitChange(id, currentUsageLimitHit());
+			} else if (wasLimited) {
+				this.onUsageLimitChange(id, null);
+			}
 		};
 
 		// The single writer of the `tasks` broadcast, dedupe at the caller —
@@ -1546,6 +1583,9 @@ export class SessionManager {
 		syncBusy();
 
 		const pushTurnWithStatus = (blocks: UserContentBlock[]) => {
+			limitHit = false;
+			rejectedEventSeen = false;
+			lastRejectedResetMs = undefined;
 			pushTurn(blocks);
 			activity.noteUserTurn();
 			syncStatus();
@@ -1626,11 +1666,6 @@ export class SessionManager {
 		let sdkIdCaptured = !!session.sdkSessionId;
 		let cliVersionLogged = false;
 		let sweepTimer: NodeJS.Timeout | null = null;
-		// `terminal_reason` off the most recent `result` message, used only
-		// when the loop exits cleanly (no abort, no thrown error) to tell a
-		// usage-limit cutoff apart from an actual finish. See `syncStatus`'s
-		// sibling decision below and `USAGE_LIMIT_TERMINAL_REASONS`.
-		let lastTerminalReason: string | undefined;
 
 		try {
 			// Armed inside the try so the finally below is guaranteed to clear
@@ -1769,13 +1804,32 @@ export class SessionManager {
 				// JSON or render in the chat scroll.
 				if (msg.type === "rate_limit_event") {
 					rateLimitTracker.update(msg.rate_limit_info);
+					if (msg.rate_limit_info.status === "rejected") {
+						rejectedEventSeen = true;
+						const resetMs = rateLimitTracker.toResetMs(
+							msg.rate_limit_info.resetsAt,
+						);
+						if (resetMs !== undefined) {
+							lastRejectedResetMs = resetMs;
+							if (session.status === "usage_limit") {
+								this.onUsageLimitChange(id, { resetsAt: resetMs });
+							}
+						}
+					}
 					continue;
 				}
 
 				logSdkErrors(id, msg);
 
 				const terminalReason = extractTerminalReason(msg);
-				if (terminalReason) lastTerminalReason = terminalReason;
+				if (
+					isRateLimitedAssistant(msg) ||
+					(terminalReason !== undefined &&
+						USAGE_LIMIT_TERMINAL_REASONS.has(terminalReason)) ||
+					(rejectedEventSeen && resultIsError(msg))
+				) {
+					limitHit = true;
+				}
 
 				// Fold into the running/idle model before anything else — the
 				// status flip should not wait on the persist/broadcast path,
@@ -1789,29 +1843,6 @@ export class SessionManager {
 					refreshContextTokens();
 				}
 				if (msg.type === "result") recordUsage(msg.modelUsage);
-
-				// A turn cut off by a usage limit reports as a normal
-				// (non-thrown) `result` — the loop above just parked status at
-				// "idle". Overwrite it here, mid-session, rather than waiting
-				// for the loop to exit: with a streaming-input prompt the loop
-				// doesn't exit between turns, so the teardown branch below
-				// (which also sets "usage_limit" off `lastTerminalReason`) only
-				// ever fires once the whole session is finished — by which
-				// point the badge is moot. Must come after `activity.apply`
-				// above, whose `syncStatus()` call is what wrote "idle" in the
-				// first place, or this gets clobbered immediately.
-				if (
-					terminalReason !== undefined &&
-					USAGE_LIMIT_TERMINAL_REASONS.has(terminalReason)
-				) {
-					session.status = "usage_limit";
-					this.send(ch("usage_limit"), { sessionId: id });
-					if (persist) {
-						void sessionStore.updateSession(id, {
-							status: "usage_limit",
-						});
-					}
-				}
 
 				// ── Model rejection → fall back to the CLI default ──────────
 				// Detect on the synthetic assistant error, ACT on the `result`
@@ -2056,6 +2087,7 @@ export class SessionManager {
 				session.status = "cancelled";
 				session.finishedAt = Date.now();
 				this.broker.cancelAllForSession(id);
+				this.onUsageLimitChange(id, null);
 				this.send(ch("cancelled"), {
 					sessionId: id,
 				});
@@ -2071,11 +2103,13 @@ export class SessionManager {
 				// (non-thrown) `result`, distinguishable only by
 				// `terminal_reason`. Route that case to its own status so it
 				// gets its own badge instead of reading as "done".
-				const hitUsageLimit =
-					lastTerminalReason !== undefined &&
-					USAGE_LIMIT_TERMINAL_REASONS.has(lastTerminalReason);
+				const hitUsageLimit = limitHit;
 				session.status = hitUsageLimit ? "usage_limit" : "done";
 				session.finishedAt = Date.now();
+				this.onUsageLimitChange(
+					id,
+					hitUsageLimit ? currentUsageLimitHit() : null,
+				);
 				this.send(ch(hitUsageLimit ? "usage_limit" : "done"), {
 					sessionId: id,
 				});
@@ -2091,6 +2125,7 @@ export class SessionManager {
 			session.error = err instanceof Error ? err.message : String(err);
 			session.finishedAt = Date.now();
 			this.broker.cancelAllForSession(id, "Session errored");
+			this.onUsageLimitChange(id, null);
 			this.send(ch("errored"), {
 				sessionId: id,
 				error: session.error,

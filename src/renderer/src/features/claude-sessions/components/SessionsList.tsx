@@ -14,6 +14,10 @@ import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { useSessionGroupsStore } from "../stores/useSessionGroupsStore";
 import { useSidequestsStore } from "../stores/useSidequestsStore";
 import { pushUndo, useUndoStore } from "../stores/useUndoStore";
+import {
+	formatResumeLabel,
+	useAutoResumeStore,
+} from "../stores/useAutoResumeStore";
 import { useLiveTasksStore } from "../stores/useLiveTasksStore";
 import { BackgroundTasksPill } from "./BackgroundTasksChip";
 import { ConfirmModal } from "../../../components/ConfirmModal";
@@ -1456,6 +1460,9 @@ function SessionRowSidebar({
 	onAddToGroup: () => void;
 	onRemoveFromGroup: () => void;
 }) {
+	const resumeAt = useAutoResumeStore(
+		(s) => s.resumeAtBySession[session.id],
+	);
 	const { summary, unread, status } = useRowDerived(
 		session,
 		pending,
@@ -1613,6 +1620,11 @@ function SessionRowSidebar({
 								status={status}
 								mode={session.mode}
 								pendingToolName={pending[0]?.toolName}
+								detail={
+									status === "usage_limit" && resumeAt
+										? formatResumeLabel(resumeAt)
+										: undefined
+								}
 								onClick={
 									status === "usage_limit"
 										? (e) => {

@@ -2,6 +2,7 @@ import { ipcMain } from "electron";
 import * as appSettings from "../core/store/app_settings";
 import type { BabysitConfig } from "../../shared/claude-sessions/babysit";
 import { broadcast } from "../windows";
+import { requestAuthorization } from "../sessions/wakeScheduler";
 
 export function registerSettingsHandlers(): void {
 	ipcMain.handle("settings:get", () => appSettings.get());
@@ -26,6 +27,7 @@ export function registerSettingsHandlers(): void {
 		async (e, payload: { config?: BabysitConfig }) => {
 			await appSettings.setDefaultBabysit(payload.config);
 			broadcast("state:changed", undefined, e.sender.id);
+			if (payload.config?.autoResume === true) void requestAuthorization();
 		},
 	);
 	ipcMain.handle(

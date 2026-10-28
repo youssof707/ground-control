@@ -39,3 +39,19 @@ export function update(info: SDKRateLimitInfo): void {
 export function snapshot(): RateLimitSnapshot {
 	return { ...state.byType };
 }
+
+export function toResetMs(resetsAt: number | undefined): number | undefined {
+	if (resetsAt === undefined || !Number.isFinite(resetsAt)) return undefined;
+	return resetsAt > 1e12 ? resetsAt : resetsAt * 1000;
+}
+
+export function latestRejectedResetMs(now = Date.now()): number | undefined {
+	let latest: number | undefined;
+	for (const info of Object.values(state.byType)) {
+		if (!info || info.status !== "rejected") continue;
+		const ms = toResetMs(info.resetsAt);
+		if (ms === undefined || ms <= now) continue;
+		if (latest === undefined || ms > latest) latest = ms;
+	}
+	return latest;
+}

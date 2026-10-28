@@ -1,10 +1,20 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import {
+	app,
+	BrowserWindow,
+	dialog,
+	ipcMain,
+	powerMonitor,
+	shell,
+} from "electron";
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 import { SessionManager } from "../sessions/SessionManager";
 import { PermissionBroker } from "../sessions/PermissionBroker";
 import { Babysitter } from "../sessions/Babysitter";
 import { KeepAwake } from "../sessions/KeepAwake";
+import { UsageLimitResumer } from "../sessions/UsageLimitResumer";
+import * as rateLimitTracker from "../sessions/RateLimitTracker";
+import { requestAuthorization } from "../sessions/wakeScheduler";
 import { NotificationManager } from "./notifications";
 import type {
 	SessionMode,
@@ -85,7 +95,23 @@ export function registerSessionsHandlers(): SessionManager {
 		),
 	);
 	app.on("will-quit", () => keepAwake.dispose());
-	const babysitter = new Babysitter(keepAwake.refresh);
+	const resumer = new UsageLimitResumer({
+		autoResume: (runtimeId) =>
+			babysitter.autoResume(
+				manager?.getSidequestParentId(runtimeId) ?? runtimeId,
+			),
+		status: (runtimeId) =>
+			manager?.getSession(runtimeId)?.status ??
+			sessionStore.getSession(runtimeId)?.status,
+		retry: (runtimeId) => manager.retryUsageLimit(runtimeId),
+		latestResetMs: () => rateLimitTracker.latestRejectedResetMs(),
+	});
+	powerMonitor.on("resume", resumer.reconcile);
+	app.on("will-quit", () => resumer.dispose());
+	const babysitter = new Babysitter((sessionId) => {
+		keepAwake.refresh();
+		resumer.refresh(sessionId, manager?.getSidequestId(sessionId));
+	});
 	const broker = new PermissionBroker(
 		notifications,
 		(sessionId) => manager?.getSession(sessionId)?.title,
@@ -114,6 +140,7 @@ export function registerSessionsHandlers(): SessionManager {
 			}
 		},
 		keepAwake.setBusy,
+		resumer.onChange,
 	);
 
 	registerReadHandlers();
@@ -289,6 +316,7 @@ export function registerSessionsHandlers(): SessionManager {
 	ipcMain.handle("sessions:list", () => sessionStore.listSessions());
 	ipcMain.handle("permissions:list", () => broker.listPending());
 	ipcMain.handle("babysit:list", () => babysitter.list());
+	ipcMain.handle("autoResume:list", () => resumer.list());
 	ipcMain.handle(
 		"babysit:set",
 		(
@@ -302,6 +330,7 @@ export function registerSessionsHandlers(): SessionManager {
 				throw new Error("Session not found");
 			}
 			const saved = babysitter.set(payload.sessionId, payload.config);
+			if (saved?.autoResume) void requestAuthorization();
 			// Answer whatever is already on screen under the new rules —
 			// in the main thread and its sidequest — rather than leaving it
 			// stranded until the user clicks it.

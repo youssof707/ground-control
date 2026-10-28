@@ -109,6 +109,7 @@ const claude = {
 	deleteNote: (id: string) => ipcRenderer.invoke("notes:delete", id),
 	listPermissions: () => ipcRenderer.invoke("permissions:list"),
 	listBabysit: () => ipcRenderer.invoke("babysit:list"),
+	listAutoResumes: () => ipcRenderer.invoke("autoResume:list"),
 	setBabysit: (sessionId: string, config: BabysitConfig | null) =>
 		ipcRenderer.invoke("babysit:set", { sessionId, config }),
 	getRateLimit: () => ipcRenderer.invoke("rateLimit:get"),

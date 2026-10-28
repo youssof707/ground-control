@@ -4,6 +4,10 @@ import { useSessionsStore } from "../../stores/useSessionsStore";
 import { useInterruptStore } from "../../stores/useInterruptStore";
 import { usePermissionsStore } from "../../stores/usePermissionsStore";
 import { useSidequestsStore } from "../../stores/useSidequestsStore";
+import {
+	formatResumeLabel,
+	useAutoResumeStore,
+} from "../../stores/useAutoResumeStore";
 import { groupMessagesIntoUnits } from "../../lib/groupMessages";
 import { lastForkableMessageId } from "../../lib/sidequestForkPoint";
 import {
@@ -45,6 +49,9 @@ export function SidequestPanel({
 	onClose: () => void;
 }) {
 	const sq = useSidequestsStore((s) => s.byParent[sessionId]);
+	const resumeAt = useAutoResumeStore((s) =>
+		sq ? s.resumeAtBySession[sq.sidequestId] : undefined,
+	);
 	const [clearing, setClearing] = useState(false);
 	const [forkingId, setForkingId] = useState<string | null>(null);
 	const [forkError, setForkError] = useState<string | null>(null);
@@ -311,6 +318,13 @@ export function SidequestPanel({
 							}
 							mode={sq.mode}
 							pendingToolName={pending[0]?.toolName}
+							detail={
+								pending.length === 0 &&
+								sq.status === "usage_limit" &&
+								resumeAt
+									? formatResumeLabel(resumeAt)
+									: undefined
+							}
 							onClick={
 								pending.length === 0 && sq.status === "usage_limit"
 									? () => {

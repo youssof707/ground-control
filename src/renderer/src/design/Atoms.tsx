@@ -72,6 +72,7 @@ export function StatusPill({
 	mode,
 	pendingToolName,
 	onClick,
+	detail,
 }: {
 	status: string;
 	/** When the session is "running" and in read-only Plan mode, the badge
@@ -91,6 +92,7 @@ export function StatusPill({
 	 * where clicking retries the turn a quota cutoff killed — every other
 	 * status stays non-interactive. */
 	onClick?: (e: React.MouseEvent) => void;
+	detail?: string;
 }) {
 	const map = STATUS_MAP[status] ?? STATUS_MAP.idle;
 	const label =
@@ -125,6 +127,9 @@ export function StatusPill({
 		letterSpacing: "0.1px",
 		whiteSpace: "nowrap",
 	};
+	const detailNode = detail ? (
+		<span style={{ opacity: 0.75 }}>{` · ${detail}`}</span>
+	) : null;
 	if (onClick) {
 		return (
 			<button
@@ -134,6 +139,7 @@ export function StatusPill({
 			>
 				{dot}
 				{label}
+				{detailNode}
 			</button>
 		);
 	}
@@ -141,6 +147,7 @@ export function StatusPill({
 		<div style={sharedStyle}>
 			{dot}
 			{label}
+			{detailNode}
 		</div>
 	);
 }

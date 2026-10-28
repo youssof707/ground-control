@@ -33,8 +33,8 @@ the single source of truth so shortcuts are easy to find.
   session open
 - `Cmd+Shift+B` — open the Babysitter modal for the active session, where
   Ground Control's auto-answers for that session's plan / permission /
-  question prompts are configured. No-op off a session route and on a draft
-  session
+  question prompts, keep-awake, and auto-resume after a usage limit are
+  configured. No-op off a session route and on a draft session
 - `Cmd+Enter` — inside the Babysitter modal, start/save (same as the primary
   button), even while typing in its text box. Plain `Enter` does the same
   when no text field has focus (a focused Cancel / Stop button keeps its
@@ -61,6 +61,14 @@ the single source of truth so shortcuts are easy to find.
   life-or-death (a non-obvious bug that *will* be reintroduced otherwise). Treat that as
   almost never.
 - Do not add comments to code you touch, and do not leave your own comments behind.
+
+## Privileged helpers
+
+The only `sudo` in the app is `pmset schedule wake` / `pmset schedule cancel wake`, run
+by `src/main/sessions/wakeScheduler.ts` through a one-time `/etc/sudoers.d/ground-control`
+rule it installs via a single macOS admin prompt. Never widen that rule or add other
+privileged commands. Always `execFile` with absolute binary paths and `sudo -n`, never a
+shell.
 
 ## Verification rules
 

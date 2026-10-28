@@ -6,6 +6,10 @@ import { useInterruptStore } from "../stores/useInterruptStore";
 import { useReadStore } from "../stores/useReadStore";
 import { isDraftId } from "../stores/useDraftSessionsStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
+import {
+	formatResumeLabel,
+	useAutoResumeStore,
+} from "../stores/useAutoResumeStore";
 import { stopSession } from "../lib/sessionControlActions";
 import { runHandoff } from "../lib/handoffActions";
 import { runForkAndDelete } from "../lib/forkActions";
@@ -43,6 +47,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	);
 	const queue = usePermissionsStore((s) => s.queue);
 	const pending = queue.filter((q) => q.sessionId === sessionId);
+	const resumeAt = useAutoResumeStore((s) => s.resumeAtBySession[sessionId]);
 	// Lives in a store, not local state, so the Stop pill and the global ⌘.
 	// hotkey share one in-flight guard — see `stopSession`.
 	const interrupting = useInterruptStore((s) => !!s.interrupting[sessionId]);
@@ -399,6 +404,11 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 						status={effectiveStatus}
 						mode={session.mode}
 						pendingToolName={pending[0]?.toolName}
+						detail={
+							effectiveStatus === "usage_limit" && resumeAt
+								? formatResumeLabel(resumeAt)
+								: undefined
+						}
 						onClick={
 							effectiveStatus === "usage_limit"
 								? () => {

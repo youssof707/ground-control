@@ -18,6 +18,7 @@ export interface BabysitDraft {
 	question: QuestionChoice;
 	questionMessage: string;
 	keepAwake: boolean;
+	autoResume: boolean;
 }
 
 export function draftFromConfig(
@@ -33,6 +34,7 @@ export function draftFromConfig(
 		questionMessage:
 			config?.question.action === "answer" ? config.question.message : "",
 		keepAwake: config?.keepAwake === true,
+		autoResume: config?.autoResume === true,
 	};
 }
 
@@ -49,6 +51,7 @@ export function configFromDraft(draft: BabysitDraft): BabysitConfig {
 				? { action: "answer", message: draft.questionMessage }
 				: { action: "none" },
 		keepAwake: draft.keepAwake,
+		autoResume: draft.autoResume,
 	});
 }
 
@@ -58,7 +61,7 @@ const GATE_OPTIONS = [
 	{ value: "deny", label: "Deny", tone: T.danger },
 ] as const;
 
-const KEEP_AWAKE_OPTIONS = [
+const TOGGLE_OPTIONS = [
 	{ value: "off", label: "Off", tone: T.text },
 	{ value: "on", label: "On", tone: T.babysit },
 ] as const;
@@ -174,8 +177,22 @@ export function BabysitRuleCards({
 					<Segmented
 						label="Keep awake"
 						value={draft.keepAwake ? "on" : "off"}
-						options={KEEP_AWAKE_OPTIONS}
+						options={TOGGLE_OPTIONS}
 						onChange={(v) => onChange((d) => ({ ...d, keepAwake: v === "on" }))}
+						disabled={disabled}
+					/>
+				}
+			/>
+
+			<RuleCard
+				title="Auto-resume"
+				armed={draft.autoResume}
+				control={
+					<Segmented
+						label="Auto-resume"
+						value={draft.autoResume ? "on" : "off"}
+						options={TOGGLE_OPTIONS}
+						onChange={(v) => onChange((d) => ({ ...d, autoResume: v === "on" }))}
 						disabled={disabled}
 					/>
 				}

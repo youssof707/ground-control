@@ -10,6 +10,7 @@ import type {
 } from "@shared/claude-sessions/types";
 import type { BabysitConfig } from "@shared/claude-sessions/babysit";
 import { useBabysitStore } from "../stores/useBabysitStore";
+import { useAutoResumeStore } from "../stores/useAutoResumeStore";
 import { useLiveTasksStore } from "../stores/useLiveTasksStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
@@ -50,6 +51,7 @@ export function useSessionsBootstrap() {
 			read: 0,
 			permissions: 0,
 			babysit: 0,
+			autoResume: 0,
 			settings: 0,
 			rateLimit: 0,
 			worktrees: 0,
@@ -121,6 +123,13 @@ export function useSessionsBootstrap() {
 			useRateLimitStore.getState().hydrate(snapshot);
 		}
 
+		async function refetchAutoResume(): Promise<void> {
+			const my = ++seq.autoResume;
+			const map = await window.claude.listAutoResumes();
+			if (my !== seq.autoResume) return;
+			useAutoResumeStore.getState().hydrate(map);
+		}
+
 		async function refetchWorktrees(): Promise<void> {
 			const my = ++seq.worktrees;
 			const list = await window.claude.listWorktrees();
@@ -163,6 +172,7 @@ export function useSessionsBootstrap() {
 			void refetchReadState();
 			void refetchPermissions();
 			void refetchBabysit();
+			void refetchAutoResume();
 			void refetchSettings();
 			void refetchRateLimit();
 			void refetchWorktrees();
@@ -327,6 +337,13 @@ export function useSessionsBootstrap() {
 					config: BabysitConfig | null;
 				};
 				useBabysitStore.getState().apply(sessionId, config);
+			}),
+			window.claude.on("autoResume:changed", (p) => {
+				const { sessionId, resumeAt } = p as {
+					sessionId: string;
+					resumeAt: number | null;
+				};
+				useAutoResumeStore.getState().apply(sessionId, resumeAt);
 			}),
 			// Push channel for the claude.ai subscription rate-limit meter.
 			// Main broadcasts the full snapshot every time the SDK emits a
