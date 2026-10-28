@@ -1,5 +1,4 @@
 import { useState } from "react";
-import type { SessionMode } from "@shared/claude-sessions/types";
 import {
 	DEFAULT_SCHEDULE_KEEP_LAST,
 	MAX_SCHEDULE_KEEP_LAST,
@@ -8,9 +7,15 @@ import {
 	type ScheduleKind,
 } from "@shared/schemas/schedules";
 import { T } from "../../../design/tokens";
-import { ModeToggle } from "../../../design/Atoms";
 import { LabeledInput } from "../../../design/FormControls";
-import { Segmented } from "./BabysitRules";
+import {
+	BabysitRuleCards,
+	Segmented,
+	configFromDraft,
+	draftFromConfig,
+	type BabysitCardKey,
+	type BabysitDraft,
+} from "./BabysitRules";
 import { useSettingsStore } from "../stores/useSettingsStore";
 import { folderName } from "../lib/folderName";
 import {
@@ -23,33 +28,35 @@ import {
 } from "../lib/scheduleFormat";
 
 const DEFAULT_DAILY_TIME = "09:00";
+const SCHEDULE_OMITTED_RULES: readonly BabysitCardKey[] = ["plan", "keepAwake"];
 
 export interface ScheduleDraft {
 	title: string;
 	prompt: string;
 	cwd: string;
-	mode: SessionMode;
 	kind: ScheduleKind["type"];
 	onceAt: string;
 	everyAmount: string;
 	everyUnit: "minutes" | "hours";
 	dailyTime: string;
 	keepLast: string;
+	babysit: BabysitDraft;
 }
 
 export function draftFromSchedule(s?: Schedule): ScheduleDraft {
+	const defaultBabysit = useSettingsStore.getState().defaultBabysit;
 	if (!s) {
 		return {
 			title: "",
 			prompt: "",
 			cwd: useSettingsStore.getState().lastUsedWorkspace ?? "",
-			mode: "acceptEdits",
 			kind: "repeat",
 			onceAt: toDatetimeLocalValue(Date.now() + HOUR_MS),
 			everyAmount: "30",
 			everyUnit: "minutes",
 			dailyTime: DEFAULT_DAILY_TIME,
 			keepLast: String(DEFAULT_SCHEDULE_KEEP_LAST),
+			babysit: draftFromConfig(defaultBabysit),
 		};
 	}
 	const kind = s.kind;
@@ -58,7 +65,6 @@ export function draftFromSchedule(s?: Schedule): ScheduleDraft {
 		title: s.title,
 		prompt: s.prompt,
 		cwd: s.cwd,
-		mode: s.mode,
 		kind: kind.type,
 		onceAt: toDatetimeLocalValue(
 			kind.type === "once" ? kind.at : Date.now() + HOUR_MS,
@@ -75,6 +81,7 @@ export function draftFromSchedule(s?: Schedule): ScheduleDraft {
 		dailyTime:
 			kind.type === "daily" ? toTimeValue(kind.minuteOfDay) : DEFAULT_DAILY_TIME,
 		keepLast: String(s.keepLast),
+		babysit: draftFromConfig(s.babysit ?? defaultBabysit),
 	};
 }
 
@@ -127,9 +134,9 @@ export function validateDraft(
 			title: title || undefined,
 			prompt,
 			cwd: d.cwd,
-			mode: d.mode,
 			kind,
 			keepLast,
+			babysit: configFromDraft(d.babysit),
 		},
 	};
 }
@@ -249,17 +256,6 @@ export function ScheduleFormFields({
 				/>
 			</div>
 
-			<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-				<span style={fieldLabelStyle}>Mode</span>
-				<div>
-					<ModeToggle
-						mode={value.mode}
-						onChange={(mode) => onChange({ ...value, mode })}
-						disabled={disabled}
-					/>
-				</div>
-			</div>
-
 			<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
 				<span style={fieldLabelStyle}>When</span>
 				<div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -349,6 +345,18 @@ export function ScheduleFormFields({
 						Older finished runs from this schedule are deleted automatically.
 					</span>
 				</div>
+			</div>
+
+			<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+				<span style={fieldLabelStyle}>Babysitter</span>
+				<BabysitRuleCards
+					draft={value.babysit}
+					onChange={(update) =>
+						onChange({ ...value, babysit: update(value.babysit) })
+					}
+					disabled={disabled}
+					omit={SCHEDULE_OMITTED_RULES}
+				/>
 			</div>
 		</div>
 	);

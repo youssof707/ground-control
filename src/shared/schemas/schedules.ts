@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SessionModeSchema } from "./claude_session";
+import { BabysitConfigSchema } from "./app_settings";
 
 export const MIN_SCHEDULE_INTERVAL_MS = 60_000;
 export const DEFAULT_SCHEDULE_KEEP_LAST = 20;
@@ -46,9 +46,9 @@ export const ScheduleSchema = z.object({
 	title: z.string().catch(""),
 	prompt: z.string(),
 	cwd: z.string(),
-	mode: SessionModeSchema.catch("acceptEdits"),
 	model: z.string().optional(),
 	kind: ScheduleKindSchema,
+	babysit: BabysitConfigSchema.optional().catch(undefined),
 	keepLast: KeepLastSchema.catch(DEFAULT_SCHEDULE_KEEP_LAST),
 	enabled: z.boolean().catch(true),
 	createdAt: z.number(),
@@ -69,9 +69,9 @@ export const CreateScheduleInputSchema = z.object({
 	title: z.string().optional(),
 	prompt: z.string().min(1),
 	cwd: z.string().min(1),
-	mode: SessionModeSchema.optional(),
 	model: z.string().optional(),
 	kind: ScheduleKindSchema,
+	babysit: BabysitConfigSchema.optional(),
 	keepLast: KeepLastSchema.optional(),
 });
 export type CreateScheduleInput = z.infer<typeof CreateScheduleInputSchema>;

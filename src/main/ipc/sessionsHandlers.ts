@@ -125,8 +125,13 @@ export function registerSessionsHandlers(): SessionManager {
 		broker,
 		(sessionId, origin) => {
 			const { autoBabysitNewSessions, defaultBabysit } = appSettings.get();
-			if (!defaultBabysit) return;
-			if (origin.scheduleId || autoBabysitNewSessions) {
+			if (origin.scheduleId) {
+				const scheduled =
+					schedulesStore.get(origin.scheduleId)?.babysit ?? defaultBabysit;
+				if (scheduled) babysitter.set(sessionId, scheduled);
+				return;
+			}
+			if (defaultBabysit && autoBabysitNewSessions) {
 				babysitter.set(sessionId, defaultBabysit);
 			}
 		},

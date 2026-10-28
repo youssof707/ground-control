@@ -71,14 +71,18 @@ const QUESTION_OPTIONS = [
 	{ value: "answer", label: "Answer", tone: T.babysit },
 ] as const;
 
+export type BabysitCardKey = BabysitRuleKind | "keepAwake" | "autoResume";
+
 export function BabysitRuleCards({
 	draft,
 	onChange,
 	disabled,
+	omit = [],
 }: {
 	draft: BabysitDraft;
 	onChange: (update: (draft: BabysitDraft) => BabysitDraft) => void;
 	disabled?: boolean;
+	omit?: readonly BabysitCardKey[];
 }) {
 	const [justSwitched, setJustSwitched] = useState<BabysitRuleKind | null>(
 		null,
@@ -91,112 +95,122 @@ export function BabysitRuleCards({
 
 	return (
 		<div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-			<RuleCard
-				title="Plan mode"
-				armed={draft.plan !== "none"}
-				control={
-					<Segmented
-						label="Plan mode"
-						value={draft.plan}
-						options={GATE_OPTIONS}
-						onChange={(v) => choose("plan", v)}
-						disabled={disabled}
-					/>
-				}
-			>
-				{draft.plan === "deny" ? (
-					<MessageField
-						ariaLabel="Plan deny message"
-						value={draft.planMessage}
-						onChange={(planMessage) => onChange((d) => ({ ...d, planMessage }))}
-						placeholder="Deny Message (optional)"
-						autoFocus={justSwitched === "plan"}
-						disabled={disabled}
-					/>
-				) : null}
-			</RuleCard>
+			{omit.includes("plan") ? null : (
+				<RuleCard
+					title="Plan mode"
+					armed={draft.plan !== "none"}
+					control={
+						<Segmented
+							label="Plan mode"
+							value={draft.plan}
+							options={GATE_OPTIONS}
+							onChange={(v) => choose("plan", v)}
+							disabled={disabled}
+						/>
+					}
+				>
+					{draft.plan === "deny" ? (
+						<MessageField
+							ariaLabel="Plan deny message"
+							value={draft.planMessage}
+							onChange={(planMessage) => onChange((d) => ({ ...d, planMessage }))}
+							placeholder="Deny Message (optional)"
+							autoFocus={justSwitched === "plan"}
+							disabled={disabled}
+						/>
+					) : null}
+				</RuleCard>
+			)}
 
-			<RuleCard
-				title="Permission requests"
-				armed={draft.permission !== "none"}
-				control={
-					<Segmented
-						label="Permission requests"
-						value={draft.permission}
-						options={GATE_OPTIONS}
-						onChange={(v) => choose("permission", v)}
-						disabled={disabled}
-					/>
-				}
-			>
-				{draft.permission === "deny" ? (
-					<MessageField
-						ariaLabel="Permission deny message"
-						value={draft.permissionMessage}
-						onChange={(permissionMessage) =>
-							onChange((d) => ({ ...d, permissionMessage }))
-						}
-						placeholder="Deny Message (optional)"
-						autoFocus={justSwitched === "permission"}
-						disabled={disabled}
-					/>
-				) : null}
-			</RuleCard>
+			{omit.includes("permission") ? null : (
+				<RuleCard
+					title="Permission requests"
+					armed={draft.permission !== "none"}
+					control={
+						<Segmented
+							label="Permission requests"
+							value={draft.permission}
+							options={GATE_OPTIONS}
+							onChange={(v) => choose("permission", v)}
+							disabled={disabled}
+						/>
+					}
+				>
+					{draft.permission === "deny" ? (
+						<MessageField
+							ariaLabel="Permission deny message"
+							value={draft.permissionMessage}
+							onChange={(permissionMessage) =>
+								onChange((d) => ({ ...d, permissionMessage }))
+							}
+							placeholder="Deny Message (optional)"
+							autoFocus={justSwitched === "permission"}
+							disabled={disabled}
+						/>
+					) : null}
+				</RuleCard>
+			)}
 
-			<RuleCard
-				title="Questions"
-				armed={draft.question !== "none"}
-				control={
-					<Segmented
-						label="Questions"
-						value={draft.question}
-						options={QUESTION_OPTIONS}
-						onChange={(v) => choose("question", v)}
-						disabled={disabled}
-					/>
-				}
-			>
-				{draft.question === "answer" ? (
-					<MessageField
-						ariaLabel="Answer sent to every question"
-						value={draft.questionMessage}
-						onChange={(questionMessage) =>
-							onChange((d) => ({ ...d, questionMessage }))
-						}
-						placeholder="I'm not here. Use your best judgement and keep going."
-						autoFocus={justSwitched === "question"}
-						disabled={disabled}
-					/>
-				) : null}
-			</RuleCard>
+			{omit.includes("question") ? null : (
+				<RuleCard
+					title="Questions"
+					armed={draft.question !== "none"}
+					control={
+						<Segmented
+							label="Questions"
+							value={draft.question}
+							options={QUESTION_OPTIONS}
+							onChange={(v) => choose("question", v)}
+							disabled={disabled}
+						/>
+					}
+				>
+					{draft.question === "answer" ? (
+						<MessageField
+							ariaLabel="Answer sent to every question"
+							value={draft.questionMessage}
+							onChange={(questionMessage) =>
+								onChange((d) => ({ ...d, questionMessage }))
+							}
+							placeholder="I'm not here. Use your best judgement and keep going."
+							autoFocus={justSwitched === "question"}
+							disabled={disabled}
+						/>
+					) : null}
+				</RuleCard>
+			)}
 
-			<RuleCard
-				title="Keep awake"
-				armed={draft.keepAwake}
-				control={
-					<Segmented
-						label="Keep awake"
-						value={draft.keepAwake ? "on" : "off"}
-						options={TOGGLE_OPTIONS}
-						onChange={(v) => onChange((d) => ({ ...d, keepAwake: v === "on" }))}
-						disabled={disabled}
-					/>
-				}
-			/>
+			{omit.includes("keepAwake") ? null : (
+				<RuleCard
+					title="Keep awake"
+					armed={draft.keepAwake}
+					control={
+						<Segmented
+							label="Keep awake"
+							value={draft.keepAwake ? "on" : "off"}
+							options={TOGGLE_OPTIONS}
+							onChange={(v) => onChange((d) => ({ ...d, keepAwake: v === "on" }))}
+							disabled={disabled}
+						/>
+					}
+				/>
+			)}
 
-			<RuleCard
-				title="Auto-resume"
-				armed={draft.autoResume}
-				control={
-					<Segmented
-						label="Auto-resume"
-						value={draft.autoResume ? "on" : "off"}
-						options={TOGGLE_OPTIONS}
-						onChange={(v) => onChange((d) => ({ ...d, autoResume: v === "on" }))}
-						disabled={disabled}
-					/>
-				}
-			/>
+			{omit.includes("autoResume") ? null : (
+				<RuleCard
+					title="Auto-resume"
+					armed={draft.autoResume}
+					control={
+						<Segmented
+							label="Auto-resume"
+							value={draft.autoResume ? "on" : "off"}
+							options={TOGGLE_OPTIONS}
+							onChange={(v) => onChange((d) => ({ ...d, autoResume: v === "on" }))}
+							disabled={disabled}
+						/>
+					}
+				/>
+			)}
 		</div>
 	);
 }

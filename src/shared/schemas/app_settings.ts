@@ -31,7 +31,7 @@ const BabysitQuestionRuleSchema = z.discriminatedUnion("action", [
 	z.object({ action: z.literal("answer"), message: z.string() }),
 ]);
 
-const BabysitConfigSchema = z.object({
+export const BabysitConfigSchema = z.object({
 	plan: BabysitGateRuleSchema,
 	permission: BabysitGateRuleSchema,
 	question: BabysitQuestionRuleSchema,

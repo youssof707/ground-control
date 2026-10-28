@@ -734,7 +734,7 @@ export class SessionManager {
 				title: label || deriveTitle(schedule.prompt),
 				titleLocked: label.length > 0,
 				cwd: schedule.cwd,
-				mode: schedule.mode,
+				mode: "acceptEdits",
 				model,
 			},
 			{ scheduleId: schedule.id },
