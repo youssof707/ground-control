@@ -31,6 +31,12 @@ import * as windows from "../windows";
 export class Babysitter {
 	private configs = new Map<string, BabysitConfig>();
 
+	constructor(private onChange: () => void = () => {}) {}
+
+	keepAwake(sessionId: string): boolean {
+		return this.configs.get(sessionId)?.keepAwake === true;
+	}
+
 	/**
 	 * Start, update or stop babysitting. `null` — or a config where every
 	 * rule is "do nothing" — stops it. Returns what was stored.
@@ -46,12 +52,14 @@ export class Babysitter {
 		// payloads for tombstoned session ids, and `clear` below must still
 		// reach the renderer for a session that is mid-delete.
 		windows.broadcast("babysit:changed", { sessionId, config: next });
+		this.onChange();
 		return next;
 	}
 
 	clear(sessionId: string): void {
 		if (!this.configs.delete(sessionId)) return;
 		windows.broadcast("babysit:changed", { sessionId, config: null });
+		this.onChange();
 	}
 
 	list(): Record<string, BabysitConfig> {

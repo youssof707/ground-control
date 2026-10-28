@@ -35,6 +35,7 @@ const BabysitConfigSchema = z.object({
 	plan: BabysitGateRuleSchema,
 	permission: BabysitGateRuleSchema,
 	question: BabysitQuestionRuleSchema,
+	keepAwake: z.boolean().catch(false),
 });
 
 export const AppSettingsFileSchema = z.object({

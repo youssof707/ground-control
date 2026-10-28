@@ -1,9 +1,10 @@
-import { BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 import { SessionManager } from "../sessions/SessionManager";
 import { PermissionBroker } from "../sessions/PermissionBroker";
 import { Babysitter } from "../sessions/Babysitter";
+import { KeepAwake } from "../sessions/KeepAwake";
 import { NotificationManager } from "./notifications";
 import type {
 	SessionMode,
@@ -78,7 +79,13 @@ export function registerSessionsHandlers(): SessionManager {
 	let manager: SessionManager;
 	// Babysit mode: per-session rules for answering prompts while the user is
 	// away. In memory only — nothing here is ever written to disk.
-	const babysitter = new Babysitter();
+	const keepAwake = new KeepAwake((runtimeId) =>
+		babysitter.keepAwake(
+			manager?.getSidequestParentId(runtimeId) ?? runtimeId,
+		),
+	);
+	app.on("will-quit", () => keepAwake.dispose());
+	const babysitter = new Babysitter(keepAwake.refresh);
 	const broker = new PermissionBroker(
 		notifications,
 		(sessionId) => manager?.getSession(sessionId)?.title,
@@ -98,12 +105,16 @@ export function registerSessionsHandlers(): SessionManager {
 					manager?.getSidequestParentId(args.sessionId) ?? args.sessionId,
 			}),
 	);
-	manager = new SessionManager(broker, (sessionId) => {
-		const { autoBabysitNewSessions, defaultBabysit } = appSettings.get();
-		if (autoBabysitNewSessions && defaultBabysit) {
-			babysitter.set(sessionId, defaultBabysit);
-		}
-	});
+	manager = new SessionManager(
+		broker,
+		(sessionId) => {
+			const { autoBabysitNewSessions, defaultBabysit } = appSettings.get();
+			if (autoBabysitNewSessions && defaultBabysit) {
+				babysitter.set(sessionId, defaultBabysit);
+			}
+		},
+		keepAwake.setBusy,
+	);
 
 	registerReadHandlers();
 	registerSettingsHandlers();

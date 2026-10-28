@@ -17,6 +17,7 @@ export interface BabysitDraft {
 	permissionMessage: string;
 	question: QuestionChoice;
 	questionMessage: string;
+	keepAwake: boolean;
 }
 
 export function draftFromConfig(
@@ -31,6 +32,7 @@ export function draftFromConfig(
 		question: config?.question.action ?? "none",
 		questionMessage:
 			config?.question.action === "answer" ? config.question.message : "",
+		keepAwake: config?.keepAwake === true,
 	};
 }
 
@@ -46,6 +48,7 @@ export function configFromDraft(draft: BabysitDraft): BabysitConfig {
 			draft.question === "answer"
 				? { action: "answer", message: draft.questionMessage }
 				: { action: "none" },
+		keepAwake: draft.keepAwake,
 	});
 }
 
@@ -53,6 +56,11 @@ const GATE_OPTIONS = [
 	{ value: "none", label: "Do nothing", tone: T.text },
 	{ value: "approve", label: "Approve", tone: T.ok },
 	{ value: "deny", label: "Deny", tone: T.danger },
+] as const;
+
+const KEEP_AWAKE_OPTIONS = [
+	{ value: "off", label: "Off", tone: T.text },
+	{ value: "on", label: "On", tone: T.babysit },
 ] as const;
 
 const QUESTION_OPTIONS = [
@@ -158,6 +166,20 @@ export function BabysitRuleCards({
 					/>
 				) : null}
 			</RuleCard>
+
+			<RuleCard
+				title="Keep awake"
+				armed={draft.keepAwake}
+				control={
+					<Segmented
+						label="Keep awake"
+						value={draft.keepAwake ? "on" : "off"}
+						options={KEEP_AWAKE_OPTIONS}
+						onChange={(v) => onChange((d) => ({ ...d, keepAwake: v === "on" }))}
+						disabled={disabled}
+					/>
+				}
+			/>
 		</div>
 	);
 }

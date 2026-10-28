@@ -553,6 +553,7 @@ export class SessionManager {
 	constructor(
 		private broker: PermissionBroker,
 		private onSessionCreated: (sessionId: string) => void,
+		private onBusyChange: (runtimeId: string, busy: boolean) => void = () => {},
 	) {}
 
 	/**
@@ -1468,6 +1469,7 @@ export class SessionManager {
 			onChange: () => {
 				syncStatus();
 				syncTasks();
+				syncBusy();
 			},
 		});
 
@@ -1530,12 +1532,24 @@ export class SessionManager {
 			// hardStop cleared the task sets; tell the chip so it disappears
 			// with the same interrupt that killed the tasks.
 			syncTasks();
+			syncBusy();
 		};
+
+		let lastBusy = false;
+		const syncBusy = () => {
+			const busy =
+				session.status === "running" || activity.liveTasks.length > 0;
+			if (busy === lastBusy) return;
+			lastBusy = busy;
+			this.onBusyChange(id, busy);
+		};
+		syncBusy();
 
 		const pushTurnWithStatus = (blocks: UserContentBlock[]) => {
 			pushTurn(blocks);
 			activity.noteUserTurn();
 			syncStatus();
+			syncBusy();
 		};
 
 		// When the turn currently being served was handed to the SDK. Read by
@@ -2096,6 +2110,10 @@ export class SessionManager {
 			// closed out.
 			if (lastTasksJson !== "[]") {
 				this.send(ch("tasks"), { sessionId: id, tasks: [] });
+			}
+			if (lastBusy) {
+				lastBusy = false;
+				this.onBusyChange(id, false);
 			}
 			state.finished = true;
 			state.waitForTurn?.();

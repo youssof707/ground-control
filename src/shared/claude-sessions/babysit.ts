@@ -30,14 +30,16 @@ export interface BabysitConfig {
 	permission: BabysitGateRule;
 	/** `AskUserQuestion` — the same answer goes to every question asked. */
 	question: BabysitQuestionRule;
+	keepAwake: boolean;
 }
 
-export type BabysitRuleKind = keyof BabysitConfig;
+export type BabysitRuleKind = "plan" | "permission" | "question";
 
 export const EMPTY_BABYSIT_CONFIG: BabysitConfig = {
 	plan: { action: "none" },
 	permission: { action: "none" },
 	question: { action: "none" },
+	keepAwake: false,
 };
 
 /**
@@ -69,7 +71,8 @@ export function isBabysitArmed(config: BabysitConfig): boolean {
 	return (
 		config.plan.action !== "none" ||
 		config.permission.action !== "none" ||
-		config.question.action !== "none"
+		config.question.action !== "none" ||
+		config.keepAwake
 	);
 }
 
@@ -104,5 +107,6 @@ export function normalizeBabysitConfig(
 		plan: normalizeGateRule(config?.plan),
 		permission: normalizeGateRule(config?.permission),
 		question: answer ? { action: "answer", message: answer } : { action: "none" },
+		keepAwake: config?.keepAwake === true,
 	};
 }
