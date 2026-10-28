@@ -7,6 +7,7 @@ export interface TabSpec<K extends string> {
 	accent?: string;
 	indicator?: boolean;
 	indicatorSoft?: string;
+	badge?: React.ReactNode;
 }
 
 export function TabStrip<K extends string>({
@@ -43,6 +44,7 @@ export function TabStrip<K extends string>({
 					accent={t.accent ?? T.text}
 					indicator={t.indicator}
 					indicatorSoft={t.indicatorSoft}
+					badge={t.badge}
 					onClick={() => onChange(t.id)}
 				/>
 			))}
@@ -58,6 +60,7 @@ function Tab({
 	onClick,
 	indicator,
 	indicatorSoft,
+	badge,
 }: {
 	id: string;
 	label: string;
@@ -66,6 +69,7 @@ function Tab({
 	onClick: () => void;
 	indicator?: boolean;
 	indicatorSoft?: string;
+	badge?: React.ReactNode;
 }) {
 	const [hover, setHover] = useState(false);
 	return (
@@ -95,6 +99,7 @@ function Tab({
 			}}
 		>
 			{label}
+			{badge}
 			{indicator ? (
 				<span
 					aria-hidden

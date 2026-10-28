@@ -4,12 +4,14 @@ export function SchedulerButton({
 	armed,
 	running,
 	waiting,
+	unread,
 	open,
 	onClick,
 }: {
 	armed: number;
 	running: number;
 	waiting: number;
+	unread: number;
 	open: boolean;
 	onClick: () => void;
 }) {
@@ -56,12 +58,15 @@ export function SchedulerButton({
 				{waiting > 0 ? (
 					<CountPill n={waiting} fg={T.warn} bg={T.warnSoft} />
 				) : null}
+				{unread > 0 ? (
+					<CountPill n={unread} fg={T.accent} bg={T.accentSoft} />
+				) : null}
 			</span>
 		</button>
 	);
 }
 
-function CountPill({ n, fg, bg }: { n: number; fg: string; bg: string }) {
+export function CountPill({ n, fg, bg }: { n: number; fg: string; bg: string }) {
 	return (
 		<span
 			style={{

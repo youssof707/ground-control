@@ -16,6 +16,7 @@ interface State {
 	hydrate: (map: Record<string, number>) => void;
 	markRead: (sessionId: string, ts?: number) => void;
 	markUnread: (sessionId: string) => void;
+	markAllRead: (sessionIds: readonly string[]) => void;
 }
 
 export const useReadStore = create<State>((set) => ({
@@ -44,6 +45,17 @@ export const useReadStore = create<State>((set) => ({
 			void window.claude?.markUnread(sessionId);
 			const next = { ...s.lastReadAt };
 			delete next[sessionId];
+			return { lastReadAt: next };
+		}),
+	markAllRead: (sessionIds) =>
+		set((s) => {
+			const ts = Date.now();
+			const next = { ...s.lastReadAt };
+			for (const id of sessionIds) {
+				if ((next[id] ?? 0) >= ts) continue;
+				next[id] = ts;
+				void window.claude?.markRead(id, ts);
+			}
 			return { lastReadAt: next };
 		}),
 }));

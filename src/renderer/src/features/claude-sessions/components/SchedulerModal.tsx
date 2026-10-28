@@ -16,6 +16,9 @@ import {
 	type ScheduleDraft,
 } from "./ScheduleForm";
 import { SchedulesPanel } from "./SchedulesPanel";
+import { CountPill } from "./SchedulerButton";
+import { useScheduledUnreadIds } from "../hooks/useScheduledUnreadIds";
+import { useReadStore } from "../stores/useReadStore";
 import { ScheduledSessionsPanel } from "./ScheduledSessionsPanel";
 
 const NOW_TICK_MS = 30_000;
@@ -59,6 +62,8 @@ function SchedulerDialog({
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const now = useNowTick(NOW_TICK_MS);
+	const unreadIds = useScheduledUnreadIds();
+	const markAllRead = useReadStore((s) => s.markAllRead);
 	const navigate = useNavigate();
 	const openCreate = () => {
 		setDraft(draftFromSchedule());
@@ -169,7 +174,18 @@ function SchedulerDialog({
 						onChange={setTab}
 						tabs={[
 							{ id: "schedules", label: "Schedules" },
-							{ id: "sessions", label: "Logs" },
+							{
+								id: "sessions",
+								label: "Logs",
+								badge:
+									unreadIds.length > 0 ? (
+										<CountPill
+											n={unreadIds.length}
+											fg={T.accent}
+											bg={T.accentSoft}
+										/>
+									) : null,
+							},
 						]}
 					/>
 				) : (
@@ -235,7 +251,16 @@ function SchedulerDialog({
 								>
 									New schedule
 								</button>
-							) : null}
+							) : (
+								<button
+									className="btn"
+									onClick={() => markAllRead(unreadIds)}
+									disabled={unreadIds.length === 0}
+									style={{ marginRight: "auto" }}
+								>
+									Mark all as read
+								</button>
+							)}
 							<button className="btn" onClick={onClose}>
 								Done
 							</button>

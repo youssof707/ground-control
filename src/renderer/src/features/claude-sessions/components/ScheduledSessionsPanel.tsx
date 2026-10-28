@@ -7,6 +7,8 @@ import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useSchedulesStore } from "../stores/useSchedulesStore";
 import { isScheduledSession } from "../lib/scheduledSessions";
+import { isSessionUnread } from "../lib/unread";
+import { useReadStore } from "../stores/useReadStore";
 import { deleteSessionWithUndo } from "../lib/deleteSessionActions";
 import { formatMessageTime } from "../lib/messageTime";
 import { BabysitBadge } from "./BabysitBadge";
@@ -106,6 +108,9 @@ function ScheduledSessionRow({
 		s.queue.find((q) => q.sessionId === session.id),
 	);
 	const status = pending ? "awaiting_permission" : session.status;
+	const unread = useReadStore((s) =>
+		isSessionUnread(session, s.lastReadAt[session.id] ?? 0),
+	);
 
 	const remove = async () => {
 		await deleteSessionWithUndo(session.id);
@@ -155,13 +160,34 @@ function ScheduledSessionRow({
 			>
 				<span
 					style={{
-						fontWeight: 600,
-						overflow: "hidden",
-						textOverflow: "ellipsis",
-						whiteSpace: "nowrap",
+						display: "flex",
+						alignItems: "center",
+						gap: 8,
+						minWidth: 0,
 					}}
 				>
-					{session.title || "Untitled"}
+					{unread ? (
+						<span
+							aria-label="Unread"
+							style={{
+								width: 7,
+								height: 7,
+								borderRadius: "50%",
+								background: T.accent,
+								flexShrink: 0,
+							}}
+						/>
+					) : null}
+					<span
+						style={{
+							fontWeight: 600,
+							overflow: "hidden",
+							textOverflow: "ellipsis",
+							whiteSpace: "nowrap",
+						}}
+					>
+						{session.title || "Untitled"}
+					</span>
 				</span>
 				<span
 					style={{

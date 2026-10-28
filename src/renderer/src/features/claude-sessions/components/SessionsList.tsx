@@ -37,6 +37,7 @@ import { RenameGroupModal } from "./RenameGroupModal";
 import { SettingsModal } from "./SettingsModal";
 import { useSettingsModalStore } from "../stores/useSettingsModalStore";
 import { SchedulerButton } from "./SchedulerButton";
+import { useScheduledUnreadIds } from "../hooks/useScheduledUnreadIds";
 import { SchedulerModal } from "./SchedulerModal";
 import { useSchedulerModalStore } from "../stores/useSchedulerModalStore";
 import { useSchedulesStore } from "../stores/useSchedulesStore";
@@ -236,6 +237,7 @@ export function SessionsList({
 		[sortedOrder, sessions],
 	);
 
+	const scheduledUnreadIds = useScheduledUnreadIds();
 	const schedulerCounts = useMemo(() => {
 		const armed = Object.values(schedules).filter(
 			(s) => s.enabled && s.nextFireAt !== undefined,
@@ -1011,6 +1013,7 @@ export function SessionsList({
 						armed={schedulerCounts.armed}
 						running={schedulerCounts.running}
 						waiting={schedulerCounts.waiting}
+						unread={scheduledUnreadIds.length}
 						open={schedulerOpen}
 						onClick={() =>
 							useSchedulerModalStore.getState().open("schedules")
