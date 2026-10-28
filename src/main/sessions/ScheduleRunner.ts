@@ -6,6 +6,7 @@ import {
 } from "../../shared/schemas/schedules";
 import * as windows from "../windows";
 import * as wakeScheduler from "./wakeScheduler";
+import { RESUME_GRACE_MS } from "./UsageLimitResumer";
 
 const WAKE_LEAD_MS = 60_000;
 const POST_WAKE_GRACE_MS = 15_000;
@@ -18,6 +19,7 @@ export interface ScheduleRunnerDeps {
 	update: (id: string, patch: SchedulePatch) => Promise<Schedule | null>;
 	startScheduledSession: (schedule: Schedule) => Promise<ClaudeSession>;
 	isSessionBusy: (sessionId: string) => boolean;
+	usageLimitResetsAt: () => number | undefined;
 	listSessionsForSchedule: (scheduleId: string) => ClaudeSession[];
 	deleteSession: (sessionId: string) => Promise<void>;
 	directoryExists: (path: string) => Promise<boolean>;
@@ -143,12 +145,25 @@ export class ScheduleRunner {
 			const next =
 				s.kind.type === "once" ? undefined : nextFireAfter(s.kind, now);
 
+			const limitResetsAt = this.deps.usageLimitResetsAt();
+			if (limitResetsAt !== undefined) {
+				await this.rearm(id, limitResetsAt + RESUME_GRACE_MS, {
+					lastSkippedAt: now,
+					lastSkipReason: "usageLimit",
+				});
+				console.log(`[schedule] ${id} deferred: usage limit until reset`);
+				return;
+			}
+
 			if (
 				next !== undefined &&
 				s.lastSessionId &&
 				this.deps.isSessionBusy(s.lastSessionId)
 			) {
-				await this.rearm(id, next, { lastSkippedAt: now });
+				await this.rearm(id, next, {
+					lastSkippedAt: now,
+					lastSkipReason: "busy",
+				});
 				console.log(`[schedule] ${id} skipped: previous run still busy`);
 				return;
 			}

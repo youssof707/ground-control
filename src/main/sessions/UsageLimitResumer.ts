@@ -3,7 +3,7 @@ import * as windows from "../windows";
 import type { UsageLimitHit } from "./SessionManager";
 import * as wakeScheduler from "./wakeScheduler";
 
-const RESUME_GRACE_MS = 3 * 60_000;
+export const RESUME_GRACE_MS = 3 * 60_000;
 const UNKNOWN_RETRY_MS = 30 * 60_000;
 const WAKE_LEAD_MS = 60_000;
 const POST_WAKE_GRACE_MS = 15_000;
@@ -93,6 +93,10 @@ export class UsageLimitResumer {
 			this.arm(entry, Math.max(entry.resumeAt - now, POST_WAKE_GRACE_MS));
 		}
 	};
+
+	isPending(runtimeId: string): boolean {
+		return this.pending.has(runtimeId);
+	}
 
 	list(): Record<string, number> {
 		const out: Record<string, number> = {};

@@ -39,6 +39,9 @@ export function nextFireAfter(
 	return atMinuteOfDay(tomorrow, kind.minuteOfDay).getTime();
 }
 
+export const ScheduleSkipReasonSchema = z.enum(["busy", "usageLimit"]);
+export type ScheduleSkipReason = z.infer<typeof ScheduleSkipReasonSchema>;
+
 const KeepLastSchema = z.number().int().min(1).max(MAX_SCHEDULE_KEEP_LAST);
 
 export const ScheduleSchema = z.object({
@@ -56,6 +59,7 @@ export const ScheduleSchema = z.object({
 	lastFiredAt: z.number().optional(),
 	lastSessionId: z.string().optional(),
 	lastSkippedAt: z.number().optional(),
+	lastSkipReason: ScheduleSkipReasonSchema.optional().catch(undefined),
 	lastError: z.string().optional(),
 });
 export type Schedule = z.infer<typeof ScheduleSchema>;

@@ -177,12 +177,18 @@ function ScheduleRow({
 					<span style={{ fontSize: 11, color: T.danger }}>
 						{error ?? schedule.lastError}
 					</span>
-				) : schedule.lastFiredAt ? (
+				) : schedule.lastFiredAt || schedule.lastSkippedAt ? (
 					<span style={{ fontSize: 11, color: T.textMute }}>
-						Last run {formatMessageTime(schedule.lastFiredAt)}
+						{schedule.lastFiredAt
+							? `Last run ${formatMessageTime(schedule.lastFiredAt)}`
+							: "Not run yet"}
 						{schedule.lastSkippedAt &&
-						schedule.lastSkippedAt > schedule.lastFiredAt
-							? ` · skipped ${formatMessageTime(schedule.lastSkippedAt)} (still running)`
+						schedule.lastSkippedAt > (schedule.lastFiredAt ?? 0)
+							? ` · skipped ${formatMessageTime(schedule.lastSkippedAt)} (${
+								schedule.lastSkipReason === "usageLimit"
+									? "usage limit"
+									: "still running"
+							})`
 							: ""}
 						{lastSession ? (
 							<>

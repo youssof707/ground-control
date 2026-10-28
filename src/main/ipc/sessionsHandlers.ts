@@ -148,6 +148,12 @@ export function registerSessionsHandlers(): SessionManager {
 			return true;
 		}
 		if (broker.hasPendingFor(id)) return true;
+		if (
+			resumer.isPending(id) &&
+			(live?.status ?? sessionStore.getSession(id)?.status) === "usage_limit"
+		) {
+			return true;
+		}
 		const sidequestId = manager.getSidequestId(id);
 		return !!sidequestId && broker.hasPendingFor(sidequestId);
 	};
@@ -161,6 +167,7 @@ export function registerSessionsHandlers(): SessionManager {
 				schedule.model ?? appSettings.get().defaultModel,
 			),
 		isSessionBusy,
+		usageLimitResetsAt: () => rateLimitTracker.latestRejectedResetMs(),
 		listSessionsForSchedule: (scheduleId) =>
 			sessionStore
 				.listSessions()
