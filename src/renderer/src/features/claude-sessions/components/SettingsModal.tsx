@@ -18,6 +18,8 @@ import {
 } from "./BabysitRules";
 import { ModelPickerModal } from "./ModelPickerModal";
 import { McpServersPanel } from "./McpServersPanel";
+import { DeveloperPanel } from "./DeveloperPanel";
+import { Section } from "./SettingsSection";
 import {
 	useSettingsModalStore,
 	type SettingsTab,
@@ -102,10 +104,7 @@ function SettingsDialog({
 
 	const backdropProps = useBackdropDismiss(onClose);
 
-	const modelLabel = defaultModel
-		? formatModelName(defaultModel) +
-			(parseModelIdentity(defaultModel)?.oneM ? " · 1M context" : "")
-		: "Default";
+	const modelLabel = modelButtonLabel(defaultModel);
 
 	return (
 		<>
@@ -141,10 +140,9 @@ function SettingsDialog({
 								id: "babysitter",
 								label: "Babysitter",
 								accent: T.babysit,
-								indicator: autoStart,
-								indicatorSoft: T.babysitSoft,
 							},
 							{ id: "mcp", label: "MCP servers" },
+							{ id: "developer", label: "Developer" },
 						]}
 					/>
 
@@ -166,6 +164,8 @@ function SettingsDialog({
 							/>
 						) : tab === "mcp" ? (
 							<McpServersPanel initialCwd={initialMcpCwd} />
+						) : tab === "developer" ? (
+							<DeveloperPanel />
 						) : (
 							<BabysitterPanel
 								draft={babysitDraft}
@@ -368,7 +368,14 @@ function BabysitterPanel({
 	);
 }
 
-function ModelPickerButton({
+export function modelButtonLabel(model: string | undefined): string {
+	return model
+		? formatModelName(model) +
+				(parseModelIdentity(model)?.oneM ? " · 1M context" : "")
+		: "Default";
+}
+
+export function ModelPickerButton({
 	label,
 	onClick,
 }: {
@@ -459,32 +466,6 @@ function VisibilityRow({
 				options={VISIBILITY_OPTIONS}
 				onChange={(value) => onChange(value === "shown")}
 			/>
-		</div>
-	);
-}
-
-function Section({
-	title,
-	children,
-}: {
-	title: string;
-	children: React.ReactNode;
-}) {
-	return (
-		<div style={{ marginBottom: 16 }}>
-			<div
-				style={{
-					fontSize: 10.5,
-					fontWeight: 600,
-					letterSpacing: 0.6,
-					textTransform: "uppercase",
-					color: T.textMute,
-					marginBottom: 8,
-				}}
-			>
-				{title}
-			</div>
-			{children}
 		</div>
 	);
 }

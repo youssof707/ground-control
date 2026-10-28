@@ -17,6 +17,7 @@ import {
 	type BabysitDraft,
 } from "./BabysitRules";
 import { useSettingsStore } from "../stores/useSettingsStore";
+import { ModelPickerButton, modelButtonLabel } from "./SettingsModal";
 import { folderName } from "../lib/folderName";
 import {
 	HOUR_MS,
@@ -41,6 +42,7 @@ export interface ScheduleDraft {
 	dailyTime: string;
 	keepLast: string;
 	babysit: BabysitDraft;
+	model: string | undefined;
 }
 
 export function draftFromSchedule(s?: Schedule): ScheduleDraft {
@@ -57,6 +59,7 @@ export function draftFromSchedule(s?: Schedule): ScheduleDraft {
 			dailyTime: DEFAULT_DAILY_TIME,
 			keepLast: String(DEFAULT_SCHEDULE_KEEP_LAST),
 			babysit: draftFromConfig(defaultBabysit),
+			model: useSettingsStore.getState().defaultModel,
 		};
 	}
 	const kind = s.kind;
@@ -82,6 +85,7 @@ export function draftFromSchedule(s?: Schedule): ScheduleDraft {
 			kind.type === "daily" ? toTimeValue(kind.minuteOfDay) : DEFAULT_DAILY_TIME,
 		keepLast: String(s.keepLast),
 		babysit: draftFromConfig(s.babysit ?? defaultBabysit),
+		model: s.model,
 	};
 }
 
@@ -137,6 +141,7 @@ export function validateDraft(
 			kind,
 			keepLast,
 			babysit: configFromDraft(d.babysit),
+			model: d.model,
 		},
 	};
 }
@@ -199,10 +204,12 @@ function blockNativePicker(e: React.KeyboardEvent<HTMLInputElement>) {
 export function ScheduleFormFields({
 	value,
 	onChange,
+	onPickModel,
 	disabled,
 }: {
 	value: ScheduleDraft;
 	onChange: (next: ScheduleDraft) => void;
+	onPickModel: () => void;
 	disabled?: boolean;
 }) {
 	const pickFolder = async () => {
@@ -253,6 +260,14 @@ export function ScheduleFormFields({
 					chosen={value.cwd.length > 0}
 					disabled={disabled}
 					onClick={() => void pickFolder()}
+				/>
+			</div>
+
+			<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+				<span style={fieldLabelStyle}>Model</span>
+				<ModelPickerButton
+					label={modelButtonLabel(value.model)}
+					onClick={onPickModel}
 				/>
 			</div>
 

@@ -156,6 +156,11 @@ const claude = {
 	openSkillsFolder: () => ipcRenderer.invoke("skills:openFolder"),
 	getAppInfo: () => ipcRenderer.invoke("appInfo:get"),
 	toggleDevTools: () => ipcRenderer.invoke("devtools:toggle"),
+	readActivityLog: () => ipcRenderer.invoke("activityLog:read"),
+	clearActivityLog: () => ipcRenderer.invoke("activityLog:clear"),
+	revealActivityLog: () => ipcRenderer.invoke("activityLog:reveal"),
+	readPmsetSchedule: () => ipcRenderer.invoke("activityLog:pmsetSched"),
+	listCaffeinate: () => ipcRenderer.invoke("activityLog:caffeinate"),
 	checkForUpdate: () => ipcRenderer.invoke("updater:check"),
 	installUpdate: (downloadUrl: string) =>
 		ipcRenderer.invoke("updater:install", downloadUrl),

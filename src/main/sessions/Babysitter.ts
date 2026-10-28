@@ -8,6 +8,7 @@ import {
 	type BabysitConfig,
 } from "../../shared/claude-sessions/babysit";
 import * as windows from "../windows";
+import { logActivity } from "../activityLog";
 
 /**
  * Owner of babysit mode: which sessions are being babysat, with what rules,
@@ -51,7 +52,9 @@ export class Babysitter {
 			this.clear(sessionId);
 			return null;
 		}
+		const verb = this.configs.has(sessionId) ? "updated" : "started";
 		this.configs.set(sessionId, next);
+		logActivity("babysitter", `${verb} for ${sessionId}: ${summarizeConfig(next)}`);
 		// `windows.broadcast`, not `SessionManager.send`: the latter drops
 		// payloads for tombstoned session ids, and `clear` below must still
 		// reach the renderer for a session that is mid-delete.
@@ -62,6 +65,7 @@ export class Babysitter {
 
 	clear(sessionId: string): void {
 		if (!this.configs.delete(sessionId)) return;
+		logActivity("babysitter", `stopped for ${sessionId}`);
 		windows.broadcast("babysit:changed", { sessionId, config: null });
 		this.onChange(sessionId);
 	}
@@ -112,6 +116,14 @@ export class Babysitter {
 		}
 		return null;
 	}
+}
+
+function summarizeConfig(config: BabysitConfig): string {
+	const flags = [
+		`keepAwake=${config.keepAwake ? "on" : "off"}`,
+		`autoResume=${config.autoResume ? "on" : "off"}`,
+	];
+	return flags.join(" ");
 }
 
 /**

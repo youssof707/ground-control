@@ -9,6 +9,10 @@ import type {
 } from "../shared/schemas/claude_session";
 import type { DeletedSessionSnapshot } from "../shared/claude-sessions/undo";
 import type { BabysitConfig } from "../shared/claude-sessions/babysit";
+import type {
+	ActivityLogSnapshot,
+	CaffeinateProcess,
+} from "../shared/activityLog";
 import type { LiveBackgroundTask } from "../shared/claude-sessions/types";
 import type { ReadStateFile } from "../shared/schemas/read_state";
 import type { AppSettingsFile } from "../shared/schemas/app_settings";
@@ -174,6 +178,11 @@ declare global {
 				storeFolder: string;
 			}>;
 			toggleDevTools: () => Promise<void>;
+			readActivityLog: () => Promise<ActivityLogSnapshot>;
+			clearActivityLog: () => Promise<void>;
+			revealActivityLog: () => Promise<void>;
+			readPmsetSchedule: () => Promise<string | null>;
+			listCaffeinate: () => Promise<CaffeinateProcess[]>;
 			checkForUpdate: () => Promise<{
 				available: boolean;
 				currentVersion: string;

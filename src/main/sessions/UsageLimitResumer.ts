@@ -2,6 +2,7 @@ import type { SessionStatus } from "../../shared/claude-sessions/types";
 import * as windows from "../windows";
 import type { UsageLimitHit } from "./SessionManager";
 import * as wakeScheduler from "./wakeScheduler";
+import { describeError, logActivity } from "../activityLog";
 
 export const RESUME_GRACE_MS = 3 * 60_000;
 const UNKNOWN_RETRY_MS = 30 * 60_000;
@@ -56,8 +57,9 @@ export class UsageLimitResumer {
 			if (this.pending.get(runtimeId) === entry) entry.wakeKey = key;
 			else if (key) void wakeScheduler.cancelWake(key);
 		});
-		console.log(
-			`[auto-resume] ${runtimeId} resumes at ${new Date(resumeAt).toISOString()}`,
+		logActivity(
+			"auto-resume",
+			`${runtimeId} hit usage limit${resetsAt === undefined ? " (reset unknown)" : ` resetting ${new Date(resetsAt).toISOString()}`}, resumes at ${new Date(resumeAt).toISOString()}`,
 		);
 		windows.broadcast("autoResume:changed", { sessionId: runtimeId, resumeAt });
 	}
@@ -79,6 +81,7 @@ export class UsageLimitResumer {
 		const entry = this.pending.get(runtimeId);
 		if (!entry) return;
 		this.pending.delete(runtimeId);
+		logActivity("auto-resume", `${runtimeId} cancelled`);
 		if (entry.timer) clearTimeout(entry.timer);
 		if (entry.wakeKey) void wakeScheduler.cancelWake(entry.wakeKey);
 		windows.broadcast("autoResume:changed", {
@@ -89,6 +92,9 @@ export class UsageLimitResumer {
 
 	reconcile = (): void => {
 		const now = this.now();
+		if (this.pending.size > 0) {
+			logActivity("auto-resume", `re-arming ${this.pending.size} pending resumes after wake`);
+		}
 		for (const entry of this.pending.values()) {
 			this.arm(entry, Math.max(entry.resumeAt - now, POST_WAKE_GRACE_MS));
 		}
@@ -140,13 +146,14 @@ export class UsageLimitResumer {
 	private fire(entry: PendingResume): void {
 		const id = entry.runtimeId;
 		if (this.deps.status(id) !== "usage_limit") {
+			logActivity("auto-resume", `${id} no longer at usage limit, nothing to resume`);
 			this.cancel(id);
 			return;
 		}
 		entry.attempts++;
-		console.log(`[auto-resume] ${id} retrying (attempt ${entry.attempts})`);
+		logActivity("auto-resume", `${id} retrying (attempt ${entry.attempts})`);
 		this.deps.retry(id).catch((err) => {
-			console.error(`[auto-resume] ${id} retry failed:`, err);
+			logActivity("auto-resume", `${id} retry failed: ${describeError(err)}`);
 			this.cancel(id);
 		});
 	}

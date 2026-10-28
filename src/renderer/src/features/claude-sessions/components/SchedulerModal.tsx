@@ -17,6 +17,7 @@ import {
 } from "./ScheduleForm";
 import { SchedulesPanel } from "./SchedulesPanel";
 import { CountPill } from "./SchedulerButton";
+import { ModelPickerModal } from "./ModelPickerModal";
 import { useScheduledUnreadIds } from "../hooks/useScheduledUnreadIds";
 import { useReadStore } from "../stores/useReadStore";
 import { ScheduledSessionsPanel } from "./ScheduledSessionsPanel";
@@ -60,6 +61,9 @@ function SchedulerDialog({
 	const [view, setView] = useState<View>({ kind: "list" });
 	const [draft, setDraft] = useState<ScheduleDraft>(() => draftFromSchedule());
 	const [busy, setBusy] = useState(false);
+	const [modelPickerOpen, setModelPickerOpen] = useState(false);
+	const modelPickerOpenRef = useRef(false);
+	modelPickerOpenRef.current = modelPickerOpen;
 	const [error, setError] = useState<string | null>(null);
 	const now = useNowTick(NOW_TICK_MS);
 	const unreadIds = useScheduledUnreadIds();
@@ -118,6 +122,7 @@ function SchedulerDialog({
 
 	useEffect(() => {
 		const handler = (e: KeyboardEvent) => {
+			if (modelPickerOpenRef.current) return;
 			if (e.key === "Escape") {
 				e.preventDefault();
 				e.stopPropagation();
@@ -135,7 +140,9 @@ function SchedulerDialog({
 		return () => window.removeEventListener("keydown", handler, true);
 	}, []);
 
-	const backdropProps = useBackdropDismiss(busy ? undefined : onClose);
+	const backdropProps = useBackdropDismiss(
+		busy || modelPickerOpen ? undefined : onClose,
+	);
 
 	const title =
 		view.kind === "list"
@@ -145,39 +152,40 @@ function SchedulerDialog({
 				: "Edit schedule";
 
 	return (
-		<div className="modal-backdrop" {...backdropProps}>
-			<div
-				className="modal-card"
-				role="dialog"
-				aria-modal="true"
-				aria-labelledby="scheduler-title"
-				style={{
-					width: "min(560px, calc(100vw - 32px))",
-					height: "min(640px, calc(91vh - 24px))",
-					alignSelf: "flex-start",
-					marginTop: "9vh",
-					display: "flex",
-					flexDirection: "column",
-					overflow: "hidden",
-					boxSizing: "border-box",
-				}}
-			>
-				<h2 id="scheduler-title" className="modal-title" style={{ margin: 0 }}>
-					{title}
-				</h2>
+		<>
+			<div className="modal-backdrop" {...backdropProps}>
+				<div
+					className="modal-card"
+					role="dialog"
+					aria-modal="true"
+					aria-labelledby="scheduler-title"
+					style={{
+						width: "min(560px, calc(100vw - 32px))",
+						height: "min(640px, calc(91vh - 24px))",
+						alignSelf: "flex-start",
+						marginTop: "9vh",
+						display: "flex",
+						flexDirection: "column",
+						overflow: "hidden",
+						boxSizing: "border-box",
+					}}
+				>
+					<h2 id="scheduler-title" className="modal-title" style={{ margin: 0 }}>
+						{title}
+					</h2>
 
-				{view.kind === "list" ? (
-					<TabStrip
-						idPrefix="scheduler"
-						ariaLabel="Scheduler sections"
-						value={tab}
-						onChange={setTab}
-						tabs={[
-							{ id: "schedules", label: "Schedules" },
-							{
-								id: "sessions",
-								label: "Logs",
-								badge:
+					{view.kind === "list" ? (
+						<TabStrip
+							idPrefix="scheduler"
+							ariaLabel="Scheduler sections"
+							value={tab}
+							onChange={setTab}
+							tabs={[
+								{ id: "schedules", label: "Schedules" },
+								{
+									id: "sessions",
+									label: "Logs",
+									badge:
 									unreadIds.length > 0 ? (
 										<CountPill
 											n={unreadIds.length}
@@ -185,108 +193,118 @@ function SchedulerDialog({
 											bg={T.accentSoft}
 										/>
 									) : null,
-							},
-						]}
-					/>
-				) : (
-					<div
-						style={{
-							margin: "14px -22px 0",
-							borderBottom: `0.5px solid ${T.border}`,
-						}}
-					/>
-				)}
-
-				<div
-					role={view.kind === "list" ? "tabpanel" : undefined}
-					aria-labelledby={
-						view.kind === "list" ? `scheduler-tab-${tab}` : undefined
-					}
-					style={{
-						flex: 1,
-						minHeight: 0,
-						overflowY: "auto",
-						margin: "0 -22px",
-						padding: "18px 22px 4px",
-					}}
-				>
-					{view.kind !== "list" ? (
-						<ScheduleFormFields
-							value={draft}
-							onChange={setDraft}
-							disabled={busy}
-						/>
-					) : tab === "schedules" ? (
-						<SchedulesPanel
-							now={now}
-							onEdit={openEdit}
-							onOpenSession={openSession}
+								},
+							]}
 						/>
 					) : (
-						<ScheduledSessionsPanel onOpenSession={openSession} />
+						<div
+							style={{
+								margin: "14px -22px 0",
+								borderBottom: `0.5px solid ${T.border}`,
+							}}
+						/>
 					)}
-				</div>
 
-				{error ? (
-					<div className="modal-error" style={{ marginTop: 10 }}>
-						{error}
+					<div
+						role={view.kind === "list" ? "tabpanel" : undefined}
+						aria-labelledby={
+							view.kind === "list" ? `scheduler-tab-${tab}` : undefined
+						}
+						style={{
+							flex: 1,
+							minHeight: 0,
+							overflowY: "auto",
+							margin: "0 -22px",
+							padding: "18px 22px 4px",
+						}}
+					>
+						{view.kind !== "list" ? (
+							<ScheduleFormFields
+								value={draft}
+								onChange={setDraft}
+								onPickModel={() => setModelPickerOpen(true)}
+								disabled={busy}
+							/>
+						) : tab === "schedules" ? (
+							<SchedulesPanel
+								now={now}
+								onEdit={openEdit}
+								onOpenSession={openSession}
+							/>
+						) : (
+							<ScheduledSessionsPanel onOpenSession={openSession} />
+						)}
 					</div>
-				) : null}
 
-				<div
-					className="modal-actions"
-					style={{
-						margin: "0 -22px",
-						padding: "14px 22px 0",
-						borderTop: `0.5px solid ${T.borderSoft}`,
-					}}
-				>
-					{view.kind === "list" ? (
-						<>
-							{tab === "schedules" ? (
+					{error ? (
+						<div className="modal-error" style={{ marginTop: 10 }}>
+							{error}
+						</div>
+					) : null}
+
+					<div
+						className="modal-actions"
+						style={{
+							margin: "0 -22px",
+							padding: "14px 22px 0",
+							borderTop: `0.5px solid ${T.borderSoft}`,
+						}}
+					>
+						{view.kind === "list" ? (
+							<>
+								{tab === "schedules" ? (
+									<button
+										className="btn btn-primary"
+										onClick={openCreate}
+										style={{ marginRight: "auto" }}
+									>
+										New schedule
+									</button>
+								) : (
+									<button
+										className="btn"
+										onClick={() => markAllRead(unreadIds)}
+										disabled={unreadIds.length === 0}
+										style={{ marginRight: "auto" }}
+									>
+										Mark all as read
+									</button>
+								)}
+								<button className="btn" onClick={onClose}>
+									Done
+								</button>
+							</>
+						) : (
+							<>
+								<button className="btn" onClick={backToList} disabled={busy}>
+									Cancel
+								</button>
 								<button
 									className="btn btn-primary"
-									onClick={openCreate}
-									style={{ marginRight: "auto" }}
+									onClick={() => void save()}
+									disabled={!canSave}
 								>
-									New schedule
+									{busy ? (
+										<span className="asyncy-btn-spinner" aria-hidden />
+									) : view.kind === "create" ? (
+										"Create"
+									) : (
+										"Save"
+									)}
 								</button>
-							) : (
-								<button
-									className="btn"
-									onClick={() => markAllRead(unreadIds)}
-									disabled={unreadIds.length === 0}
-									style={{ marginRight: "auto" }}
-								>
-									Mark all as read
-								</button>
-							)}
-							<button className="btn" onClick={onClose}>
-								Done
-							</button>
-						</>
-					) : (
-						<>
-							<button className="btn" onClick={backToList} disabled={busy}>
-								Cancel
-							</button>
-							<button
-								className="btn btn-primary"
-								onClick={() => void save()}
-								disabled={!canSave}
-							>
-								{busy ? (
-									<span className="asyncy-btn-spinner" aria-hidden />
-								) : view.kind === "create" ? (
-									"Create"
-								) : (
-									"Save"
-								)}
-							</button>
-						</>
-					)}
+							</>
+						)}
+					</div>
 				</div>
 			</div>
-		</div>
+			<ModelPickerModal
+				open={modelPickerOpen}
+				effectiveModel={draft.model}
+				subtitle="Used for every run of this schedule."
+				focusComposerAfterSelect={false}
+				onSelect={(model) => setDraft((d) => ({ ...d, model }))}
+				onClose={() => setModelPickerOpen(false)}
+			/>
+		</>
 	);
 }

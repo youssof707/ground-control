@@ -7,6 +7,7 @@ import {
 import * as windows from "../windows";
 import * as wakeScheduler from "./wakeScheduler";
 import { RESUME_GRACE_MS } from "./UsageLimitResumer";
+import { describeError, logActivity } from "../activityLog";
 
 const WAKE_LEAD_MS = 60_000;
 const POST_WAKE_GRACE_MS = 15_000;
@@ -78,6 +79,9 @@ export class ScheduleRunner {
 
 	reconcile = (): void => {
 		const now = this.now();
+		if (this.armed.size > 0) {
+			logActivity("schedule", `re-arming ${this.armed.size} schedules after wake`);
+		}
 		for (const entry of this.armed.values()) {
 			this.arm(entry, Math.max(entry.fireAt - now, POST_WAKE_GRACE_MS));
 		}
@@ -107,15 +111,21 @@ export class ScheduleRunner {
 			if (this.armed.get(id) === entry) entry.wakeKey = key;
 			else if (key) void wakeScheduler.cancelWake(key);
 		});
-		console.log(`[schedule] ${id} armed for ${new Date(fireAt).toISOString()}`);
+		logActivity("schedule", `${this.label(id)} armed for ${new Date(fireAt).toISOString()}`);
 	}
 
 	private disarm(id: string): void {
 		const entry = this.armed.get(id);
 		if (!entry) return;
 		this.armed.delete(id);
+		logActivity("schedule", `${this.label(id)} disarmed`);
 		if (entry.timer) clearTimeout(entry.timer);
 		if (entry.wakeKey) void wakeScheduler.cancelWake(entry.wakeKey);
+	}
+
+	private label(id: string): string {
+		const title = this.deps.get(id)?.title;
+		return title ? `${id} "${title}"` : id;
 	}
 
 	private arm(entry: ArmedSchedule, delayMs: number): void {
@@ -140,6 +150,7 @@ export class ScheduleRunner {
 		const s = this.deps.get(id);
 		if (!s || !s.enabled || this.firing.has(id)) return;
 		this.firing.add(id);
+		logActivity("schedule", `${this.label(id)} firing`);
 		try {
 			const now = this.now();
 			const next =
@@ -151,7 +162,10 @@ export class ScheduleRunner {
 					lastSkippedAt: now,
 					lastSkipReason: "usageLimit",
 				});
-				console.log(`[schedule] ${id} deferred: usage limit until reset`);
+				logActivity(
+					"schedule",
+					`${this.label(id)} deferred: usage limit until ${new Date(limitResetsAt).toISOString()}`,
+				);
 				return;
 			}
 
@@ -164,13 +178,14 @@ export class ScheduleRunner {
 					lastSkippedAt: now,
 					lastSkipReason: "busy",
 				});
-				console.log(`[schedule] ${id} skipped: previous run still busy`);
+				logActivity("schedule", `${this.label(id)} skipped: previous run ${s.lastSessionId} still busy`);
 				return;
 			}
 
 			const exists = await this.deps.directoryExists(s.cwd);
 			if (!this.deps.get(id)?.enabled) return;
 			if (!exists) {
+				logActivity("schedule", `${this.label(id)} disabled: folder "${s.cwd}" no longer exists`);
 				await this.deps.update(id, {
 					enabled: false,
 					nextFireAt: undefined,
@@ -219,10 +234,10 @@ export class ScheduleRunner {
 			const session = await this.deps.startScheduledSession(schedule);
 			await this.deps.update(schedule.id, { lastSessionId: session.id });
 			await this.prune(schedule, session.id);
-			console.log(`[schedule] ${schedule.id} started session ${session.id}`);
+			logActivity("schedule", `${this.label(schedule.id)} started session ${session.id}`);
 			return session;
 		} catch (err) {
-			console.error(`[schedule] ${schedule.id} spawn failed:`, err);
+			logActivity("schedule", `${this.label(schedule.id)} spawn failed: ${describeError(err)}`);
 			await this.deps.update(schedule.id, { lastError: String(err) });
 			throw err;
 		}
@@ -237,8 +252,9 @@ export class ScheduleRunner {
 			if (!isFinished(s) || this.deps.isSessionBusy(s.id)) continue;
 			try {
 				await this.deps.deleteSession(s.id);
+				logActivity("schedule", `${this.label(schedule.id)} pruned old session ${s.id}`);
 			} catch (err) {
-				console.error(`[schedule] prune of ${s.id} failed:`, err);
+				logActivity("schedule", `${this.label(schedule.id)} prune of ${s.id} failed: ${describeError(err)}`);
 			}
 		}
 	}
