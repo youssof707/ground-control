@@ -19,6 +19,8 @@ import { useSettingsStore } from "../stores/useSettingsStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { useSessionGroupsStore } from "../stores/useSessionGroupsStore";
 import { useShortcutsStore } from "../stores/useShortcutsStore";
+import { useSchedulesStore } from "../stores/useSchedulesStore";
+import type { Schedule } from "@shared/schemas/schedules";
 import { useSkillsStore } from "../stores/useSkillsStore";
 import { useSidequestsStore } from "../stores/useSidequestsStore";
 import {
@@ -57,6 +59,7 @@ export function useSessionsBootstrap() {
 			worktrees: 0,
 			groups: 0,
 			shortcuts: 0,
+			schedules: 0,
 			skills: 0,
 		};
 
@@ -151,6 +154,13 @@ export function useSessionsBootstrap() {
 			useShortcutsStore.getState().hydrate(list);
 		}
 
+		async function refetchSchedules(): Promise<void> {
+			const my = ++seq.schedules;
+			const list = await window.claude.listSchedules();
+			if (my !== seq.schedules) return;
+			useSchedulesStore.getState().hydrate(list);
+		}
+
 		async function refetchSkills(): Promise<void> {
 			const my = ++seq.skills;
 			// Unlike the store-backed domains this reads the user's
@@ -178,6 +188,7 @@ export function useSessionsBootstrap() {
 			void refetchWorktrees();
 			void refetchGroups();
 			void refetchShortcuts();
+			void refetchSchedules();
 			void refetchSkills();
 		}
 
@@ -185,6 +196,9 @@ export function useSessionsBootstrap() {
 		// any event arriving between now and when refetchAll's IPC calls
 		// resolve is captured. enqueue/upsert dedupe handles overlap.
 		const offs = [
+			window.claude.on("schedules:changed", (p) => {
+				useSchedulesStore.getState().hydrate(p as Schedule[]);
+			}),
 			window.claude.on("session:started", (p) => {
 				upsertSession(p as ClaudeSession);
 			}),

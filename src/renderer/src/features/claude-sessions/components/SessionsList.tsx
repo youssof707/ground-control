@@ -13,7 +13,7 @@ import { useDraftStore } from "../stores/useDraftStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { useSessionGroupsStore } from "../stores/useSessionGroupsStore";
 import { useSidequestsStore } from "../stores/useSidequestsStore";
-import { pushUndo, useUndoStore } from "../stores/useUndoStore";
+import { useUndoStore } from "../stores/useUndoStore";
 import {
 	formatResumeLabel,
 	useAutoResumeStore,
@@ -36,7 +36,13 @@ import { useBabysitStore } from "../stores/useBabysitStore";
 import { RenameGroupModal } from "./RenameGroupModal";
 import { SettingsModal } from "./SettingsModal";
 import { useSettingsModalStore } from "../stores/useSettingsModalStore";
-import { useWorkspaces } from "../hooks/useWorkspaces";
+import { SchedulerButton } from "./SchedulerButton";
+import { SchedulerModal } from "./SchedulerModal";
+import { useSchedulerModalStore } from "../stores/useSchedulerModalStore";
+import { useSchedulesStore } from "../stores/useSchedulesStore";
+import { isScheduledSession } from "../lib/scheduledSessions";
+import { deleteSessionWithUndo } from "../lib/deleteSessionActions";
+import { folderName } from "../lib/folderName";
 import { ShortcutsMenuButton } from "./ShortcutsMenu";
 import { T } from "../../../design/tokens";
 import { StatusPill } from "../../../design/Atoms";
@@ -89,7 +95,6 @@ export function SessionsList({
 } = {}) {
 	const sessions = useSessionsStore((s) => s.sessions);
 	const order = useSessionsStore((s) => s.order);
-	const removeSession = useSessionsStore((s) => s.removeSession);
 	const queue = usePermissionsStore((s) => s.queue);
 	const navigate = useNavigate();
 	const [startError, setStartError] = useState<string | null>(null);
@@ -116,7 +121,8 @@ export function SessionsList({
 		string | null
 	>(null);
 	const groups = useSessionGroupsStore((s) => s.groups);
-	const [workspaceFilter, setWorkspaceFilter] = useState<string[]>([]);
+	const schedules = useSchedulesStore((s) => s.byId);
+	const schedulerOpen = useSchedulerModalStore((s) => s.openTab !== null);
 	// Read-only settings modal, opened from the view-options dropdown.
 	// "Recently deleted" list, also opened from the view-options dropdown —
 	// the durable surface for undo once the toast has expired.
@@ -221,36 +227,30 @@ export function SessionsList({
 	// session, which the derivation from `sessions` did not.
 	const lastUsedCwd = useSettingsStore((s) => s.lastUsedWorkspace);
 
-	const workspaces = useWorkspaces();
+	const visibleOrder = useMemo(
+		() =>
+			sortedOrder.filter((id) => {
+				const s = sessions[id];
+				return !!s && !isScheduledSession(s);
+			}),
+		[sortedOrder, sessions],
+	);
 
-	// Whether to render the filter/view-options row under the New Session
-	// button. `undoEntries.length` counts because that row holds the kebab,
-	// which is the ONLY way to reach "Recently deleted" — without it a fresh
-	// install (no workspaces) would hide the kebab and strand the undo
-	// buffer behind a hotkey nobody can discover.
-	const showFilterRow = workspaces.length > 0 || undoEntries.length > 0;
-
-	// Prune selected workspaces that no longer have any sessions (e.g. last
-	// session in that workspace was deleted). Empty array means "All", so it's
-	// fine to land there.
-	useEffect(() => {
-		if (workspaceFilter.length === 0) return;
-		const valid = workspaceFilter.filter((w) => workspaces.includes(w));
-		if (valid.length !== workspaceFilter.length) setWorkspaceFilter(valid);
-	}, [workspaces, workspaceFilter]);
-
-	const visibleOrder = useMemo(() => {
-		const allowed =
-			workspaceFilter.length > 0 ? new Set(workspaceFilter) : null;
-		return sortedOrder.filter((id) => {
+	const schedulerCounts = useMemo(() => {
+		const armed = Object.values(schedules).filter(
+			(s) => s.enabled && s.nextFireAt !== undefined,
+		).length;
+		const running = order.filter((id) => {
 			const s = sessions[id];
-			if (!s) return false;
-			if (allowed) {
-				if (s.cwd == null || !allowed.has(s.cwd)) return false;
-			}
-			return true;
-		});
-	}, [sortedOrder, sessions, workspaceFilter]);
+			return isScheduledSession(s) && s?.status === "running";
+		}).length;
+		const waiting = new Set(
+			queue
+				.filter((q) => isScheduledSession(sessions[q.sessionId]))
+				.map((q) => q.sessionId),
+		).size;
+		return { armed, running, waiting };
+	}, [schedules, order, sessions, queue]);
 
 	// Partition the visible rows into "ungrouped" (rendered first, bucketed
 	// by cwd — or by worktree for worktree-bound sessions — under subtle
@@ -342,12 +342,7 @@ export function SessionsList({
 			};
 		}, [visibleOrder, sessions, groups, worktrees]);
 
-	// New-session target cwd: only use the filter when exactly one workspace is
-	// selected (ambiguous otherwise). Otherwise fall back to last-used cwd.
-	const targetCwd =
-		workspaceFilter.length === 1
-			? workspaceFilter[0]
-			: lastUsedCwd ?? null;
+	const targetCwd = lastUsedCwd ?? null;
 
 	// Single-slot draft (the UI-only session that exists before the first
 	// message). Both New Session affordances short-circuit to navigate into
@@ -375,14 +370,6 @@ export function SessionsList({
 			worktreeId,
 			groupId,
 		});
-		// Make sure the new draft is actually visible. If the user has narrowed
-		// the workspace filter and the draft cwd isn't in it, the draft row
-		// would render but the future real session would be hidden after send.
-		// Adding cwd up-front matches the old startWith() behavior so the row
-		// transition is seamless.
-		setWorkspaceFilter((prev) =>
-			prev.length === 0 || prev.includes(cwd) ? prev : [...prev, cwd],
-		);
 		navigate(`/sessions/${d.id}`);
 	};
 
@@ -394,13 +381,7 @@ export function SessionsList({
 	// `createDraftAndNavigate` does inline.
 	const start = async () => {
 		setStartError(null);
-		await startNewSessionDraft(navigate, {
-			targetCwd,
-			onWorkspaceRevealed: (cwd) =>
-				setWorkspaceFilter((prev) =>
-					prev.length === 0 || prev.includes(cwd) ? prev : [...prev, cwd],
-				),
-		});
+		await startNewSessionDraft(navigate, { targetCwd });
 	};
 
 	// Per-bucket New Session. Unlike `start`, the target folder is explicit,
@@ -569,24 +550,12 @@ export function SessionsList({
 	// reveal, and clearing the sidebar's own error banner.
 	const startFromShortcut = (sc: Shortcut) => {
 		setStartError(null);
-		return startSessionFromShortcut(sc, navigate, {
-			targetCwd,
-			onWorkspaceRevealed: (cwd) =>
-				setWorkspaceFilter((prev) =>
-					prev.length === 0 || prev.includes(cwd) ? prev : [...prev, cwd],
-				),
-		});
+		return startSessionFromShortcut(sc, navigate, { targetCwd });
 	};
 
 	const startFromSkill = (skill: Skill) => {
 		setStartError(null);
-		return startSessionFromSkill(skill, navigate, {
-			targetCwd,
-			onWorkspaceRevealed: (cwd) =>
-				setWorkspaceFilter((prev) =>
-					prev.length === 0 || prev.includes(cwd) ? prev : [...prev, cwd],
-				),
-		});
+		return startSessionFromSkill(skill, navigate, { targetCwd });
 	};
 
 	const discardDraft = (id: string) => {
@@ -662,10 +631,6 @@ export function SessionsList({
 		viaModal: boolean,
 	) => {
 		if (deleting) return;
-		// Everything below reads from the store, which this delete is about to
-		// invalidate — capture first. After `removeSession` runs, the session
-		// dereferences to undefined and we lose the title and the worktree id.
-		const deletedTitle = sessions[targetId]?.title ?? "session";
 		const wasActive = targetId === activeSessionId;
 		const cascadeWorktreeId = cascadeWorktree
 			? lastOnWorktreeId(targetId)
@@ -676,24 +641,7 @@ export function SessionsList({
 		setDeleting(true);
 		setDeleteError(null);
 		try {
-			const snapshot = await window.claude.deleteSession(targetId);
-			removeSession(targetId);
-			usePermissionsStore.getState().removeBySessionId(targetId);
-			// Buffer the undo. `cascadeWorktreeId` is the honest signal for
-			// `worktreeDeleted`: the checkout only dies when the user ticked
-			// the box AND this was its last session, which is exactly the
-			// condition that computed it. Restore uses the flag to drop the
-			// worktree binding rather than hand back a chip pointing at a
-			// directory that a recursive `fs.rm` already removed.
-			if (snapshot) {
-				pushUndo({
-					kind: "delete",
-					sessionId: targetId,
-					title: deletedTitle,
-					snapshot,
-					worktreeDeleted: !!cascadeWorktreeId,
-				});
-			}
+			await deleteSessionWithUndo(targetId, !!cascadeWorktreeId);
 			// Cascade AFTER session delete: `session:delete` detaches the
 			// session from `worktree.sessionIds` before returning, so by
 			// the time this runs `sessionIds` is empty and the
@@ -1052,33 +1000,29 @@ export function SessionsList({
 						onRunSkill={(skill) => void startFromSkill(skill)}
 					/>
 				</div>
-				{showFilterRow ? (
-					<div
-						style={{
-							display: "flex",
-							alignItems: "center",
-							gap: 6,
-						}}
-					>
-						{workspaces.length > 0 ? (
-							<div style={{ flex: 1, minWidth: 0 }}>
-								<WorkspaceFilter
-									workspaces={workspaces}
-									value={workspaceFilter}
-									onChange={setWorkspaceFilter}
-									fullWidth
-								/>
-							</div>
-						) : null}
-						<ViewOptionsButton
-							onOpenSettings={() => useSettingsModalStore.getState().open()}
-							onOpenRecentlyDeleted={() => setRecentlyDeletedOpen(true)}
-							recentlyDeletedCount={undoEntries.length}
-							onOpenWorktrees={() => setWorktreesOpen(true)}
-							alignRight={workspaces.length === 0}
-						/>
-					</div>
-				) : null}
+				<div
+					style={{
+						display: "flex",
+						alignItems: "center",
+						gap: 6,
+					}}
+				>
+					<SchedulerButton
+						armed={schedulerCounts.armed}
+						running={schedulerCounts.running}
+						waiting={schedulerCounts.waiting}
+						open={schedulerOpen}
+						onClick={() =>
+							useSchedulerModalStore.getState().open("schedules")
+						}
+					/>
+					<ViewOptionsButton
+						onOpenSettings={() => useSettingsModalStore.getState().open()}
+						onOpenRecentlyDeleted={() => setRecentlyDeletedOpen(true)}
+						recentlyDeletedCount={undoEntries.length}
+						onOpenWorktrees={() => setWorktreesOpen(true)}
+					/>
+				</div>
 			</div>
 
 			{startError ? (
@@ -1101,35 +1045,9 @@ export function SessionsList({
 					paddingBottom: 56,
 				}}
 			>
-				{order.length === 0 && !draft ? (
+				{visibleOrder.length === 0 && !draft ? (
 					<div className="message" style={{ margin: 12 }}>
 						No sessions yet. Click "New Session".
-					</div>
-				) : visibleOrder.length === 0 && !draft ? (
-					<div className="message" style={{ margin: 12 }}>
-						{workspaceFilter.length === 1 ? (
-							<>
-								No sessions in{" "}
-								<code>{folderName(workspaceFilter[0])}</code>.{" "}
-							</>
-						) : (
-							<>No sessions in the selected workspaces. </>
-						)}
-						<button
-							type="button"
-							onClick={() => setWorkspaceFilter([])}
-							style={{
-								border: "none",
-								background: "transparent",
-								padding: 0,
-								color: T.accent,
-								cursor: "pointer",
-								font: "inherit",
-								textDecoration: "underline",
-							}}
-						>
-							Show all
-						</button>
 					</div>
 				) : (
 					<div>
@@ -1307,8 +1225,8 @@ export function SessionsList({
 			{/* Self-driven: opens off `useBabysitStore.modalSessionId`, set by
 			    a row's ⋯ menu or its babysitting badge. */}
 			<BabysitModal />
-			<SettingsModal
-			/>
+			<SettingsModal />
+			<SchedulerModal />
 			<RecentlyDeletedModal
 				open={recentlyDeletedOpen}
 				onClose={() => setRecentlyDeletedOpen(false)}
@@ -2622,157 +2540,6 @@ function DraftRowMenu({ onDiscard }: { onDiscard: () => void }) {
 	);
 }
 
-function WorkspaceFilter({
-	workspaces,
-	value,
-	onChange,
-	fullWidth = false,
-}: {
-	workspaces: string[];
-	value: string[];
-	onChange: (v: string[]) => void;
-	fullWidth?: boolean;
-}) {
-	const [open, setOpen] = useState(false);
-	const ref = useRef<HTMLDivElement>(null);
-
-	useEffect(() => {
-		if (!open) return;
-		const onDocClick = (e: MouseEvent) => {
-			if (ref.current && !ref.current.contains(e.target as Node)) {
-				setOpen(false);
-			}
-		};
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") setOpen(false);
-		};
-		document.addEventListener("mousedown", onDocClick);
-		document.addEventListener("keydown", onKey);
-		return () => {
-			document.removeEventListener("mousedown", onDocClick);
-			document.removeEventListener("keydown", onKey);
-		};
-	}, [open]);
-
-	const label =
-		value.length === 0
-			? "All workspaces"
-			: value.length === 1
-				? folderName(value[0])
-				: `${value.length} workspaces`;
-	const labelMono = value.length === 1;
-
-	return (
-		<div
-			ref={ref}
-			style={{
-				position: "relative",
-				width: fullWidth ? "100%" : undefined,
-			}}
-		>
-			<button
-				type="button"
-				className="btn"
-				onClick={() => setOpen((o) => !o)}
-				style={{
-					display: fullWidth ? "flex" : "inline-flex",
-					width: fullWidth ? "100%" : undefined,
-					alignItems: "center",
-					gap: 8,
-					color: T.textDim,
-					fontSize: 13,
-				}}
-			>
-				<span
-					style={{
-						color: T.textMute,
-						fontSize: 11,
-						fontWeight: 600,
-						letterSpacing: 1,
-						textTransform: "uppercase",
-					}}
-				>
-					Workspace
-				</span>
-				<span
-					style={{
-						color: T.text,
-						fontFamily: labelMono ? T.mono : undefined,
-					}}
-				>
-					{label}
-				</span>
-				<svg width="9" height="9" viewBox="0 0 10 10">
-					<path
-						d="M2 4l3 3 3-3"
-						stroke="currentColor"
-						strokeWidth="1.4"
-						fill="none"
-						strokeLinecap="round"
-						strokeLinejoin="round"
-					/>
-				</svg>
-			</button>
-			{open ? (
-				<div
-					role="menu"
-					style={{
-						position: "absolute",
-						top: "calc(100% + 4px)",
-						right: 0,
-						left: fullWidth ? 0 : undefined,
-						minWidth: fullWidth ? undefined : 220,
-						maxHeight: 320,
-						overflowY: "auto",
-						background: T.surfaceHi,
-						border: `0.5px solid ${T.border}`,
-						borderRadius: 8,
-						padding: 4,
-						zIndex: 50,
-						boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
-					}}
-				>
-					<MenuItem
-						active={value.length === 0}
-						label="All workspaces"
-						onClick={() => {
-							onChange([]);
-							setOpen(false);
-						}}
-					/>
-					{workspaces.length > 0 ? (
-						<div
-							style={{
-								height: 1,
-								background: T.borderSoft,
-								margin: "4px 0",
-							}}
-						/>
-					) : null}
-					{workspaces.map((w) => (
-						<MenuItem
-							key={w}
-							active={value.includes(w)}
-							label={folderName(w)}
-							mono
-							checkbox
-							onClick={() => {
-								onChange(
-									value.includes(w)
-										? value.filter((v) => v !== w)
-										: [...value, w],
-								);
-								// Stay open for multi-select toggling — outside-click
-								// or Escape dismisses.
-							}}
-						/>
-					))}
-				</div>
-			) : null}
-		</div>
-	);
-}
-
 function MenuItem({
 	active,
 	label,
@@ -2859,29 +2626,23 @@ function MenuItem({
 }
 
 /**
- * Sidebar overflow-options dropdown. Visually a 32×32 icon button matching
- * FolderButton — stacks below it as the right-edge control of the second
- * header row, with the WorkspaceFilter taking the remaining width on the
- * left. Exposes "Recently deleted" (when the undo buffer has entries),
- * "Worktrees", and "Settings". Sized as a dropdown rather than an inline
- * button so future view controls can land here without crowding the header.
- *
- * `alignRight` pushes the button to the right edge when there's no
- * WorkspaceFilter sharing the row — keeps it stacked under FolderButton
- * regardless of what else is rendered.
+ * Sidebar overflow-options dropdown. Visually a 32×32 icon button — the
+ * right-edge control of the second header row, with the SchedulerButton
+ * taking the remaining width on the left. Exposes "Recently deleted" (when
+ * the undo buffer has entries), "Worktrees", and "Settings". Sized as a
+ * dropdown rather than an inline button so future view controls can land
+ * here without crowding the header.
  */
 function ViewOptionsButton({
 	onOpenSettings,
 	onOpenRecentlyDeleted,
 	recentlyDeletedCount,
 	onOpenWorktrees,
-	alignRight,
 }: {
 	onOpenSettings: () => void;
 	onOpenRecentlyDeleted: () => void;
 	recentlyDeletedCount: number;
 	onOpenWorktrees: () => void;
-	alignRight?: boolean;
 }) {
 	const [open, setOpen] = useState(false);
 	const ref = useRef<HTMLDivElement>(null);
@@ -2905,13 +2666,7 @@ function ViewOptionsButton({
 	}, [open]);
 
 	return (
-		<div
-			ref={ref}
-			style={{
-				position: "relative",
-				marginLeft: alignRight ? "auto" : undefined,
-			}}
-		>
+		<div ref={ref} style={{ position: "relative" }}>
 			<button
 				type="button"
 				className="btn"
@@ -3191,12 +2946,6 @@ function RowMenuButton({
 			) : null}
 		</div>
 	);
-}
-
-function folderName(path: string): string {
-	const trimmed = path.replace(/\/+$/, "");
-	const idx = trimmed.lastIndexOf("/");
-	return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
 }
 
 /** Header label for a worktree bucket: "folder: worktree", or the bare

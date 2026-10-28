@@ -36,6 +36,7 @@ import { usePlanModeHotkey } from "./features/claude-sessions/hooks/usePlanModeH
 import { useUndoHotkey } from "./features/claude-sessions/hooks/useUndoHotkey";
 import { useDictationHotkey } from "./features/claude-sessions/hooks/useDictationHotkey";
 import { useBabysitHotkey } from "./features/claude-sessions/hooks/useBabysitHotkey";
+import { useSchedulerHotkey } from "./features/claude-sessions/hooks/useSchedulerHotkey";
 import { CommandPaletteModal } from "./features/claude-sessions/components/CommandPaletteModal";
 import { T } from "./design/tokens";
 
@@ -82,6 +83,7 @@ export default function MainApp() {
 	// Global ⌘⇧B — opens the Babysitter modal for the active session. No-op
 	// off a session route, and on drafts (nothing to babysit yet).
 	useBabysitHotkey();
+	useSchedulerHotkey();
 	return (
 		<div
 			style={{

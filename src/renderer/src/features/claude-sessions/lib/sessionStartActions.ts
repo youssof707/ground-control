@@ -13,18 +13,10 @@ import { appDefaultModel, useSettingsStore } from "../stores/useSettingsStore";
  * `SessionsList`'s component tree) can trigger the exact same flow the
  * sidebar's own ⚡ button does. Store-only aside from `navigate`, which
  * both call sites already have as a hook value in scope.
- *
- * `onWorkspaceRevealed` is optional: `SessionsList` uses it to keep a newly
- * spawned draft visible when its own `workspaceFilter` narrows the sidebar
- * to a different workspace (see its call site). The global palette has no
- * such local filter state to reconcile, so it just omits the callback —
- * the new draft still opens and navigates correctly, it just might not be
- * the workspace the sidebar filter happens to be narrowed to.
  */
 interface StartOptions {
 	/** Resolved "New Session" target cwd — see `SessionsList`'s `targetCwd`. */
 	targetCwd: string | null;
-	onWorkspaceRevealed?: (cwd: string) => void;
 }
 
 async function resolveDraftCwd(targetCwd: string | null): Promise<string | null> {
@@ -52,7 +44,7 @@ async function resolveDraftCwd(targetCwd: string | null): Promise<string | null>
  */
 export async function startNewSessionDraft(
 	navigate: NavigateFunction,
-	{ targetCwd, onWorkspaceRevealed }: StartOptions,
+	{ targetCwd }: StartOptions,
 ): Promise<void> {
 	const drafts = useDraftSessionsStore.getState();
 	if (drafts.draft) {
@@ -67,7 +59,6 @@ export async function startNewSessionDraft(
 		defaultTitle: `Session ${order.length + 1}`,
 		floating: true,
 	});
-	onWorkspaceRevealed?.(cwd);
 	navigate(`/sessions/${d.id}`);
 }
 
@@ -83,12 +74,11 @@ export async function startNewSessionDraft(
 export async function startSessionFromShortcut(
 	sc: Shortcut,
 	navigate: NavigateFunction,
-	{ targetCwd, onWorkspaceRevealed }: StartOptions,
+	{ targetCwd }: StartOptions,
 ): Promise<void> {
 	const drafts = useDraftSessionsStore.getState();
 	const draft = drafts.draft;
 	let id: string;
-	let cwd: string;
 	if (draft) {
 		// A shortcut launch is a fresh intent for the shared draft slot —
 		// reset the model override to the app default rather than to nothing.
@@ -98,7 +88,6 @@ export async function startSessionFromShortcut(
 			model: appDefaultModel(),
 		});
 		id = draft.id;
-		cwd = draft.cwd;
 	} else {
 		const resolved = await resolveDraftCwd(targetCwd);
 		if (!resolved) return;
@@ -112,10 +101,8 @@ export async function startSessionFromShortcut(
 		// updateDraft patch.
 		drafts.updateDraft({ title: sc.title });
 		id = d.id;
-		cwd = resolved;
 	}
 	appendPromptBlock(id, sc.prompt);
-	onWorkspaceRevealed?.(cwd);
 	navigate(`/sessions/${id}`);
 }
 
@@ -128,12 +115,11 @@ export async function startSessionFromShortcut(
 export async function startSessionFromSkill(
 	skill: Skill,
 	navigate: NavigateFunction,
-	{ targetCwd, onWorkspaceRevealed }: StartOptions,
+	{ targetCwd }: StartOptions,
 ): Promise<void> {
 	const drafts = useDraftSessionsStore.getState();
 	const draft = drafts.draft;
 	let id: string;
-	let cwd: string;
 	if (draft) {
 		// Same disowning rule as startSessionFromShortcut — a skill launch is
 		// a fresh intent for the shared draft slot.
@@ -141,7 +127,6 @@ export async function startSessionFromSkill(
 			model: appDefaultModel(),
 		});
 		id = draft.id;
-		cwd = draft.cwd;
 	} else {
 		const resolved = await resolveDraftCwd(targetCwd);
 		if (!resolved) return;
@@ -151,9 +136,7 @@ export async function startSessionFromSkill(
 			defaultTitle: `Session ${order.length + 1}`,
 		});
 		id = d.id;
-		cwd = resolved;
 	}
 	appendPromptBlock(id, `/${skill.name}`);
-	onWorkspaceRevealed?.(cwd);
 	navigate(`/sessions/${id}`);
 }

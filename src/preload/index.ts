@@ -14,6 +14,10 @@ import type {
 	CreateShortcutInput,
 	UpdateShortcutInput,
 } from "../shared/schemas/shortcuts";
+import type {
+	CreateScheduleInput,
+	UpdateScheduleInput,
+} from "../shared/schemas/schedules";
 
 const api = {};
 
@@ -140,6 +144,14 @@ const claude = {
 	updateShortcut: (input: UpdateShortcutInput) =>
 		ipcRenderer.invoke("shortcuts:update", input),
 	deleteShortcut: (id: string) => ipcRenderer.invoke("shortcuts:delete", id),
+	listSchedules: () => ipcRenderer.invoke("schedules:list"),
+	createSchedule: (input: CreateScheduleInput) =>
+		ipcRenderer.invoke("schedules:create", input),
+	updateSchedule: (input: UpdateScheduleInput) =>
+		ipcRenderer.invoke("schedules:update", input),
+	removeSchedule: (id: string) => ipcRenderer.invoke("schedules:remove", id),
+	setScheduleEnabled: (id: string, enabled: boolean) =>
+		ipcRenderer.invoke("schedules:setEnabled", { id, enabled }),
 	listSkills: () => ipcRenderer.invoke("skills:list"),
 	openSkillsFolder: () => ipcRenderer.invoke("skills:openFolder"),
 	getAppInfo: () => ipcRenderer.invoke("appInfo:get"),

@@ -199,6 +199,7 @@ export const ClaudeSessionSchema = z.object({
 	 * the group record. A dangling id (group missing) renders as
 	 * "ungrouped" in the sidebar. */
 	groupId: z.string().optional(),
+	scheduleId: z.string().optional(),
 });
 export type ClaudeSession = z.infer<typeof ClaudeSessionSchema>;
 

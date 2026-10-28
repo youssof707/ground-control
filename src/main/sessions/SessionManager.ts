@@ -192,6 +192,7 @@ import {
 	usageTotal,
 } from "../../shared/claude-sessions/sessionUsage";
 import type { LiveBackgroundTask } from "../../shared/claude-sessions/types";
+import type { Schedule } from "../../shared/schemas/schedules";
 import { PermissionBroker } from "./PermissionBroker";
 import {
 	getCurrentBranch,
@@ -571,7 +572,10 @@ export class SessionManager {
 
 	constructor(
 		private broker: PermissionBroker,
-		private onSessionCreated: (sessionId: string) => void,
+		private onSessionCreated: (
+			sessionId: string,
+			origin: { scheduleId?: string },
+		) => void,
 		private onBusyChange: (runtimeId: string, busy: boolean) => void = () => {},
 		private onUsageLimitChange: UsageLimitListener = () => {},
 	) {}
@@ -642,13 +646,15 @@ export class SessionManager {
 		return queries;
 	}
 
-	async run(input: StartSessionInput): Promise<ClaudeSession> {
+	private async prepare(
+		input: StartSessionInput,
+		origin: { scheduleId?: string } = {},
+	): Promise<{
+		session: ClaudeSession;
+		effectiveCwd: string;
+		hasInitialPrompt: boolean;
+	}> {
 		const id = randomUUID();
-		// Resolve execution cwd up front. All git reads below and the SDK
-		// query itself target the worktree checkout (when one is attached),
-		// not the user's baseDir — so `session.branch`, `startCommit`, and
-		// `lastUserMessageBranch` reflect the sandbox the SDK actually lives
-		// in, and the BranchChip shows the worktree's live branch.
 		const effectiveCwd = resolveEffectiveCwd({
 			cwd: input.cwd,
 			worktreeId: input.worktreeId,
@@ -664,46 +670,20 @@ export class SessionManager {
 			: "";
 		const session: ClaudeSession = {
 			id,
-			// A name the user typed themselves outranks the derivation, even
-			// when an initial prompt is present.
 			title: input.titleLocked ? input.title : derivedTitle || input.title,
 			titleLocked: input.titleLocked ?? false,
 			prompt: input.prompt ?? "",
-			// Persist the *baseDir* as `cwd` — the user-facing folder (folder
-			// button label, copy-path, reveal-in-Finder). The worktree link
-			// lives in `worktreeId`; `resolveEffectiveCwd` derives the SDK
-			// execution path from it.
 			cwd: input.cwd,
 			status: hasInitialPrompt ? "running" : "idle",
 			createdAt: Date.now(),
 			branch,
 			startCommit,
-			// Seed the staleness baseline with the project's default base
-			// branch so the BranchChip immediately flags drift when the user
-			// creates a session on a feature branch — without having to wait
-			// for the first user message. `snapshotBranchCheckpoint` will
-			// naturally overwrite this on the first user input, so it's a
-			// pure pre-message hint. Stays undefined when detection fails
-			// (no git repo, no origin/HEAD, no main/master) — same as today.
 			lastUserMessageBranch: defaultBaseBranch,
-			// Every session is created in one of the two app-level modes.
-			// New sessions default to "plan"; the renderer can pre-pick a mode
-			// in StartSessionInput if it ever wants to.
 			mode: input.mode ?? "plan",
 			worktreeId: input.worktreeId,
-			// Authoritative as-is — deliberately NOT `?? appSettings.get()
-			// .defaultModel`. The app-wide default is applied when the DRAFT
-			// is created (useDraftSessionsStore.createDraft), so it is
-			// already baked into `input.model` by the time we get here.
-			// Re-applying it here would make `undefined` unrepresentable and
-			// silently override a user who explicitly picked "Default" in
-			// the draft header on top of a non-default app setting.
 			model: input.model,
-			// Sidebar group. Membership lives only on this field (no reverse
-			// index, nothing to attach), so this single assignment is the
-			// whole bookkeeping — same move `fork()` makes below. The
-			// `session:started` broadcast carries it to the renderer.
 			groupId: input.groupId,
+			scheduleId: origin.scheduleId,
 		};
 
 		const fullForPersist: ClaudeSessionFull = { ...session, messages: [] };
@@ -713,14 +693,8 @@ export class SessionManager {
 			console.error("[ccw] failed to persist session:", err);
 		}
 
-		this.onSessionCreated(id);
+		this.onSessionCreated(id, origin);
 
-		// Reverse-index the session on its worktree so we can enforce
-		// "no delete while attached" and cascade-detach at delete time.
-		// Best-effort: a missing worktree entry (edge case) leaves the
-		// session running with a dangling reference — handled the same
-		// as an externally-deleted worktree via resolveEffectiveCwd's
-		// fallback.
 		if (input.worktreeId) {
 			try {
 				await worktreesStore.attachSession(input.worktreeId, id);
@@ -728,6 +702,13 @@ export class SessionManager {
 				console.error("[ccw] worktree attachSession failed:", err);
 			}
 		}
+
+		return { session, effectiveCwd, hasInitialPrompt };
+	}
+
+	async run(input: StartSessionInput): Promise<ClaudeSession> {
+		const { session, effectiveCwd, hasInitialPrompt } =
+			await this.prepare(input);
 
 		const initialTurns: UserContentBlock[][] = hasInitialPrompt
 			? [[{ type: "text", text: input.prompt as string }]]
@@ -739,6 +720,38 @@ export class SessionManager {
 			initialTurns,
 			resumeSdkSessionId: undefined,
 		});
+
+		return session;
+	}
+
+	async startScheduled(
+		schedule: Schedule,
+		model: string | undefined,
+	): Promise<ClaudeSession> {
+		const label = schedule.title.trim();
+		const { session, effectiveCwd } = await this.prepare(
+			{
+				title: label || deriveTitle(schedule.prompt),
+				titleLocked: label.length > 0,
+				cwd: schedule.cwd,
+				mode: schedule.mode,
+				model,
+			},
+			{ scheduleId: schedule.id },
+		);
+
+		void this.runLoop({
+			session,
+			cwd: effectiveCwd,
+			initialTurns: [],
+			resumeSdkSessionId: undefined,
+		});
+
+		this.pushUserMessage(
+			session.id,
+			[{ type: "text", text: schedule.prompt }],
+			{ broadcast: true },
+		);
 
 		return session;
 	}
@@ -1374,6 +1387,7 @@ export class SessionManager {
 			modelChangedAt: persisted.modelChangedAt,
 			usage:
 				persisted.usage ?? estimateUsageFromTranscript(persisted.messages),
+			scheduleId: persisted.scheduleId,
 		};
 
 		await sessionStore.updateSession(persisted.id, {
@@ -2157,7 +2171,11 @@ export class SessionManager {
 		}
 	}
 
-	pushUserMessage(sessionId: string, blocks: UserContentBlock[]) {
+	pushUserMessage(
+		sessionId: string,
+		blocks: UserContentBlock[],
+		opts: { broadcast?: boolean } = {},
+	) {
 		const entry = this.sessions.get(sessionId);
 		if (!entry) throw new Error(`No active session ${sessionId}`);
 
@@ -2219,6 +2237,9 @@ export class SessionManager {
 			ts: Date.now(),
 		};
 		void sessionStore.appendMessage(sessionId, sessionMessage);
+		if (opts.broadcast) {
+			this.send("session:message", { sessionId, message: sessionMessage });
+		}
 
 		this.snapshotBranchCheckpoint(sessionId);
 	}

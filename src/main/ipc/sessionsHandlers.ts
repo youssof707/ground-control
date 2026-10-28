@@ -6,13 +6,14 @@ import {
 	powerMonitor,
 	shell,
 } from "electron";
-import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 import { SessionManager } from "../sessions/SessionManager";
 import { PermissionBroker } from "../sessions/PermissionBroker";
 import { Babysitter } from "../sessions/Babysitter";
 import { KeepAwake } from "../sessions/KeepAwake";
 import { UsageLimitResumer } from "../sessions/UsageLimitResumer";
+import { ScheduleRunner } from "../sessions/ScheduleRunner";
+import { directoryExists } from "../sessions/fsUtils";
 import * as rateLimitTracker from "../sessions/RateLimitTracker";
 import { requestAuthorization } from "../sessions/wakeScheduler";
 import { NotificationManager } from "./notifications";
@@ -28,6 +29,7 @@ import * as sessionStore from "../core/store/claude_session";
 import * as notesStore from "../core/store/session_notes";
 import * as worktreesStore from "../core/store/worktrees";
 import * as groupsStore from "../core/store/session_groups";
+import * as schedulesStore from "../core/store/schedules";
 import { broadcast } from "../windows";
 import { registerReadHandlers } from "./readHandlers";
 import { registerSettingsHandlers } from "./settingsHandlers";
@@ -40,6 +42,7 @@ import {
 	pruneGroupIfEmpty,
 } from "./groupsHandlers";
 import { registerShortcutsHandlers } from "./shortcutsHandlers";
+import { registerSchedulesHandlers } from "./schedulesHandlers";
 import { registerSkillsHandlers } from "./skillsHandlers";
 import { registerUpdaterHandlers } from "./updaterHandlers";
 import { registerDictationHandlers } from "./dictationHandlers";
@@ -69,31 +72,18 @@ async function showFolderPicker(
 	return result.filePaths[0];
 }
 
-/**
- * Best-effort directory-existence check. Returns false on any stat failure
- * (missing path, permission error, broken symlink) and also for paths that
- * exist but aren't directories (e.g. a stale entry that now points at a
- * file). Callers treat false as "ask the user to pick a real folder".
- */
-async function directoryExists(path: string): Promise<boolean> {
-	try {
-		const stat = await fs.stat(path);
-		return stat.isDirectory();
-	} catch {
-		return false;
-	}
-}
-
 export function registerSessionsHandlers(): SessionManager {
 	const notifications = new NotificationManager();
 	let manager: SessionManager;
 	// Babysit mode: per-session rules for answering prompts while the user is
 	// away. In memory only — nothing here is ever written to disk.
-	const keepAwake = new KeepAwake((runtimeId) =>
-		babysitter.keepAwake(
-			manager?.getSidequestParentId(runtimeId) ?? runtimeId,
-		),
-	);
+	const keepAwake = new KeepAwake((runtimeId) => {
+		const id = manager?.getSidequestParentId(runtimeId) ?? runtimeId;
+		return (
+			babysitter.keepAwake(id) ||
+			manager?.getSession(id)?.scheduleId !== undefined
+		);
+	});
 	app.on("will-quit", () => keepAwake.dispose());
 	const resumer = new UsageLimitResumer({
 		autoResume: (runtimeId) =>
@@ -133,15 +123,50 @@ export function registerSessionsHandlers(): SessionManager {
 	);
 	manager = new SessionManager(
 		broker,
-		(sessionId) => {
+		(sessionId, origin) => {
 			const { autoBabysitNewSessions, defaultBabysit } = appSettings.get();
-			if (autoBabysitNewSessions && defaultBabysit) {
+			if (!defaultBabysit) return;
+			if (origin.scheduleId || autoBabysitNewSessions) {
 				babysitter.set(sessionId, defaultBabysit);
 			}
 		},
 		keepAwake.setBusy,
 		resumer.onChange,
 	);
+
+	const isSessionBusy = (id: string): boolean => {
+		const live = manager.getSession(id);
+		if (
+			live &&
+			(live.status === "running" || live.status === "awaiting_permission")
+		) {
+			return true;
+		}
+		if (broker.hasPendingFor(id)) return true;
+		const sidequestId = manager.getSidequestId(id);
+		return !!sidequestId && broker.hasPendingFor(sidequestId);
+	};
+	const runner = new ScheduleRunner({
+		list: schedulesStore.list,
+		get: schedulesStore.get,
+		update: schedulesStore.update,
+		startScheduledSession: (schedule) =>
+			manager.startScheduled(
+				schedule,
+				schedule.model ?? appSettings.get().defaultModel,
+			),
+		isSessionBusy,
+		listSessionsForSchedule: (scheduleId) =>
+			sessionStore
+				.listSessions()
+				.filter((s) => s.scheduleId === scheduleId),
+		deleteSession: async (id) => {
+			await deleteSessionById(id);
+		},
+		directoryExists,
+	});
+	powerMonitor.on("resume", runner.reconcile);
+	app.on("will-quit", () => runner.dispose());
 
 	registerReadHandlers();
 	registerSettingsHandlers();
@@ -151,6 +176,7 @@ export function registerSessionsHandlers(): SessionManager {
 	registerWorktreesHandlers();
 	registerGroupsHandlers();
 	registerShortcutsHandlers();
+	registerSchedulesHandlers(runner);
 	registerSkillsHandlers();
 	registerUpdaterHandlers();
 	registerDictationHandlers();
@@ -388,7 +414,10 @@ export function registerSessionsHandlers(): SessionManager {
 			broadcast("state:changed", undefined, e.sender.id);
 		},
 	);
-	ipcMain.handle("session:delete", async (e, sessionId: string) => {
+	async function deleteSessionById(
+		sessionId: string,
+		exceptWebContentsId?: number,
+	): Promise<DeletedSessionSnapshot | null> {
 		// Capture the worktree binding BEFORE we tombstone / delete the
 		// session record — we need it to detach from the worktree registry
 		// afterwards so the "no delete while attached" invariant holds.
@@ -464,7 +493,7 @@ export function registerSessionsHandlers(): SessionManager {
 		}
 		// Structural ping → other windows refetch and drop this session from
 		// their stores. Originator already removed it locally.
-		broadcast("state:changed", undefined, e.sender.id);
+		broadcast("state:changed", undefined, exceptWebContentsId);
 		// Graceful SDK loop drain in the background. This is what used to
 		// block the IPC critical path; now the renderer doesn't wait on it.
 		// The tombstone in SessionManager.send filters any of its emitted
@@ -489,7 +518,10 @@ export function registerSessionsHandlers(): SessionManager {
 					: null,
 		};
 		return snapshot;
-	});
+	}
+	ipcMain.handle("session:delete", (e, sessionId: string) =>
+		deleteSessionById(sessionId, e.sender.id),
+	);
 
 	ipcMain.handle(
 		"session:restore",
@@ -574,6 +606,8 @@ export function registerSessionsHandlers(): SessionManager {
 			return restored;
 		},
 	);
+
+	runner.boot();
 
 	return manager;
 }

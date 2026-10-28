@@ -3,6 +3,7 @@ import type { ClaudeSessionFull } from "@shared/claude-sessions/types";
 import { isConversationSkipped } from "@shared/claude-sessions/transcript";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { useReadStore } from "../stores/useReadStore";
+import { isScheduledSession } from "../lib/scheduledSessions";
 
 function lastIncomingMessageTs(session: ClaudeSessionFull): number {
 	for (let i = session.messages.length - 1; i >= 0; i--) {
@@ -23,6 +24,7 @@ export function useDockUnreadBadge() {
 	const unreadCount = sessionsOrder.reduce((acc, id) => {
 		const sess = sessionsMap[id];
 		if (!sess) return acc;
+		if (isScheduledSession(sess)) return acc;
 		if (sess.status === "running") return acc;
 		const lastIncoming = lastIncomingMessageTs(sess);
 		if (lastIncoming > 0 && lastIncoming > (lastReadAt[id] ?? 0)) {

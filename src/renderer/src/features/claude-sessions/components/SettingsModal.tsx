@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { isBabysitArmed } from "@shared/claude-sessions/babysit";
 import { useBackdropDismiss } from "../../../components/useBackdropDismiss";
 import { Kbd } from "../../../design/Atoms";
+import { TabStrip } from "../../../design/TabStrip";
 import { T } from "../../../design/tokens";
 import {
 	formatModelName,
@@ -31,6 +32,7 @@ const SHORTCUTS: { keys: string[]; label: string }[] = [
 	{ keys: ["⌘", "P"], label: "Toggle plan mode (in the composer)" },
 	{ keys: ["⌘", "D"], label: "Start / stop voice dictation" },
 	{ keys: ["⌘", "⇧", "B"], label: "Open the babysitter" },
+	{ keys: ["⌘", "⇧", "S"], label: "Open the scheduler" },
 	{ keys: ["⌘", "⇧", "M"], label: "Open the model picker" },
 	{ keys: ["⌘", "⇧", "T"], label: "Restore the most recently deleted session" },
 ];
@@ -129,9 +131,21 @@ function SettingsDialog({
 					</h2>
 
 					<TabStrip
-						tab={tab}
+						idPrefix="settings"
+						ariaLabel="Settings sections"
+						value={tab}
 						onChange={setTab}
-						autoStart={autoStart}
+						tabs={[
+							{ id: "general", label: "General" },
+							{
+								id: "babysitter",
+								label: "Babysitter",
+								accent: T.babysit,
+								indicator: autoStart,
+								indicatorSoft: T.babysitSoft,
+							},
+							{ id: "mcp", label: "MCP servers" },
+						]}
 					/>
 
 					<div
@@ -208,127 +222,6 @@ function useAutosavedBabysitDefaults(
 	useEffect(
 		() => () => useSettingsStore.getState().setDefaultBabysit(latest.current),
 		[],
-	);
-}
-
-function TabStrip({
-	tab,
-	onChange,
-	autoStart,
-}: {
-	tab: SettingsTab;
-	onChange: (tab: SettingsTab) => void;
-	autoStart: boolean;
-}) {
-	return (
-		<div
-			role="tablist"
-			aria-label="Settings sections"
-			style={{
-				display: "flex",
-				gap: 20,
-				margin: "14px -22px 0",
-				padding: "0 22px",
-				borderBottom: `0.5px solid ${T.border}`,
-			}}
-		>
-			<Tab
-				id="general"
-				label="General"
-				active={tab === "general"}
-				accent={T.text}
-				onClick={() => onChange("general")}
-			/>
-			<Tab
-				id="babysitter"
-				label="Babysitter"
-				active={tab === "babysitter"}
-				accent={T.babysit}
-				onClick={() => onChange("babysitter")}
-				indicator={autoStart}
-			/>
-			<Tab
-				id="mcp"
-				label="MCP servers"
-				active={tab === "mcp"}
-				accent={T.text}
-				onClick={() => onChange("mcp")}
-			/>
-		</div>
-	);
-}
-
-function Tab({
-	id,
-	label,
-	active,
-	accent,
-	onClick,
-	indicator,
-}: {
-	id: SettingsTab;
-	label: string;
-	active: boolean;
-	accent: string;
-	onClick: () => void;
-	indicator?: boolean;
-}) {
-	const [hover, setHover] = useState(false);
-	return (
-		<button
-			type="button"
-			role="tab"
-			id={`settings-tab-${id}`}
-			aria-selected={active}
-			onClick={onClick}
-			onMouseEnter={() => setHover(true)}
-			onMouseLeave={() => setHover(false)}
-			style={{
-				position: "relative",
-				display: "inline-flex",
-				alignItems: "center",
-				gap: 6,
-				appearance: "none",
-				border: "none",
-				background: "none",
-				padding: "10px 0 11px",
-				fontFamily: "inherit",
-				fontSize: 13,
-				fontWeight: active ? 600 : 500,
-				color: active || hover ? T.text : T.textDim,
-				cursor: "pointer",
-				transition: "color 80ms ease",
-			}}
-		>
-			{label}
-			{indicator ? (
-				<span
-					aria-hidden
-					style={{
-						width: 6,
-						height: 6,
-						borderRadius: "50%",
-						background: T.babysit,
-						boxShadow: `0 0 0 3px ${T.babysitSoft}`,
-					}}
-				/>
-			) : null}
-			<span
-				aria-hidden
-				style={{
-					position: "absolute",
-					left: 0,
-					right: 0,
-					bottom: -0.5,
-					height: 2,
-					borderRadius: 1,
-					background: accent,
-					opacity: active ? 1 : 0,
-					transform: active ? "scaleX(1)" : "scaleX(0.6)",
-					transition: "opacity 120ms ease, transform 120ms ease",
-				}}
-			/>
-		</button>
 	);
 }
 

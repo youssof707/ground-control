@@ -27,6 +27,11 @@ import type {
 	Shortcut,
 	UpdateShortcutInput,
 } from "../shared/schemas/shortcuts";
+import type {
+	CreateScheduleInput,
+	Schedule,
+	UpdateScheduleInput,
+} from "../shared/schemas/schedules";
 import type { Skill } from "../shared/schemas/skills";
 import type { McpAuthStart, McpServerView } from "../shared/schemas/mcp";
 import type {
@@ -157,6 +162,11 @@ declare global {
 			createShortcut: (input: CreateShortcutInput) => Promise<Shortcut>;
 			updateShortcut: (input: UpdateShortcutInput) => Promise<Shortcut>;
 			deleteShortcut: (id: string) => Promise<void>;
+			listSchedules: () => Promise<Schedule[]>;
+			createSchedule: (input: CreateScheduleInput) => Promise<Schedule>;
+			updateSchedule: (input: UpdateScheduleInput) => Promise<Schedule>;
+			removeSchedule: (id: string) => Promise<void>;
+			setScheduleEnabled: (id: string, enabled: boolean) => Promise<Schedule>;
 			listSkills: () => Promise<Skill[]>;
 			openSkillsFolder: () => Promise<void>;
 			getAppInfo: () => Promise<{

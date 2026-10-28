@@ -12,6 +12,7 @@ import {
 	useRightPanelStore,
 } from "../stores/useRightPanelStore";
 import { T } from "../../../design/tokens";
+import { isScheduledSession } from "../lib/scheduledSessions";
 
 export function AppNav() {
 	const queue = usePermissionsStore((s) => s.queue);
@@ -45,22 +46,29 @@ export function AppNav() {
 		);
 	});
 
-	const runningCount = sessionsOrder.filter(
-		(id) => sessionsMap[id]?.status === "running",
-	).length;
+	const runningCount = sessionsOrder.filter((id) => {
+		const s = sessionsMap[id];
+		return s?.status === "running" && !isScheduledSession(s);
+	}).length;
 
 	// Running sessions that are *not* in plan mode — i.e. actually touching the
 	// filesystem rather than doing read-only research. A subset of runningCount.
 	const editingCount = sessionsOrder.filter((id) => {
 		const s = sessionsMap[id];
-		return s?.status === "running" && s.mode !== "plan";
+		return (
+			s?.status === "running" && s.mode !== "plan" && !isScheduledSession(s)
+		);
 	}).length;
 
 	// Sidequests are a side conversation the user is already looking at in the
 	// panel — they must not drive the global attention counters.
 	const attentionQueue = queue.filter((q) => !isSidequestId(q.sessionId));
 
-	const waitingCount = new Set(attentionQueue.map((q) => q.sessionId)).size;
+	const waitingCount = new Set(
+		attentionQueue
+			.filter((q) => !isScheduledSession(sessionsMap[q.sessionId]))
+			.map((q) => q.sessionId),
+	).size;
 
 	const inboxBadge = attentionQueue.length;
 

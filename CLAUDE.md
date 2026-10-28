@@ -39,6 +39,8 @@ the single source of truth so shortcuts are easy to find.
   button), even while typing in its text box. Plain `Enter` does the same
   when no text field has focus (a focused Cancel / Stop button keeps its
   native Enter). No-op when the primary button is disabled
+- `Cmd+Shift+S` — open the Scheduler modal (schedules and the sessions they
+  spawned). Works from anywhere
 - `Cmd+Shift+M` — open the model picker for the active session or draft
   (picking a model while a turn is running interrupts it, switches, and
   resumes automatically). The modal closes instantly and the switch runs in

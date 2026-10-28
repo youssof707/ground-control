@@ -121,6 +121,13 @@ export class PermissionBroker {
 		return [...this.pending.values()].map((e) => e.request);
 	}
 
+	hasPendingFor(sessionId: string): boolean {
+		for (const entry of this.pending.values()) {
+			if (entry.request.sessionId === sessionId) return true;
+		}
+		return false;
+	}
+
 	cancelAllForSession(sessionId: string, reason = "Session cancelled") {
 		for (const [id, entry] of this.pending) {
 			if (entry.request.sessionId === sessionId) {
