@@ -36,7 +36,7 @@ export interface SidequestState {
 	sidequestId: string;
 	parentSessionId: string;
 	/** Wrapper message id in the parent thread this sidequest branched at. */
-	forkMessageId: string;
+	forkMessageId: string | null;
 	messages: SessionMessage[];
 	/** "starting" covers the window between the IPC call and `sidequest:started`. */
 	status: "starting" | SessionStatus;
@@ -73,7 +73,7 @@ interface State {
 	register: (input: {
 		sidequestId: string;
 		parentSessionId: string;
-		forkMessageId: string;
+		forkMessageId: string | null;
 		mode: SessionMode;
 		model?: string;
 	}) => void;
@@ -157,7 +157,7 @@ export const useSidequestsStore = create<State>((set, get) => ({
 					[parentSessionId]: {
 						sidequestId,
 						parentSessionId,
-						forkMessageId: prev?.forkMessageId ?? "",
+						forkMessageId: prev?.forkMessageId ?? null,
 						messages: [],
 						status: "idle",
 						mode,

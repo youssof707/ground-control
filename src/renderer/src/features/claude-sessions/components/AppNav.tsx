@@ -77,11 +77,8 @@ export function AppNav() {
 	 * click a second button inside it. Forks at the last Claude reply on the
 	 * way in, so the panel lands with a live composer ready to type.
 	 *
-	 * Two things it deliberately does NOT do: re-fork over an existing
-	 * sidequest (that's a live conversation — `Clear` is the explicit way to
-	 * restart), and fork when the parent has no assistant reply yet (nothing
-	 * to branch from; the panel's empty state says so and offers a button once
-	 * the first reply lands).
+	 * It deliberately does NOT re-fork over an existing sidequest (that's a
+	 * live conversation — `Clear` is the explicit way to restart).
 	 */
 	const toggleSidequest = () => {
 		// Hoisted above the close branch so it narrows `activeSessionId` for
@@ -97,10 +94,6 @@ export function AppNav() {
 		}
 		const parent = useSessionsStore.getState().sessions[activeSessionId];
 		const forkMessageId = lastForkableMessageId(parent?.messages ?? []);
-		if (!forkMessageId) {
-			setSessionPanel(activeSessionId, "sidequest");
-			return;
-		}
 		// Open first so the fork's "Branching…" state is visible immediately;
 		// focus lands once the composer mounts.
 		setSessionPanel(activeSessionId, "sidequest");

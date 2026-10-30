@@ -258,8 +258,13 @@ export function registerSessionsHandlers(): SessionManager {
 	ipcMain.handle("session:finish", (_e, sessionId: string) => {
 		manager.finish(sessionId);
 	});
-	ipcMain.handle("session:interrupt", (_e, sessionId: string) =>
-		manager.interrupt(sessionId),
+	ipcMain.handle(
+		"session:interrupt",
+		(
+			_e,
+			sessionId: string,
+			options?: { keepBackgroundTasks?: boolean },
+		) => manager.interrupt(sessionId, options),
 	);
 	ipcMain.handle(
 		"session:stopTask",
@@ -323,7 +328,7 @@ export function registerSessionsHandlers(): SessionManager {
 			payload: {
 				sidequestId: string;
 				parentSessionId: string;
-				forkMessageId: string;
+				forkMessageId: string | null;
 			},
 		) => manager.startSidequest(payload),
 	);

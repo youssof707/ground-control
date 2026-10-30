@@ -373,10 +373,15 @@ function MessageActionsMenu({
 						}}
 					>
 						{showHandoff ? (
-							<MenuItem label="Handoff" onClick={handleHandoff} />
+							<MenuItem
+								icon={<HandoffIcon />}
+								label="Handoff"
+								onClick={handleHandoff}
+							/>
 						) : null}
 						{showFork ? (
 							<MenuItem
+								icon={<ForkIcon />}
 								label={pending ? "Forking…" : "Fork"}
 								disabled={pending}
 								onClick={handleFork}
@@ -384,12 +389,14 @@ function MessageActionsMenu({
 						) : null}
 						{showForkAndDelete ? (
 							<MenuItem
+								icon={<ForkAndDeleteIcon />}
 								label="Fork and delete"
 								disabled={pending}
 								onClick={handleForkAndDelete}
 							/>
 						) : null}
 						<MenuItem
+							icon={copied ? <CopiedIcon /> : <CopyIcon />}
 							label={copied ? "Copied!" : "Copy message"}
 							onClick={handleCopy}
 						/>
@@ -402,10 +409,12 @@ function MessageActionsMenu({
 }
 
 function MenuItem({
+	icon,
 	label,
 	disabled,
 	onClick,
 }: {
+	icon: React.ReactNode;
 	label: string;
 	disabled?: boolean;
 	onClick: (e: React.MouseEvent) => void;
@@ -423,7 +432,9 @@ function MenuItem({
 			}}
 			disabled={disabled}
 			style={{
-				display: "block",
+				display: "flex",
+				alignItems: "center",
+				gap: 8,
 				width: "100%",
 				textAlign: "left",
 				padding: "6px 10px",
@@ -443,8 +454,76 @@ function MenuItem({
 				e.currentTarget.style.background = "transparent";
 			}}
 		>
-			{label}
+			{icon}
+			<span style={{ minWidth: 0, flex: 1 }}>{label}</span>
 		</button>
+	);
+}
+
+function MenuIcon({ children }: { children: React.ReactNode }) {
+	return (
+		<svg
+			width="14"
+			height="14"
+			viewBox="0 0 16 16"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="1.4"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+			aria-hidden="true"
+			style={{ flexShrink: 0 }}
+		>
+			{children}
+		</svg>
+	);
+}
+
+function HandoffIcon() {
+	return (
+		<MenuIcon>
+			<path d="M9 3H4.5A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13H9" />
+			<path d="M7 8h7M11.5 5.5L14 8l-2.5 2.5" />
+		</MenuIcon>
+	);
+}
+
+function ForkIcon() {
+	return (
+		<MenuIcon>
+			<circle cx="4.5" cy="3.5" r="1.5" />
+			<circle cx="11.5" cy="3.5" r="1.5" />
+			<circle cx="4.5" cy="12.5" r="1.5" />
+			<path d="M4.5 5v6M11.5 5v1a3 3 0 0 1-3 3h-1a3 3 0 0 0-3 3" />
+		</MenuIcon>
+	);
+}
+
+function ForkAndDeleteIcon() {
+	return (
+		<MenuIcon>
+			<path d="M3 2l3 3M6 2L3 5" />
+			<circle cx="11.5" cy="3.5" r="1.5" />
+			<circle cx="4.5" cy="12.5" r="1.5" />
+			<path d="M4.5 7.5V11M11.5 5v1a3 3 0 0 1-3 3h-1a3 3 0 0 0-3 3" />
+		</MenuIcon>
+	);
+}
+
+function CopyIcon() {
+	return (
+		<MenuIcon>
+			<rect x="5" y="5" width="9" height="9" rx="1.5" />
+			<path d="M3 11V3.5C3 2.67 3.67 2 4.5 2H11" />
+		</MenuIcon>
+	);
+}
+
+function CopiedIcon() {
+	return (
+		<MenuIcon>
+			<path d="M3 8.5L6.5 12L13 4.5" />
+		</MenuIcon>
 	);
 }
 

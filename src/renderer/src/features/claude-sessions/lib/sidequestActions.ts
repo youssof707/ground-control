@@ -60,7 +60,7 @@ export function openSidequestPanelAndFocus(parentSessionId: string): void {
  */
 export async function recreateSidequest(
 	parentSessionId: string,
-	forkMessageId: string,
+	forkMessageId: string | null,
 	opts?: { preserveDraft?: boolean },
 ): Promise<string | null> {
 	const store = useSidequestsStore.getState();
@@ -164,7 +164,6 @@ export async function sendToSidequest(
 
 	const parent = useSessionsStore.getState().sessions[parentSessionId];
 	const forkMessageId = lastForkableMessageId(parent?.messages ?? []);
-	if (!forkMessageId) return null;
 
 	// preserveDraft: the composer cleared its draft optimistically before
 	// calling us, but the user may have typed into the box since. Carrying the

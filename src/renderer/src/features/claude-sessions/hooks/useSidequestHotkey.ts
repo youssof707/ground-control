@@ -91,15 +91,7 @@ export function useSidequestHotkey(): void {
 				const forkMessageId = containingId
 					? resolveForkPointMessageId(session.messages ?? [], containingId)
 					: null;
-				// Nothing forkable yet (parent has never replied) — open the
-				// panel so its empty state explains why, rather than doing
-				// nothing.
-				if (!forkMessageId) {
-					useRightPanelStore
-						.getState()
-						.setSessionPanel(sessionId, "sidequest");
-					return;
-				}
+				useRightPanelStore.getState().setSessionPanel(sessionId, "sidequest");
 				void (async () => {
 					// preserveDraft so `appendQuotedToDraft` can actually append.
 					// Re-forking used to clear the draft first, which silently
@@ -119,12 +111,7 @@ export function useSidequestHotkey(): void {
 			// sidequest at the last Claude message if there isn't one yet.
 			if (!sq) {
 				const forkMessageId = lastForkableMessageId(session.messages ?? []);
-				if (!forkMessageId) {
-					useRightPanelStore
-						.getState()
-						.setSessionPanel(sessionId, "sidequest");
-					return;
-				}
+				useRightPanelStore.getState().setSessionPanel(sessionId, "sidequest");
 				void (async () => {
 					await recreateSidequest(sessionId, forkMessageId);
 					openSidequestPanelAndFocus(sessionId);

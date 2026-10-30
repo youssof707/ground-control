@@ -55,7 +55,10 @@ declare global {
 			cancelSession: (sessionId: string) => Promise<void>;
 			sendUserMessage: (turn: UserTurn) => Promise<void>;
 			finishSession: (sessionId: string) => Promise<void>;
-			interruptSession: (sessionId: string) => Promise<void>;
+			interruptSession: (
+				sessionId: string,
+				options?: { keepBackgroundTasks?: boolean },
+			) => Promise<void>;
 			stopTask: (sessionId: string, taskId: string) => Promise<void>;
 			listTasks: (sessionId: string) => Promise<LiveBackgroundTask[]>;
 			resumeSession: (sessionId: string) => Promise<void>;
@@ -70,7 +73,7 @@ declare global {
 			startSidequest: (input: {
 				sidequestId: string;
 				parentSessionId: string;
-				forkMessageId: string;
+				forkMessageId: string | null;
 			}) => Promise<ClaudeSession>;
 			discardSidequest: (parentSessionId: string) => Promise<void>;
 			/** Fork a sidequest reply into a real, persisted session. */

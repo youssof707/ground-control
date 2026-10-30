@@ -534,7 +534,7 @@ interface SidequestRun {
 	session: ClaudeSession;
 	parentSessionId: string;
 	/** The parent assistant message this branched from. */
-	forkMessageId: string;
+	forkMessageId: string | null;
 	/** Every message broadcast on `sidequest:message`, in order, same ids. */
 	messages: SessionMessage[];
 	/**
@@ -1092,19 +1092,15 @@ export class SessionManager {
 	async startSidequest(input: {
 		sidequestId: string;
 		parentSessionId: string;
-		forkMessageId: string;
+		forkMessageId: string | null;
 	}): Promise<ClaudeSession> {
-		const { sidequestId, parentSessionId, forkMessageId } = input;
+		const { sidequestId, parentSessionId } = input;
 
 		const parent = sessionStore.getSession(parentSessionId);
 		if (!parent) throw new Error("Parent session not found");
-		// Preflighted against the on-disk transcript: the CLI we're about to
-		// spawn exits 1 if it can't find this uuid, and that failure arrives
-		// asynchronously (see the `void this.runLoop` below), so it can't be
-		// reported back to the caller — only as a dead panel a second later.
-		const { sdkUuid, sourceSdkId } = await this.resolveViableForkSource(
+		const forkPoint = await this.resolveSidequestForkPoint(
 			parent,
-			forkMessageId,
+			input.forkMessageId,
 		);
 
 		await this.discardSidequest(parentSessionId);
@@ -1119,38 +1115,84 @@ export class SessionManager {
 			createdAt: Date.now(),
 			branch: parent.branch,
 			startCommit: parent.startCommit,
-			// Permission handling is inherited from the parent: same mode, same
-			// broker, and the renderer routes the resulting permission cards
-			// into the sidequest panel by session id.
 			mode: parent.mode,
 			model: parent.model,
-			// Same on-disk checkout as the parent, so tools see the same tree.
 			worktreeId: parent.worktreeId,
 		};
 
-		// Both maps are set *after* discardSidequest above, which clears them.
 		this.sidequests.set(parentSessionId, sidequestId);
 		this.sidequestRuns.set(sidequestId, {
 			session,
 			parentSessionId,
-			forkMessageId,
+			forkMessageId: forkPoint ? forkPoint.wrapperMessageId : null,
 			messages: [],
 		});
 
-		// Don't await — runLoop runs the SDK loop until it ends. Its
-		// synchronous prologue registers the entry and emits
-		// `sidequest:started` before the first await.
+		this.launchSidequestRun(parent, session, forkPoint?.source ?? null);
+
+		return session;
+	}
+
+	private async resolveSidequestForkPoint(
+		parent: ClaudeSessionFull,
+		forkMessageId: string | null,
+	): Promise<{
+		wrapperMessageId: string;
+		source: { sdkUuid: string; sourceSdkId: string };
+	} | null> {
+		if (!forkMessageId) return null;
+		try {
+			const source = await this.resolveViableForkSource(parent, forkMessageId);
+			return { wrapperMessageId: forkMessageId, source };
+		} catch (err) {
+			console.warn(
+				"[ccw] sidequest fork point unavailable, starting a fresh sidequest:",
+				err,
+			);
+			return null;
+		}
+	}
+
+	private launchSidequestRun(
+		parent: ClaudeSessionFull,
+		session: ClaudeSession,
+		source: { sdkUuid: string; sourceSdkId: string } | null,
+		pendingTurns: UserContentBlock[][] = [],
+	): void {
+		const parentSessionId = parent.id;
 		void this.runLoop({
 			session,
 			cwd: resolveEffectiveCwd(parent),
 			initialTurns: [],
-			resumeSdkSessionId: sourceSdkId,
-			resumeSessionAt: sdkUuid,
+			resumeSdkSessionId: source?.sourceSdkId,
+			resumeSessionAt: source?.sdkUuid,
 			ephemeral: true,
 			parentSessionId,
+			onForkResumeFailed: source
+				? (unansweredTurns) =>
+					this.restartSidequestFresh(parent, session, unansweredTurns)
+				: undefined,
 		});
+		const entry = this.sessions.get(session.id);
+		for (const blocks of pendingTurns) entry?.pushTurn(blocks);
+	}
 
-		return session;
+	private restartSidequestFresh(
+		parent: ClaudeSessionFull,
+		session: ClaudeSession,
+		unansweredTurns: UserContentBlock[][],
+	): void {
+		if (this.sidequests.get(parent.id) !== session.id) return;
+		if (this.deletedIds.has(session.id)) return;
+		console.warn(
+			`[ccw] sidequest ${session.id} couldn't resume at its fork point; restarting it as a fresh sidequest`,
+		);
+		const run = this.sidequestRuns.get(session.id);
+		if (run) run.forkMessageId = null;
+		session.status = "idle";
+		session.sdkSessionId = undefined;
+		session.error = undefined;
+		this.launchSidequestRun(parent, session, null, unansweredTurns);
 	}
 
 	/**
@@ -1463,6 +1505,7 @@ export class SessionManager {
 		ephemeral?: boolean;
 		/** Owning main session, echoed in the `sidequest:started` payload. */
 		parentSessionId?: string;
+		onForkResumeFailed?: (unansweredTurns: UserContentBlock[][]) => void;
 	}): Promise<void> {
 		const { session, cwd } = cfg;
 		const id = session.id;
@@ -1678,6 +1721,8 @@ export class SessionManager {
 		);
 
 		let sdkIdCaptured = !!session.sdkSessionId;
+		let assistantReplySeen = false;
+		let forkResumeFallbackTurns: UserContentBlock[][] | null = null;
 		let cliVersionLogged = false;
 		let sweepTimer: NodeJS.Timeout | null = null;
 
@@ -1849,6 +1894,7 @@ export class SessionManager {
 				// status flip should not wait on the persist/broadcast path,
 				// and some of the messages that drive it are dropped below.
 				activity.apply(msg);
+				if (msg.type === "assistant") assistantReplySeen = true;
 
 				// Context-size capture points. Early (before every `continue`
 				// filter below) out of the same caution as the model-rejection
@@ -2135,6 +2181,18 @@ export class SessionManager {
 				}
 			}
 		} catch (err: unknown) {
+			if (
+				cfg.onForkResumeFailed &&
+				!assistantReplySeen &&
+				!abort.signal.aborted
+			) {
+				forkResumeFallbackTurns = [
+					...(lastTurnBlocks ? [lastTurnBlocks] : []),
+					...turns,
+				];
+				console.warn(`[session ${id}] fork resume failed:`, err);
+				return;
+			}
 			session.status = "errored";
 			session.error = err instanceof Error ? err.message : String(err);
 			session.finishedAt = Date.now();
@@ -2168,6 +2226,9 @@ export class SessionManager {
 			state.waitForTurn?.();
 			this.sessions.delete(id);
 			resolveDone();
+			if (forkResumeFallbackTurns) {
+				cfg.onForkResumeFailed?.(forkResumeFallbackTurns);
+			}
 		}
 	}
 
@@ -2555,7 +2616,10 @@ export class SessionManager {
 	 * {stopped}`, `result error_during_execution` — is either shrink-only or
 	 * clears `turnActive`, so none of it can flip the session back to running.
 	 */
-	async interrupt(sessionId: string) {
+	async interrupt(
+		sessionId: string,
+		{ keepBackgroundTasks = false }: { keepBackgroundTasks?: boolean } = {},
+	) {
 		const entry = this.sessions.get(sessionId);
 		if (!entry) return;
 		// Settle any pending permission prompt FIRST. The SDK's `canUseTool`
@@ -2567,6 +2631,7 @@ export class SessionManager {
 		// clears the stale card in the renderer and unblocks the queued-
 		// message flusher's `pendingPermission` guard.
 		this.broker.cancelAllForSession(sessionId, "Interrupted");
+		if (!keepBackgroundTasks) await this.stopAllBackgroundTasks(sessionId);
 		try {
 			// Best-effort deadline: if the CLI doesn't ack within 5s, log and
 			// move on. Rejecting would only propagate a hang to the shared

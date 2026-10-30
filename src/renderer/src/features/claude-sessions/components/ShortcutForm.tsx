@@ -36,11 +36,13 @@ export function ShortcutFormFields({
 	onChange,
 	disabled,
 	autoFocus,
+	fill,
 }: {
 	value: ShortcutFormValue;
 	onChange: (next: ShortcutFormValue) => void;
 	disabled?: boolean;
 	autoFocus?: boolean;
+	fill?: boolean;
 }) {
 	return (
 		<div
@@ -49,6 +51,7 @@ export function ShortcutFormFields({
 				flexDirection: "column",
 				gap: 12,
 				marginBottom: 16,
+				...(fill ? { flex: 1 } : null),
 			}}
 		>
 			<LabeledInput
@@ -62,7 +65,14 @@ export function ShortcutFormFields({
 				mono={false}
 			/>
 
-			<label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+			<label
+				style={{
+					display: "flex",
+					flexDirection: "column",
+					gap: 4,
+					...(fill ? { flex: 1 } : null),
+				}}
+			>
 				<span style={fieldLabelStyle}>Prompt</span>
 				<textarea
 					value={value.prompt}
@@ -81,8 +91,9 @@ export function ShortcutFormFields({
 						fontFamily: T.sans,
 						lineHeight: 1.45,
 						outline: "none",
-						resize: "vertical",
-						minHeight: 72,
+						resize: fill ? "none" : "vertical",
+						minHeight: fill ? 120 : 72,
+						...(fill ? { flex: 1 } : null),
 						transition: "border-color 80ms ease",
 					}}
 					onFocus={(e) => {

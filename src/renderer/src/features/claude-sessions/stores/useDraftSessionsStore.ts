@@ -76,7 +76,7 @@ export interface DraftSession {
 	 * post-hoc regroup, and no window in which `pruneGroupIfEmpty` could
 	 * delete the group during a "Handoff & delete". */
 	groupId?: string;
-	/** Set by the plain top-of-sidebar New Session button (and Cmd+T): the
+	/** Set by the plain top-of-sidebar New Session button (and Cmd+N): the
 	 * draft isn't tied to any sidebar container yet, so its row renders at
 	 * the top of the list instead of inside its cwd bucket. A group or
 	 * worktree binding still wins (see `draftHost` in SessionsList), and the

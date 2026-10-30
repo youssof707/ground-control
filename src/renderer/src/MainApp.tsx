@@ -37,6 +37,7 @@ import { useUndoHotkey } from "./features/claude-sessions/hooks/useUndoHotkey";
 import { useDictationHotkey } from "./features/claude-sessions/hooks/useDictationHotkey";
 import { useBabysitHotkey } from "./features/claude-sessions/hooks/useBabysitHotkey";
 import { useSchedulerHotkey } from "./features/claude-sessions/hooks/useSchedulerHotkey";
+import { useDeleteSessionHotkey } from "./features/claude-sessions/hooks/useDeleteSessionHotkey";
 import { CommandPaletteModal } from "./features/claude-sessions/components/CommandPaletteModal";
 import { T } from "./design/tokens";
 
@@ -68,7 +69,7 @@ export default function MainApp() {
 	// Global ⌘. — interrupts the active session's running turn (the macOS
 	// "cancel" idiom). No-op unless that session is actually running.
 	useStopSessionHotkey();
-	// Global ⌘T — opens a new session draft, pre-attached to the worktree
+	// Global ⌘N — opens a new session draft, pre-attached to the worktree
 	// last used in the target workspace.
 	useNewSessionHotkey();
 	// ⌘P — toggles Plan ⇄ Auto-edit, but only while a session composer has
@@ -84,6 +85,7 @@ export default function MainApp() {
 	// off a session route, and on drafts (nothing to babysit yet).
 	useBabysitHotkey();
 	useSchedulerHotkey();
+	useDeleteSessionHotkey();
 	return (
 		<div
 			style={{

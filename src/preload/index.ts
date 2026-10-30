@@ -30,8 +30,10 @@ const claude = {
 		ipcRenderer.invoke("session:userMessage", turn),
 	finishSession: (sessionId: string) =>
 		ipcRenderer.invoke("session:finish", sessionId),
-	interruptSession: (sessionId: string) =>
-		ipcRenderer.invoke("session:interrupt", sessionId),
+	interruptSession: (
+		sessionId: string,
+		options?: { keepBackgroundTasks?: boolean },
+	) => ipcRenderer.invoke("session:interrupt", sessionId, options),
 	stopTask: (sessionId: string, taskId: string) =>
 		ipcRenderer.invoke("session:stopTask", { sessionId, taskId }),
 	listTasks: (sessionId: string) =>
@@ -51,7 +53,7 @@ const claude = {
 	startSidequest: (input: {
 		sidequestId: string;
 		parentSessionId: string;
-		forkMessageId: string;
+		forkMessageId: string | null;
 	}) => ipcRenderer.invoke("sidequest:start", input),
 	discardSidequest: (parentSessionId: string) =>
 		ipcRenderer.invoke("sidequest:discard", parentSessionId),

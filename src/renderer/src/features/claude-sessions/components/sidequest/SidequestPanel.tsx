@@ -180,7 +180,6 @@ export function SidequestPanel({
 		if (clearing) return;
 		const parent = useSessionsStore.getState().sessions[sessionId];
 		const forkMessageId = lastForkableMessageId(parent?.messages ?? []);
-		if (!forkMessageId) return;
 		setClearing(true);
 		try {
 			// Discards (aborting mid-stream if needed) and re-forks at the very
@@ -381,26 +380,24 @@ export function SidequestPanel({
 								gap: 12,
 							}}
 						>
-							{canStart ? (
-								<button
-									type="button"
-									onClick={() => void startFresh()}
-									disabled={clearing}
-									style={{
-										padding: "6px 12px",
-										borderRadius: 8,
-										border: `0.5px solid ${T.border}`,
-										background: T.surface,
-										color: T.text,
-										fontSize: 12.5,
-										fontWeight: 500,
-										cursor: clearing ? "default" : "pointer",
-										fontFamily: T.sans,
-									}}
-								>
-									{clearing ? "Branching…" : "Start sidequest"}
-								</button>
-							) : null}
+							<button
+								type="button"
+								onClick={() => void startFresh()}
+								disabled={clearing}
+								style={{
+									padding: "6px 12px",
+									borderRadius: 8,
+									border: `0.5px solid ${T.border}`,
+									background: T.surface,
+									color: T.text,
+									fontSize: 12.5,
+									fontWeight: 500,
+									cursor: clearing ? "default" : "pointer",
+									fontFamily: T.sans,
+								}}
+							>
+								{clearing ? "Branching…" : "Start sidequest"}
+							</button>
 							<div
 								style={{
 									fontSize: 12.5,
@@ -417,8 +414,8 @@ export function SidequestPanel({
 									</>
 								) : (
 									<>
-										Waiting for Claude&rsquo;s first reply — sidequests branch
-										from an assistant message.
+										No Claude reply to branch from yet, so a sidequest started
+										now begins as a fresh conversation in this workspace.
 									</>
 								)}
 							</div>

@@ -148,12 +148,18 @@ export function EditShortcutsModal({
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="edit-shortcuts-title"
-				style={{
-					width:
-						view.kind === "edit"
-							? "calc(100vw - 64px)"
-							: "min(480px, calc(100vw - 32px))",
-				}}
+				style={
+					view.kind === "edit"
+						? {
+							width: "calc((100vw - 64px) * 0.8)",
+							height: "calc(100vh - 64px)",
+							display: "flex",
+							flexDirection: "column",
+							boxSizing: "border-box",
+							overflowY: "auto",
+						}
+						: { width: "min(480px, calc(100vw - 32px))" }
+				}
 			>
 				{view.kind === "list" ? (
 					<>
@@ -207,6 +213,7 @@ export function EditShortcutsModal({
 							onChange={setForm}
 							disabled={busy}
 							autoFocus
+							fill
 						/>
 
 						{error ? <div className="modal-error">{error}</div> : null}

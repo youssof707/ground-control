@@ -19,13 +19,18 @@ keep them in sync. The same zero-comments and no-tooltip rules apply.
 **Whenever a keyboard shortcut is added, changed, or removed, update this list.** This is
 the single source of truth so shortcuts are easy to find.
 
-- `Cmd+T` — new session in the last-used workspace, with no worktree or group
+- `Cmd+N` — new session in the last-used workspace, with no worktree or group
   (same as the sidebar's New Session button)
 - `Cmd+S` — open a side quest
 - `Cmd+K` — open the shortcut menu
 - `Cmd+R` — quote the current selection into the composer and focus it
 - `Cmd+.` — stop/interrupt the active session's running turn
 - `Cmd+P` — toggle plan ⇄ auto-edit, only while a session composer is focused
+- `Enter` in a composer (main or side quest) — sends when the session is idle.
+  While its turn is running, Enter queues the message instead (it shows as a
+  chip above the composer and fires once the turn fully finishes). The only
+  way to send mid-turn is a mouse click on the Send button; keyboard
+  activation of that button queues too
 - `Cmd+D` — start/stop voice dictation. Works from anywhere while a session
   is open: starts in whichever composer has focus (main or side quest),
   stops whichever take is already running regardless of focus, and is a
@@ -51,6 +56,12 @@ the single source of truth so shortcuts are easy to find.
 - `Cmd+Shift+T` — restore the most recently deleted / handed-off
   session, from anywhere (including inside a composer). No-op when nothing
   is buffered
+- `Cmd+Delete` (Cmd+Backspace) — delete the active session, exactly like its
+  row's Delete item: if it's the last session on a worktree, the same
+  delete-worktree confirm modal opens instead of deleting outright. No-op off
+  a session route, on a draft, while any text field (including a composer)
+  has focus so native delete-to-line-start keeps working, and while another
+  modal is open
 
 ## Code rules
 
@@ -78,10 +89,35 @@ shell.
 `_electron.launch`, no driver scripts that wrap it. Don't install it, don't script it,
 don't suggest it.
 
-**Never run the app.** No `npm run dev`, no `npm start`, no launching Electron, no
-driving it with a script. Don't web-scrape, don't spin up browsers, don't invent manual
-click-through scripts and execute them, don't `git stash` to diff behavior. I run the app
-and verify behavior myself — make the change and hand it to me.
+**Never run the app unless I explicitly ask in that request.** By default: no
+`npm run dev`, no `npm start`, no launching Electron, no driving it with a script. Don't
+web-scrape, don't spin up browsers, don't invent manual click-through scripts and execute
+them, don't `git stash` to diff behavior. I run the app and verify behavior myself — make
+the change and hand it to me.
+
+**When I do ask you to run / E2E test the app, it must be completely invisible to me.**
+I'm working on the same machine. I must not see it, hear it, or be interrupted by it.
+
+- Launch in the background so it never takes focus: `open -g` style, never activate it.
+  Pass `--remote-debugging-port=<port>` (renderer) and `--inspect=<port>` (main process).
+- Right away, through the main-process inspector, run `app.dock.hide()` and move every
+  `BrowserWindow` to about `-10000,-10000` with `setPosition`. Call
+  `webContents.setBackgroundThrottling(false)` on each. Apply the same to any window
+  opened later.
+- Keep windows "shown" off-screen rather than calling `hide()` or `show: false`. Hidden
+  windows can stop painting, which gives blank screenshots and stalled animations.
+- Drive it only through CDP: `Input.dispatchKeyEvent` / `Input.dispatchMouseEvent` for
+  input, `Runtime.evaluate` for DOM state, `Page.captureScreenshot` for screenshots. Never
+  touch the real keyboard, mouse, clipboard, or screen (no AppleScript, no `cliclick`, no
+  `screencapture`).
+- No sound: don't trigger dictation, system beeps, or notifications. Mute anything that
+  could make noise.
+- Use a throwaway `--user-data-dir` so my real sessions and settings are untouched, and
+  never collide with a copy of Ground Control I already have running.
+- Put CDP client deps (`ws`, `chrome-remote-interface`) in a temp dir, never in the repo.
+- When done, kill every process you started and leave `git status` exactly as you
+  found it.
+- Never ask me to look at, focus, enable, or click anything. Playwright is still banned.
 
 **Static checks are fine — run them, don't ask.** `npm run typecheck`, `npm run lint`,
 and builds are expected after any non-trivial change. They don't launch anything, and

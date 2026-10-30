@@ -11,7 +11,7 @@ export function useNewSessionHotkey(): void {
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
 			if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-			if (e.key.toLowerCase() !== "t") return;
+			if (e.key.toLowerCase() !== "n") return;
 
 			e.preventDefault();
 			e.stopPropagation();

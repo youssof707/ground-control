@@ -33,6 +33,7 @@ import { AddToGroupModal } from "./AddToGroupModal";
 import { BabysitBadge } from "./BabysitBadge";
 import { BabysitModal } from "./BabysitModal";
 import { useBabysitStore } from "../stores/useBabysitStore";
+import { useDeleteSessionRequestStore } from "../stores/useDeleteSessionRequestStore";
 import { RenameGroupModal } from "./RenameGroupModal";
 import { SettingsModal } from "./SettingsModal";
 import { useSettingsModalStore } from "../stores/useSettingsModalStore";
@@ -375,7 +376,7 @@ export function SessionsList({
 		navigate(`/sessions/${d.id}`);
 	};
 
-	// Shares `startNewSessionDraft` with the global Cmd+T hotkey so the button
+	// Shares `startNewSessionDraft` with the global Cmd+N hotkey so the button
 	// and the shortcut can't drift. The helper handles the draft-reuse rule
 	// and the folder picker fallback, and starts the draft with no worktree
 	// or group, floating at the top of the list; `onWorkspaceRevealed` keeps
@@ -699,6 +700,17 @@ export function SessionsList({
 		setDeleteError(null);
 		setAlsoDeleteWorktree(false);
 	};
+
+	const requestedDeleteId = useDeleteSessionRequestStore(
+		(s) => s.requestedSessionId,
+	);
+	const startDeleteRef = useRef(startDelete);
+	startDeleteRef.current = startDelete;
+	useEffect(() => {
+		if (!requestedDeleteId) return;
+		useDeleteSessionRequestStore.getState().clear();
+		startDeleteRef.current(requestedDeleteId);
+	}, [requestedDeleteId]);
 
 	const worktreeName = pendingDeleteWorktree?.displayName ?? "this worktree";
 

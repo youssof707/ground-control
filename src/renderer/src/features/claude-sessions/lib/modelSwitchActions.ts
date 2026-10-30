@@ -32,7 +32,9 @@ export async function switchModelAndResume(
 ): Promise<void> {
 	useQueuedMessagesStore.getState().hold(sessionId);
 	try {
-		await window.claude.interruptSession(sessionId);
+		await window.claude.interruptSession(sessionId, {
+			keepBackgroundTasks: true,
+		});
 		await window.claude.setSessionModel(sessionId, model);
 
 		const queued = useQueuedMessagesStore.getState().shift(sessionId);

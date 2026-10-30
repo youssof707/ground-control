@@ -343,6 +343,10 @@ export function MessageComposer({
 			// so you can stop talking and hit Enter without firing off a
 			// half-finished message. A second Enter sends.
 			if (dictationRef.current?.commitIfRecording()) return;
+			if (target.isRunning) {
+				queueMessage();
+				return;
+			}
 			void send();
 			return;
 		}
@@ -647,7 +651,7 @@ export function MessageComposer({
 							style={{ position: "relative", display: "inline-flex" }}
 						>
 							<button
-								onClick={send}
+								onClick={(e) => (e.detail === 0 ? queueMessage() : void send())}
 								disabled={sendDisabled}
 								aria-busy={busy}
 								className={`btn ${branchStale ? "btn-destructive" : "btn-primary"}`}
