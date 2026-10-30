@@ -1,5 +1,7 @@
 import { AUTO_RESUME_TEXT } from "@shared/claude-sessions/transcript";
 import { useQueuedMessagesStore } from "../stores/useQueuedMessagesStore";
+import { useSidequestsStore } from "../stores/useSidequestsStore";
+import { sendToSidequest } from "./sidequestActions";
 import { sendTurn } from "./sendTurn";
 
 /**
@@ -55,5 +57,37 @@ export async function switchModelAndResume(
 		}
 	} finally {
 		useQueuedMessagesStore.getState().release(sessionId);
+	}
+}
+
+export async function switchSidequestModelAndResume(
+	parentSessionId: string,
+	sidequestId: string,
+	model: string | undefined,
+): Promise<void> {
+	useQueuedMessagesStore.getState().hold(sidequestId);
+	try {
+		await window.claude.interruptSession(sidequestId, {
+			keepBackgroundTasks: true,
+		});
+		await window.claude.setSessionModel(sidequestId, model);
+
+		const queued = useQueuedMessagesStore.getState().shift(sidequestId);
+		const landedIn = await sendToSidequest(
+			parentSessionId,
+			sidequestId,
+			queued ? queued.blocks : [{ type: "text", text: AUTO_RESUME_TEXT }],
+		);
+		if (!landedIn) {
+			const current =
+				useSidequestsStore.getState().byParent[parentSessionId]?.sidequestId
+				?? sidequestId;
+			const message = "Couldn't start a sidequest to send to";
+			if (queued) useQueuedMessagesStore.getState().unshift(current, queued);
+			useQueuedMessagesStore.getState().setError(current, message);
+			throw new Error(message);
+		}
+	} finally {
+		useQueuedMessagesStore.getState().release(sidequestId);
 	}
 }

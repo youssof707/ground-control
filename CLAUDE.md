@@ -46,10 +46,12 @@ the single source of truth so shortcuts are easy to find.
   native Enter). No-op when the primary button is disabled
 - `Cmd+Shift+S` — open the Scheduler modal (schedules and the sessions they
   spawned). Works from anywhere
-- `Cmd+Shift+M` — open the model picker for the active session or draft
-  (picking a model while a turn is running interrupts it, switches, and
-  resumes automatically). The modal closes instantly and the switch runs in
-  the background, with animated dots on the model label until it lands
+- `Cmd+Shift+M` — open the model picker for the active session or draft, or
+  for the side quest when focus is inside the side quest panel (picking a
+  model while a turn is running interrupts it, switches, and resumes
+  automatically — in side quests too). The modal closes instantly and the
+  switch runs in the background, with animated dots on the model label until
+  it lands
 - Letter keys inside the model picker — pick the model whose badge shows that
   letter. Each row gets the first letter of its name not already taken by an
   earlier row; rows with no free letter get no key
@@ -115,8 +117,14 @@ I'm working on the same machine. I must not see it, hear it, or be interrupted b
 - Use a throwaway `--user-data-dir` so my real sessions and settings are untouched, and
   never collide with a copy of Ground Control I already have running.
 - Put CDP client deps (`ws`, `chrome-remote-interface`) in a temp dir, never in the repo.
+- Never move, rename, copy, back up, or write into the repo's `.dev-store/`. A dev
+  build stores data in `<cwd>/.dev-store`, so for a clean store launch Electron with
+  its working directory set to a temp dir outside the repo.
+- Never create files or folders anywhere inside the repo during a test run. All
+  scratch files, screenshots, backups, and stores go in a temp dir outside it.
 - When done, kill every process you started and leave `git status` exactly as you
-  found it.
+  found it. Check `git status` before handing back; any new untracked or modified
+  path you caused gets removed.
 - Never ask me to look at, focus, enable, or click anything. Playwright is still banned.
 
 **Static checks are fine — run them, don't ask.** `npm run typecheck`, `npm run lint`,

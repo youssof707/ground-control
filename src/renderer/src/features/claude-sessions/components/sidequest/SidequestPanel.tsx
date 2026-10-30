@@ -15,6 +15,7 @@ import {
 	recreateSidequest,
 } from "../../lib/sidequestActions";
 import { stopSidequest } from "../../lib/sessionControlActions";
+import { switchSidequestModelAndResume } from "../../lib/modelSwitchActions";
 import { runForkAndDelete } from "../../lib/forkActions";
 import { runHandoff } from "../../lib/handoffActions";
 import { useComposerResize } from "../../hooks/useComposerResize";
@@ -549,6 +550,9 @@ export function SidequestPanel({
 						}}
 						density="compact"
 						onAfterSelect={() => openSidequestPanelAndFocus(sessionId)}
+						onSwitchAndResume={(value) =>
+							switchSidequestModelAndResume(sessionId, sq.sidequestId, value)
+						}
 					/>
 					{/* Same composer the main chat uses — queuing, the ⚡
 					    shortcuts/skills menu, and every keyboard affordance now

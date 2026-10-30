@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useMatch } from "react-router-dom";
 import { useModelPickerStore } from "../stores/useModelPickerStore";
+import { useSidequestsStore } from "../stores/useSidequestsStore";
 import { refreshModelOptions } from "../lib/modelOptionsCache";
 
 export function useModelPickerHotkey(): void {
@@ -23,7 +24,12 @@ export function useModelPickerHotkey(): void {
 			e.preventDefault();
 			e.stopPropagation();
 
-			useModelPickerStore.getState().open(sessionId);
+			const focused = document.activeElement as HTMLElement | null;
+			const sidequestId = focused?.closest("[data-sidequest-panel]")
+				? useSidequestsStore.getState().byParent[sessionId]?.sidequestId
+				: undefined;
+
+			useModelPickerStore.getState().open(sidequestId ?? sessionId);
 		};
 
 		window.addEventListener("keydown", onKeyDown, true);

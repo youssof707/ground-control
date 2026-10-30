@@ -53,10 +53,6 @@ type Density = "full" | "compact";
 export function SessionTokenBar({
 	target,
 	density = "full",
-	/** Interrupt the current turn, set the model, and resume — omitted by
-	 * the sidequest panel: `sendToSidequest`'s self-heal (re-fork a dead SDK
-	 * loop) has no equivalent on this path, so sidequests keep the plain
-	 * "just set it" behavior instead of gaining a fourth send variant. */
 	onSwitchAndResume,
 	/** Called after a successful pick instead of the modal's own default of
 	 * refocusing the *main* composer (`ModelPickerModal`'s
