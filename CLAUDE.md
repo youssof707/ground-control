@@ -57,7 +57,11 @@ the single source of truth so shortcuts are easy to find.
   model while a turn is running interrupts it, switches, and resumes
   automatically — in side quests too). The modal closes instantly and the
   switch runs in the background, with animated dots on the model label until
-  it lands
+  it lands. If that composer has text (or images) in it, nothing is
+  interrupted or switched: the pick is held for the next message (label
+  shows `· next message`) and applied right before that message is sent, or
+  attached to it if it gets queued — so each queued message can carry its
+  own model, switched as it fires
 - Letter keys inside the model picker — pick the model whose badge shows that
   letter. Each row gets the first letter of its name not already taken by an
   earlier row; rows with no free letter get no key

@@ -5,12 +5,22 @@ interface PendingSwitch {
 	seq: number;
 }
 
+export interface NextMessageModel {
+	model: string | undefined;
+}
+
 interface State {
 	openForSessionId: string | null;
 	switching: Record<string, PendingSwitch>;
 	failed: Record<string, true>;
+	nextMessageModel: Record<string, NextMessageModel>;
 	open: (sessionId: string) => void;
 	close: () => void;
+	setNextMessageModel: (
+		sessionId: string,
+		next: NextMessageModel | undefined,
+	) => void;
+	takeNextMessageModel: (sessionId: string) => NextMessageModel | undefined;
 	runSwitch: (
 		sessionId: string,
 		model: string | undefined,
@@ -31,12 +41,26 @@ export const useModelPickerStore = create<State>((set, get) => ({
 	openForSessionId: null,
 	switching: {},
 	failed: {},
+	nextMessageModel: {},
 	open: (sessionId) =>
 		set((s) => ({
 			openForSessionId: sessionId,
 			failed: without(s.failed, sessionId),
 		})),
 	close: () => set({ openForSessionId: null }),
+	setNextMessageModel: (sessionId, next) =>
+		set((s) => ({
+			nextMessageModel: next
+				? { ...s.nextMessageModel, [sessionId]: next }
+				: without(s.nextMessageModel, sessionId),
+		})),
+	takeNextMessageModel: (sessionId) => {
+		const next = get().nextMessageModel[sessionId];
+		if (next) {
+			set((s) => ({ nextMessageModel: without(s.nextMessageModel, sessionId) }));
+		}
+		return next;
+	},
 	runSwitch: async (sessionId, model, apply) => {
 		const seq = ++switchSeq;
 		set((s) => ({

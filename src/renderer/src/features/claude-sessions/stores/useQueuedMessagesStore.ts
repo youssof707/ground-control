@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { UserContentBlock } from "@shared/claude-sessions/types";
+import type { NextMessageModel } from "./useModelPickerStore";
 
 /**
  * A message queued from the composer while its session was running — a
@@ -13,6 +14,7 @@ export interface QueuedMessage {
 	/** Trimmed text for the chip. Empty when the message is images-only. */
 	preview: string;
 	imageCount: number;
+	switchModel?: NextMessageModel;
 }
 
 interface State {

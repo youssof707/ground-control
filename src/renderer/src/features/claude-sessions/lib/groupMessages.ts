@@ -5,6 +5,13 @@ import {
 	isToolLikeBlockType,
 } from "@shared/claude-sessions/transcript";
 import { blocksOf, type ContentBlock } from "./messageContent";
+import {
+	ASK_USER_QUESTION_TOOL,
+	answeredQuestionsByToolUseId,
+	questionsOf,
+	type QuestionAnswers,
+	type QuestionDef,
+} from "./askUserQuestion";
 
 // A flat render unit emitted by `groupMessagesIntoUnits`. Either:
 //   - a normal message that goes through <MessageView/>, or
@@ -19,6 +26,13 @@ export type RenderUnit =
 		// so it survives re-renders (messages are append-only).
 		key: string;
 		entries: { messageId: string; blockIndex: number; block: ContentBlock }[];
+	}
+	| {
+		kind: "answeredQuestion";
+		key: string;
+		messageId: string;
+		questions: QuestionDef[];
+		answers: QuestionAnswers;
 	};
 
 // A message qualifies as a "tool turn" if every block is tool-like per the
@@ -48,6 +62,34 @@ export function groupMessagesIntoUnits(
 ): RenderUnit[] {
 	const units: RenderUnit[] = [];
 	let run: RenderUnit & { kind: "toolRun" } | null = null;
+	const answered = answeredQuestionsByToolUseId(messages);
+	const carded = new Set<string>();
+
+	const answeredQuestionUnit = (
+		messageId: string,
+		block: ContentBlock,
+	): RenderUnit | null => {
+		if (block.type !== "tool_use" || block.name !== ASK_USER_QUESTION_TOOL) {
+			return null;
+		}
+		if (typeof block.id !== "string") return null;
+		const answers = answered.get(block.id);
+		const questions = questionsOf(block.input);
+		if (!answers || questions.length === 0) return null;
+		carded.add(block.id);
+		return {
+			kind: "answeredQuestion",
+			key: `question:${block.id}`,
+			messageId,
+			questions,
+			answers,
+		};
+	};
+
+	const isCardedResult = (block: ContentBlock) =>
+		block.type === "tool_result" &&
+		typeof block.tool_use_id === "string" &&
+		carded.has(block.tool_use_id);
 
 	const flush = () => {
 		if (run && run.entries.length > 0) units.push(run);
@@ -85,18 +127,26 @@ export function groupMessagesIntoUnits(
 			continue;
 		}
 		if (isToolOnlyMessage(m)) {
-			if (!run) {
-				run = { kind: "toolRun", key: "", entries: [] };
-			}
-			const blocks = blocksOf(m);
-			blocks.forEach((block, blockIndex) => {
-				run!.entries.push({ messageId: m.id, blockIndex, block });
+			blocksOf(m).forEach((block, blockIndex) => {
+				if (isCardedResult(block)) return;
+				const card = answeredQuestionUnit(m.id, block);
+				if (card) {
+					flush();
+					units.push(card);
+					return;
+				}
+				if (!run) run = { kind: "toolRun", key: "", entries: [] };
+				run.entries.push({ messageId: m.id, blockIndex, block });
+				if (!run.key) run.key = `toolrun:${m.id}:${blockIndex}`;
 			});
-			if (!run.key) run.key = `toolrun:${m.id}:0`;
 			continue;
 		}
 		flush();
 		units.push({ kind: "message", message: m });
+		for (const block of blocksOf(m)) {
+			const card = answeredQuestionUnit(m.id, block);
+			if (card) units.push(card);
+		}
 	}
 	flush();
 	return units;

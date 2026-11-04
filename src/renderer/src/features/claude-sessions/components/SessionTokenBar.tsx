@@ -14,6 +14,8 @@ import {
 	usageTotal,
 } from "@shared/claude-sessions/sessionUsage";
 import { useModelPickerStore } from "../stores/useModelPickerStore";
+import { useDraftStore } from "../stores/useDraftStore";
+import { draftHasContent } from "../lib/modelSwitchActions";
 import { useSettingsStore } from "../stores/useSettingsStore";
 import { ModelPickerModal } from "./ModelPickerModal";
 
@@ -90,15 +92,26 @@ export function SessionTokenBar({
 	);
 	const switching = useModelPickerStore((s) => s.switching[target.id]);
 	const switchFailed = useModelPickerStore((s) => !!s.failed[target.id]);
+	const nextMessageModel = useModelPickerStore(
+		(s) => s.nextMessageModel[target.id],
+	);
+	const composerHasDraft = useDraftStore((s) =>
+		draftHasContent(s.draftsBySession[target.id]),
+	);
 	const [modelHover, setModelHover] = useState(false);
 	const showIo = useSettingsStore((s) => s.showIoTokens ?? true);
 	const showContext = useSettingsStore((s) => s.showContextTokens ?? true);
 	const ioVisible = showIo && usage != null;
 	const contextVisible = showContext && target.contextTokens != null;
 
-	const labelModel = switching ? switching.model : displayed.model;
+	const labelModel = switching
+		? switching.model
+		: nextMessageModel
+			? nextMessageModel.model
+			: displayed.model;
 	const modelLabel = labelModel ? formatModelName(labelModel) : "Default";
-	const showPending = !switching && displayed.pending;
+	const showNext = !switching && !!nextMessageModel;
+	const showPending = !switching && !showNext && displayed.pending;
 	// awaiting_permission counts as "running" here too: a turn is still in
 	// flight, just paused on a permission/plan/question card — interrupting
 	// it (which switchModelAndResume does) cancels that pending decision the
@@ -159,7 +172,9 @@ export function SessionTokenBar({
 					}}
 				>
 					{modelLabel}
-					{switching ? (
+					{showNext ? (
+						<span style={{ color: T.textMute }}> · next message</span>
+					) : switching ? (
 						<span className="model-switching-dots" aria-hidden>
 							<span>.</span>
 							<span>.</span>
@@ -212,24 +227,35 @@ export function SessionTokenBar({
 			<ModelPickerModal
 				open={pickerOpen}
 				sessionId={target.id}
-				effectiveModel={displayed.model}
-				isRunning={isRunning}
+				effectiveModel={labelModel}
+				subtitle={
+					composerHasDraft
+						? "Applies to your next message. The current response keeps its model."
+						: undefined
+				}
+				isRunning={isRunning && !composerHasDraft}
 				focusComposerAfterSelect={!onAfterSelect}
 				onSelect={(value) => {
 					onAfterSelect?.();
-					return useModelPickerStore
-						.getState()
-						.runSwitch(target.id, value, () =>
-							window.claude.setSessionModel(target.id, value),
-						);
+					const picker = useModelPickerStore.getState();
+					if (composerHasDraft) {
+						picker.setNextMessageModel(target.id, { model: value });
+						return;
+					}
+					picker.setNextMessageModel(target.id, undefined);
+					return picker.runSwitch(target.id, value, () =>
+						window.claude.setSessionModel(target.id, value),
+					);
 				}}
 				onSwitchAndResume={
 					onSwitchAndResume
 						? (value) => {
 							onAfterSelect?.();
-							return useModelPickerStore
-								.getState()
-								.runSwitch(target.id, value, () => onSwitchAndResume(value));
+							const picker = useModelPickerStore.getState();
+							picker.setNextMessageModel(target.id, undefined);
+							return picker.runSwitch(target.id, value, () =>
+								onSwitchAndResume(value),
+							);
 						}
 						: undefined
 				}

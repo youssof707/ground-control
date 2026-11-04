@@ -1,8 +1,45 @@
 import { AUTO_RESUME_TEXT } from "@shared/claude-sessions/transcript";
-import { useQueuedMessagesStore } from "../stores/useQueuedMessagesStore";
+import { useDraftStore, type Draft } from "../stores/useDraftStore";
+import {
+	useModelPickerStore,
+	type NextMessageModel,
+} from "../stores/useModelPickerStore";
+import {
+	useQueuedMessagesStore,
+	type QueuedMessage,
+} from "../stores/useQueuedMessagesStore";
 import { useSidequestsStore } from "../stores/useSidequestsStore";
 import { sendToSidequest } from "./sidequestActions";
 import { sendTurn } from "./sendTurn";
+
+export function draftHasContent(draft: Draft | undefined): boolean {
+	return !!draft && (draft.text.trim() !== "" || draft.images.length > 0);
+}
+
+export function composerHasContent(sessionId: string): boolean {
+	return draftHasContent(useDraftStore.getState().draftsBySession[sessionId]);
+}
+
+export async function applyModelForMessage(
+	sessionId: string,
+	next: NextMessageModel | undefined,
+): Promise<void> {
+	if (!next) return;
+	await useModelPickerStore
+		.getState()
+		.runSwitch(sessionId, next.model, () =>
+			window.claude.setSessionModel(sessionId, next.model),
+		);
+	if (useModelPickerStore.getState().failed[sessionId]) {
+		throw new Error("Couldn't switch model");
+	}
+}
+
+function shiftResumableQueued(sessionId: string): QueuedMessage | undefined {
+	const head = useQueuedMessagesStore.getState().queuesBySession[sessionId]?.[0];
+	if (!head || head.switchModel) return undefined;
+	return useQueuedMessagesStore.getState().shift(sessionId);
+}
 
 /**
  * "Switch model + resume" in one gesture, wired from `ModelPickerModal`'s
@@ -39,7 +76,7 @@ export async function switchModelAndResume(
 		});
 		await window.claude.setSessionModel(sessionId, model);
 
-		const queued = useQueuedMessagesStore.getState().shift(sessionId);
+		const queued = shiftResumableQueued(sessionId);
 		try {
 			await sendTurn(
 				sessionId,
@@ -72,7 +109,7 @@ export async function switchSidequestModelAndResume(
 		});
 		await window.claude.setSessionModel(sidequestId, model);
 
-		const queued = useQueuedMessagesStore.getState().shift(sidequestId);
+		const queued = shiftResumableQueued(sidequestId);
 		const landedIn = await sendToSidequest(
 			parentSessionId,
 			sidequestId,

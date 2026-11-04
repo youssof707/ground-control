@@ -2,24 +2,26 @@ import { useMemo, useState } from "react";
 import type { PermissionRequest } from "@shared/claude-sessions/types";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { stopSession } from "../lib/sessionControlActions";
+import type {
+	AskUserQuestionInput,
+	QuestionDef,
+} from "../lib/askUserQuestion";
 import { T } from "../../../design/tokens";
 
-interface OptionDef {
-	label: string;
-	description: string;
-	preview?: string;
+interface Tone {
+	fg: string;
+	soft: string;
+	border: string;
 }
 
-interface QuestionDef {
-	question: string;
-	header: string;
-	options: OptionDef[];
-	multiSelect?: boolean;
-}
+const WARN_TONE: Tone = { fg: T.warn, soft: T.warnSoft, border: T.warnBorder };
 
-interface AskUserQuestionInput {
-	questions: QuestionDef[];
-}
+const ANSWERED_TONE: Tone = {
+	fg: T.text,
+	soft: "oklch(0.94 0.005 80 / 0.08)",
+	border: "oklch(0.94 0.005 80 / 0.32)",
+};
+
 
 export function AskUserQuestionCard({
 	req,
@@ -118,14 +120,16 @@ export function AskUserQuestionCard({
 					borderBottom: `0.5px solid ${T.borderSoft}`,
 				}}
 			>
-				<QuestionIcon />
+				<QuestionIcon tone={WARN_TONE} />
 				<div style={{ fontSize: 12.5, fontWeight: 500, color: T.text }}>
 					Claude is asking
 				</div>
 				{isMulti ? (
-					<TagPill muted>{questions.length} questions</TagPill>
+					<TagPill tone={WARN_TONE} muted>
+						{questions.length} questions
+					</TagPill>
 				) : single ? (
-					<TagPill>{single.header}</TagPill>
+					<TagPill tone={WARN_TONE}>{single.header}</TagPill>
 				) : null}
 			</div>
 
@@ -244,6 +248,159 @@ export function AskUserQuestionCard({
 	);
 }
 
+function splitAnswer(q: QuestionDef, answer: string) {
+	const labels = q.options.map((o) => o.label);
+	if (labels.includes(answer)) return { chosen: [answer], other: "" };
+	const parts = q.multiSelect ? answer.split(", ") : [answer];
+	const chosen = parts.filter((p) => labels.includes(p));
+	const other = parts
+		.filter((p) => !labels.includes(p))
+		.join(", ")
+		.trim();
+	return { chosen, other };
+}
+
+export function AnsweredQuestionCard({
+	questions,
+	answers,
+}: {
+	questions: QuestionDef[];
+	answers: Record<string, string>;
+}) {
+	const single = questions.length === 1 ? questions[0] : null;
+	return (
+		<div
+			style={{
+				maxWidth: 760,
+				margin: "0 auto 22px",
+				borderRadius: 10,
+				background: T.surface,
+				border: `0.5px solid ${ANSWERED_TONE.border}`,
+				overflow: "hidden",
+			}}
+		>
+			<div
+				style={{
+					padding: "12px 16px",
+					display: "flex",
+					alignItems: "center",
+					gap: 10,
+					borderBottom: `0.5px solid ${T.borderSoft}`,
+				}}
+			>
+				<QuestionIcon tone={ANSWERED_TONE} />
+				<div style={{ fontSize: 12.5, fontWeight: 500, color: T.text }}>
+					Claude asked
+				</div>
+				{single ? (
+					<TagPill tone={ANSWERED_TONE}>{single.header}</TagPill>
+				) : (
+					<TagPill tone={ANSWERED_TONE} muted>
+						{questions.length} questions
+					</TagPill>
+				)}
+				<span style={{ flex: 1 }} />
+				<span style={{ fontSize: 11.5, color: T.textMute }}>Answered</span>
+			</div>
+			<div
+				style={{
+					padding: "16px 16px 8px",
+					display: "flex",
+					flexDirection: "column",
+					gap: 16,
+				}}
+			>
+				{questions.map((q, i) => (
+					<AnsweredQuestion
+						key={q.question}
+						q={q}
+						index={single ? null : i + 1}
+						answer={answers[q.question] ?? ""}
+					/>
+				))}
+			</div>
+		</div>
+	);
+}
+
+function AnsweredQuestion({
+	q,
+	index,
+	answer,
+}: {
+	q: QuestionDef;
+	index: number | null;
+	answer: string;
+}) {
+	const { chosen, other } = splitAnswer(q, answer);
+	return (
+		<div>
+			<div
+				style={{
+					display: "flex",
+					alignItems: "center",
+					gap: 8,
+					marginBottom: 10,
+				}}
+			>
+				{index !== null ? (
+					<span
+						style={{
+							fontSize: 11,
+							fontWeight: 600,
+							fontFamily: T.mono,
+							color: T.textDim,
+							background: T.surfaceLow,
+							border: `0.5px solid ${T.border}`,
+							padding: "1px 6px",
+							borderRadius: 4,
+						}}
+					>
+						{index}
+					</span>
+				) : null}
+				<span
+					style={{
+						fontSize: index !== null ? 13 : 14.5,
+						fontWeight: 500,
+						color: T.text,
+						letterSpacing: index !== null ? 0 : "-0.1px",
+					}}
+				>
+					{q.question}
+				</span>
+			</div>
+			<div
+				style={{
+					display: "flex",
+					flexDirection: "column",
+					gap: 8,
+					paddingBottom: 8,
+				}}
+			>
+				{q.options.map((opt) => (
+					<InlineOption
+						key={opt.label}
+						tone={ANSWERED_TONE}
+						title={opt.label}
+						desc={opt.description}
+						preview={opt.preview}
+						selected={chosen.includes(opt.label)}
+					/>
+				))}
+				{other ? (
+					<InlineOption
+						tone={ANSWERED_TONE}
+						title={other}
+						desc="Your own answer"
+						selected
+					/>
+				) : null}
+			</div>
+		</div>
+	);
+}
+
 function QuestionField({
 	q,
 	chosen,
@@ -271,6 +428,7 @@ function QuestionField({
 				{q.options.map((opt) => (
 					<InlineOption
 						key={opt.label}
+						tone={WARN_TONE}
 						title={opt.label}
 						desc={opt.description}
 						preview={opt.preview}
@@ -279,6 +437,7 @@ function QuestionField({
 					/>
 				))}
 				<InlineOption
+					tone={WARN_TONE}
 					title="Other…"
 					desc="Type your own answer below."
 					selected={chosen.includes("__other__")}
@@ -373,17 +532,19 @@ function QuestionField({
 }
 
 function InlineOption({
+	tone,
 	title,
 	desc,
 	preview,
 	selected,
 	onPick,
 }: {
+	tone: Tone;
 	title: string;
 	desc: string;
 	preview?: string;
 	selected: boolean;
-	onPick: () => void;
+	onPick?: () => void;
 }) {
 	return (
 		<div
@@ -391,9 +552,10 @@ function InlineOption({
 			style={{
 				padding: "10px 12px",
 				borderRadius: 8,
-				background: selected ? T.warnSoft : T.surfaceLow,
-				border: `0.5px solid ${selected ? T.warnBorder : T.border}`,
-				cursor: "pointer",
+				background: selected ? tone.soft : T.surfaceLow,
+				border: `0.5px solid ${selected ? tone.border : T.border}`,
+				cursor: onPick ? "pointer" : "default",
+				opacity: onPick || selected ? 1 : 0.6,
 				display: "flex",
 				alignItems: "flex-start",
 				gap: 10,
@@ -406,7 +568,7 @@ function InlineOption({
 					borderRadius: "50%",
 					marginTop: 2,
 					flexShrink: 0,
-					border: `1.5px solid ${selected ? T.warn : T.border}`,
+					border: `1.5px solid ${selected ? tone.fg : T.border}`,
 					display: "inline-flex",
 					alignItems: "center",
 					justifyContent: "center",
@@ -418,7 +580,7 @@ function InlineOption({
 							width: 6,
 							height: 6,
 							borderRadius: "50%",
-							background: T.warn,
+							background: tone.fg,
 						}}
 					/>
 				) : null}
@@ -460,19 +622,19 @@ function InlineOption({
 	);
 }
 
-function QuestionIcon() {
+function QuestionIcon({ tone }: { tone: Tone }) {
 	return (
 		<div
 			style={{
 				width: 22,
 				height: 22,
 				borderRadius: 6,
-				background: T.warnSoft,
-				border: `0.5px solid ${T.warnBorder}`,
+				background: tone.soft,
+				border: `0.5px solid ${tone.border}`,
 				display: "inline-flex",
 				alignItems: "center",
 				justifyContent: "center",
-				color: T.warn,
+				color: tone.fg,
 				fontFamily: T.mono,
 				fontSize: 12,
 				fontWeight: 700,
@@ -484,9 +646,11 @@ function QuestionIcon() {
 }
 
 function TagPill({
+	tone,
 	children,
 	muted,
 }: {
+	tone: Tone;
 	children: React.ReactNode;
 	muted?: boolean;
 }) {
@@ -495,13 +659,13 @@ function TagPill({
 			style={{
 				fontSize: 10.5,
 				fontWeight: 600,
-				color: muted ? T.textDim : T.warn,
+				color: muted ? T.textDim : tone.fg,
 				letterSpacing: muted ? 0.6 : 1.2,
 				textTransform: "uppercase",
 				padding: "3px 7px",
 				borderRadius: 4,
-				background: muted ? T.surfaceLow : T.warnSoft,
-				border: `0.5px solid ${muted ? T.border : T.warnBorder}`,
+				background: muted ? T.surfaceLow : tone.soft,
+				border: `0.5px solid ${muted ? T.border : tone.border}`,
 			}}
 		>
 			{children}

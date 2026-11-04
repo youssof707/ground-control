@@ -22,6 +22,7 @@ import { MessageComposer } from "./MessageComposer";
 import { MessageView } from "./MessageView";
 import { SessionTokenBar } from "./SessionTokenBar";
 import { ToolRunGroup } from "./ToolRunGroup";
+import { AnsweredQuestionCard } from "./AskUserQuestionCard";
 import { ComposerDivider } from "./ComposerDivider";
 import { DraftSessionChat } from "./DraftSessionChat";
 import { groupMessagesIntoUnits } from "../lib/groupMessages";
@@ -466,6 +467,20 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 											data-role="toolRun"
 										>
 											<ToolRunGroup entries={u.entries} />
+										</div>
+									);
+								}
+								if (u.kind === "answeredQuestion") {
+									return (
+										<div
+											key={u.key}
+											data-message-id={u.messageId}
+											data-role="answeredQuestion"
+										>
+											<AnsweredQuestionCard
+												questions={u.questions}
+												answers={u.answers}
+											/>
 										</div>
 									);
 								}

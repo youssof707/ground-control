@@ -23,6 +23,7 @@ import { MessageView } from "../MessageView";
 import { ActivityChip } from "../ActivityChip";
 import { BackgroundTasksChip } from "../BackgroundTasksChip";
 import { ToolRunGroup } from "../ToolRunGroup";
+import { AnsweredQuestionCard } from "../AskUserQuestionCard";
 import { PermissionCard } from "../PermissionCard";
 import { ComposerDivider } from "../ComposerDivider";
 import { SessionTokenBar } from "../SessionTokenBar";
@@ -441,6 +442,12 @@ export function SidequestPanel({
 							{units.map((u) =>
 								u.kind === "toolRun" ? (
 									<ToolRunGroup key={u.key} entries={u.entries} />
+								) : u.kind === "answeredQuestion" ? (
+									<AnsweredQuestionCard
+										key={u.key}
+										questions={u.questions}
+										answers={u.answers}
+									/>
 								) : (
 								// `onFork` here means "promote this branch into a
 								// real session" — a sidequest is already a fork, so

@@ -1,11 +1,14 @@
 import { useEffect } from "react";
-import type { UserContentBlock } from "@shared/claude-sessions/types";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
-import { useQueuedMessagesStore } from "../stores/useQueuedMessagesStore";
+import {
+	useQueuedMessagesStore,
+	type QueuedMessage,
+} from "../stores/useQueuedMessagesStore";
 import { isSidequestId, useSidequestsStore } from "../stores/useSidequestsStore";
 import { sendTurn } from "../lib/sendTurn";
 import { sendToSidequest } from "../lib/sidequestActions";
+import { applyModelForMessage } from "../lib/modelSwitchActions";
 
 /**
  * App-level (not composer-level) owner of "fire the queued pre-move the
@@ -53,14 +56,16 @@ export function useQueuedMessageFlusher() {
 		// was called with. The caller (tryFlush's .catch) needs that landed-in
 		// id to restore the message under the right key, so we throw with it
 		// attached rather than swallowing the distinction.
-		const deliver = async (id: string, blocks: UserContentBlock[]) => {
+		const deliver = async (id: string, msg: QueuedMessage) => {
 			if (!isSidequestId(id)) {
-				await sendTurn(id, blocks);
+				await applyModelForMessage(id, msg.switchModel);
+				await sendTurn(id, msg.blocks);
 				return;
 			}
 			const parentId = useSidequestsStore.getState().parentOf(id);
 			if (!parentId) throw new Error("Sidequest no longer exists");
-			const landedIn = await sendToSidequest(parentId, id, blocks);
+			await applyModelForMessage(id, msg.switchModel);
+			const landedIn = await sendToSidequest(parentId, id, msg.blocks);
 			if (!landedIn) throw new Error("Couldn't start a sidequest to send to");
 		};
 
@@ -95,7 +100,7 @@ export function useQueuedMessageFlusher() {
 				? useSidequestsStore.getState().parentOf(id)
 				: undefined;
 			inFlight.add(id);
-			deliver(id, msg.blocks)
+			deliver(id, msg)
 				.catch((err) => {
 					// Put it back at the head and latch the queue so we don't
 					// immediately retry against a target that just proved it

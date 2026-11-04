@@ -11,6 +11,9 @@ import {
 	useQueuedMessagesStore,
 	type QueuedMessage,
 } from "../stores/useQueuedMessagesStore";
+import { useModelPickerStore } from "../stores/useModelPickerStore";
+import { applyModelForMessage } from "../lib/modelSwitchActions";
+import { formatModelName } from "@shared/claude-sessions/sessionModel";
 import { buildUserBlocks, draftFromBlocks } from "../lib/composerImages";
 import { useComposerImages } from "../hooks/useComposerImages";
 import { useComposerTarget } from "../hooks/useComposerTarget";
@@ -281,9 +284,15 @@ export function MessageComposer({
 
 		setSending(true);
 		setError(null);
+		const picker = useModelPickerStore.getState();
+		const nextModel = picker.takeNextMessageModel(sessionId);
 		try {
+			await applyModelForMessage(sessionId, nextModel);
 			await target.send(blocks);
 		} catch (err) {
+			if (nextModel && !useModelPickerStore.getState().nextMessageModel[sessionId]) {
+				picker.setNextMessageModel(sessionId, nextModel);
+			}
 			setError(err instanceof Error ? err.message : String(err));
 		} finally {
 			setSending(false);
@@ -304,6 +313,9 @@ export function MessageComposer({
 			blocks,
 			preview: trimmed,
 			imageCount: images.length,
+			switchModel: useModelPickerStore
+				.getState()
+				.takeNextMessageModel(sessionId),
 		});
 		useQueuedMessagesStore.getState().setError(sessionId, null);
 		useDraftStore.getState().clearDraft(sessionId);
@@ -323,6 +335,11 @@ export function MessageComposer({
 		);
 		useQueuedMessagesStore.getState().cancel(sessionId, msg.id);
 		useQueuedMessagesStore.getState().setError(sessionId, null);
+		if (msg.switchModel) {
+			useModelPickerStore
+				.getState()
+				.setNextMessageModel(sessionId, msg.switchModel);
+		}
 		setText(restoredText);
 		setImages(restoredImages);
 		requestAnimationFrame(() => {
@@ -831,6 +848,11 @@ function QueuedMessageChip({
 		? `Failed to send — ${error}`
 		: message.preview
 			|| `${message.imageCount} image${message.imageCount === 1 ? "" : "s"}`;
+	const modelLabel = message.switchModel
+		? message.switchModel.model
+			? formatModelName(message.switchModel.model)
+			: "Default"
+		: null;
 	return (
 		<div
 			onClick={onRestore}
@@ -890,6 +912,18 @@ function QueuedMessageChip({
 			>
 				{label}
 			</span>
+			{modelLabel ? (
+				<span
+					style={{
+						flexShrink: 0,
+						fontFamily: T.mono,
+						fontSize: 10.5,
+						color: danger ? T.danger : T.textMute,
+					}}
+				>
+					{modelLabel}
+				</span>
+			) : null}
 			<button
 				type="button"
 				onClick={(e) => {

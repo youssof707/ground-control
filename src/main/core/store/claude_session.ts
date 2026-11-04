@@ -128,6 +128,7 @@ export type SessionPatch = Partial<
 		| "contextTokens"
 		| "usage"
 		| "groupId"
+		| "scheduleId"
 	>
 >;
 
