@@ -985,7 +985,6 @@ export function SessionsList({
 			<div
 				style={{
 					padding: "12px 12px 10px",
-					borderBottom: `0.5px solid ${T.borderSoft}`,
 					display: "flex",
 					flexDirection: "column",
 					gap: 8,
@@ -1013,14 +1012,14 @@ export function SessionsList({
 						onRun={(sc) => void startFromShortcut(sc)}
 						onRunSkill={(skill) => void startFromSkill(skill)}
 					/>
+					<ViewOptionsButton
+						onOpenSettings={() => useSettingsModalStore.getState().open()}
+						onOpenRecentlyDeleted={() => setRecentlyDeletedOpen(true)}
+						recentlyDeletedCount={undoEntries.length}
+						onOpenWorktrees={() => setWorktreesOpen(true)}
+					/>
 				</div>
-				<div
-					style={{
-						display: "flex",
-						alignItems: "center",
-						gap: 6,
-					}}
-				>
+				<div style={{ display: "flex" }}>
 					<SchedulerButton
 						armed={schedulerCounts.armed}
 						running={schedulerCounts.running}
@@ -1028,14 +1027,8 @@ export function SessionsList({
 						unread={scheduledUnreadIds.length}
 						open={schedulerOpen}
 						onClick={() =>
-							useSchedulerModalStore.getState().open("schedules")
+							useSchedulerModalStore.getState().open()
 						}
-					/>
-					<ViewOptionsButton
-						onOpenSettings={() => useSettingsModalStore.getState().open()}
-						onOpenRecentlyDeleted={() => setRecentlyDeletedOpen(true)}
-						recentlyDeletedCount={undoEntries.length}
-						onOpenWorktrees={() => setWorktreesOpen(true)}
 					/>
 				</div>
 			</div>
@@ -2640,14 +2633,6 @@ function MenuItem({
 	);
 }
 
-/**
- * Sidebar overflow-options dropdown. Visually a 32×32 icon button — the
- * right-edge control of the second header row, with the SchedulerButton
- * taking the remaining width on the left. Exposes "Recently deleted" (when
- * the undo buffer has entries), "Worktrees", and "Settings". Sized as a
- * dropdown rather than an inline button so future view controls can land
- * here without crowding the header.
- */
 function ViewOptionsButton({
 	onOpenSettings,
 	onOpenRecentlyDeleted,

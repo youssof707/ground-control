@@ -361,8 +361,8 @@ function ShortcutRow({
 const CONFIRM_REVERT_MS = 3000;
 
 /**
- * Two-step delete confirmation matching DeleteWorktreeButton /
- * NoteCard's pattern: trash icon by default, click reveals a
+ * Two-step delete confirmation matching DeleteWorktreeButton's
+ * pattern: trash icon by default, click reveals a
  * danger-token "Confirm delete?" pill, second click within
  * CONFIRM_REVERT_MS fires. Clicks stop bubbling so hitting the trash
  * doesn't also trigger the row's edit handler.

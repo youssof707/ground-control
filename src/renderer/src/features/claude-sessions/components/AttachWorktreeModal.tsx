@@ -56,7 +56,6 @@ export function AttachWorktreeModal({
 	const [baseBranch, setBaseBranch] = useState<string | undefined>(undefined);
 	const [branches, setBranches] = useState<LocalBranch[]>([]);
 	const [mode, setMode] = useState<CreateMode>("new-branch");
-	const [displayName, setDisplayName] = useState("");
 	const [color, setColor] = useState<WorktreeColor>(DEFAULT_WORKTREE_COLOR);
 	const [newBranch, setNewBranch] = useState("");
 	const [selectedBranch, setSelectedBranch] = useState<string>("");
@@ -71,7 +70,6 @@ export function AttachWorktreeModal({
 	// open — shouldn't happen in practice, but keeps state honest).
 	useEffect(() => {
 		if (!open) return;
-		setDisplayName("");
 		setColor(DEFAULT_WORKTREE_COLOR);
 		setNewBranch("");
 		setSelectedBranch("");
@@ -182,21 +180,28 @@ export function AttachWorktreeModal({
 		}
 	}, [baseDir]);
 
-	// Sensible newBranch validation. Rejects leading `-` (which
-	// `worktreeAdd` also refuses, but nicer to catch inline) and control
-	// characters + spaces + a few characters git itself refuses.
 	const branchInvalid = useMemo(() => {
 		if (mode !== "new-branch") return null;
 		const trimmed = newBranch.trim();
 		if (!trimmed) return null;
-		if (trimmed.startsWith("-")) return "Branch name cannot start with '-'";
-		if (/[\s~^:?*[\\]/.test(trimmed))
-			return "Branch name contains invalid characters";
+		if (trimmed.startsWith("-")) return "Name cannot start with '-'";
+		if (/[\s~^:?*[\\\x00-\x1f\x7f]/.test(trimmed))
+			return "Name contains invalid characters";
+		if (
+			trimmed === "@" ||
+			trimmed.includes("..") ||
+			trimmed.includes("@{") ||
+			trimmed.includes("//") ||
+			trimmed.startsWith("/") ||
+			trimmed.endsWith("/") ||
+			trimmed.endsWith(".") ||
+			trimmed.split("/").some((part) => part.startsWith(".") || part.endsWith(".lock"))
+		)
+			return "Name isn't a valid branch name";
 		return null;
 	}, [mode, newBranch]);
 
 	const canCreate = useMemo(() => {
-		// displayName is optional — falls back to the branch name on submit.
 		if (mode === "new-branch") {
 			return newBranch.trim().length > 0 && !branchInvalid;
 		}
@@ -205,22 +210,20 @@ export function AttachWorktreeModal({
 
 	const handleCreate = useCallback(() => {
 		if (!canCreate) return;
-		const branchForFallback =
-			mode === "new-branch" ? newBranch.trim() : selectedBranch;
-		const effectiveDisplayName = displayName.trim() || branchForFallback;
+		const name = newBranch.trim();
 		const input: CreateWorktreeInput =
 			mode === "new-branch"
 				? {
 					mode: "new-branch",
 					baseDir,
-					displayName: effectiveDisplayName,
+					displayName: name,
 					color,
-					newBranch: newBranch.trim(),
+					newBranch: name,
 				}
 				: {
 					mode: "existing-branch",
 					baseDir,
-					displayName: effectiveDisplayName,
+					displayName: selectedBranch,
 					color,
 					existingBranch: selectedBranch,
 				};
@@ -229,7 +232,6 @@ export function AttachWorktreeModal({
 	}, [
 		baseDir,
 		mode,
-		displayName,
 		color,
 		newBranch,
 		selectedBranch,
@@ -327,19 +329,12 @@ export function AttachWorktreeModal({
 								setError(null);
 							}}
 						/>
-						<LabeledInput
-							label="Display name"
-							value={displayName}
-							onChange={setDisplayName}
-							autoFocus
-							maxLength={60}
-						/>
-						<ColorPicker value={color} onChange={setColor} />
 						{mode === "new-branch" ? (
 							<LabeledInput
-								label="New branch"
+								label="Name"
 								value={newBranch}
 								onChange={setNewBranch}
+								autoFocus
 								maxLength={200}
 								hint={
 									branchInvalid ??
@@ -358,6 +353,7 @@ export function AttachWorktreeModal({
 								onSelect={setSelectedBranch}
 							/>
 						)}
+						<ColorPicker value={color} onChange={setColor} />
 					</div>
 				</Section>
 
@@ -508,7 +504,7 @@ function ExistingRow({
 const CONFIRM_REVERT_MS = 3000;
 
 /**
- * Two-step delete confirmation matching NoteCard's pattern verbatim:
+ * Two-step delete confirmation:
  * trash icon by default, click reveals a "Confirm delete?" pill styled
  * with the danger tokens, click again fires the delete. 3-second timeout
  * reverts to the icon if the user doesn't follow through. Clicks are

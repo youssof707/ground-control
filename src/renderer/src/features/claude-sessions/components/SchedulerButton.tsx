@@ -43,6 +43,19 @@ export function SchedulerButton({
 				/>
 			</svg>
 			<span style={{ color: T.text, flexShrink: 0 }}>Schedules</span>
+			{armed > 0 ? (
+				<span
+					style={{
+						marginLeft: -2,
+						color: T.textMute,
+						fontSize: 11,
+						fontFamily: T.mono,
+						flexShrink: 0,
+					}}
+				>
+					{armed}
+				</span>
+			) : null}
 			<span
 				style={{
 					marginLeft: "auto",
@@ -51,9 +64,6 @@ export function SchedulerButton({
 					gap: 5,
 				}}
 			>
-				{armed > 0 ? (
-					<CountPill n={armed} fg={T.textDim} bg={T.surfaceHi} />
-				) : null}
 				{running > 0 ? <CountPill n={running} fg={T.ok} bg={T.okSoft} /> : null}
 				{waiting > 0 ? (
 					<CountPill n={waiting} fg={T.warn} bg={T.warnSoft} />

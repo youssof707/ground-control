@@ -140,16 +140,6 @@ export async function setSessionsSidebarWidth(width: number): Promise<void> {
 	});
 }
 
-export async function setNotesSidebarWidth(width: number): Promise<void> {
-	assertInitialized();
-	const w = Math.round(width);
-	return enqueue(async () => {
-		if (db.notesSidebarWidth === w) return;
-		db = { ...db, notesSidebarWidth: w };
-		await persist();
-	});
-}
-
 export async function setSidequestSidebarWidth(width: number): Promise<void> {
 	assertInitialized();
 	const w = Math.round(width);

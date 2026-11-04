@@ -16,7 +16,6 @@ import type {
 import type { LiveBackgroundTask } from "../shared/claude-sessions/types";
 import type { ReadStateFile } from "../shared/schemas/read_state";
 import type { AppSettingsFile } from "../shared/schemas/app_settings";
-import type { Note } from "../shared/schemas/session_notes";
 import type {
 	CreateWorktreeInput,
 	LocalBranch,
@@ -94,7 +93,7 @@ declare global {
 			listSessions: () => Promise<ClaudeSessionFull[]>;
 			/**
 			 * Resolves to a snapshot of everything the delete destroyed
-			 * (session + notes + auto-pruned group), for `restoreSession` to
+			 * (session + auto-pruned group), for `restoreSession` to
 			 * put back. Null when the session didn't exist.
 			 */
 			deleteSession: (
@@ -126,12 +125,7 @@ declare global {
 			setShowIoTokens: (on: boolean) => Promise<void>;
 			setShowContextTokens: (on: boolean) => Promise<void>;
 			setSessionsSidebarWidth: (width: number) => Promise<void>;
-			setNotesSidebarWidth: (width: number) => Promise<void>;
 			setSidequestSidebarWidth: (width: number) => Promise<void>;
-			listNotes: (sessionId: string) => Promise<Note[]>;
-			createNote: (sessionId: string) => Promise<Note>;
-			updateNote: (id: string, markdown: string) => Promise<Note | null>;
-			deleteNote: (id: string) => Promise<void>;
 			listPermissions: () => Promise<PermissionRequest[]>;
 			/** Every session currently being babysat, keyed by session id. */
 			listBabysit: () => Promise<Record<string, BabysitConfig>>;

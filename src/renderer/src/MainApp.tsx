@@ -17,7 +17,6 @@ import { UndoToast } from "./features/claude-sessions/components/UndoToast";
 import { SessionsList } from "./features/claude-sessions/components/SessionsList";
 import { SessionChat } from "./features/claude-sessions/components/SessionChat";
 import { InboxSidebar } from "./features/claude-sessions/components/InboxSidebar";
-import { NotesSidebarShell } from "./features/claude-sessions/components/notes/NotesSidebarShell";
 import { SidequestSidebarShell } from "./features/claude-sessions/components/sidequest/SidequestSidebarShell";
 import { AppNav } from "./features/claude-sessions/components/AppNav";
 import { SidebarFooter } from "./features/claude-sessions/components/SidebarFooter";
@@ -66,8 +65,6 @@ export default function MainApp() {
 	// model while a turn is running interrupts it, switches, and resumes
 	// automatically (see useModelPickerHotkey.ts / modelSwitchActions.ts).
 	useModelPickerHotkey();
-	// Global ⌘. — interrupts the active session's running turn (the macOS
-	// "cancel" idiom). No-op unless that session is actually running.
 	useStopSessionHotkey();
 	// Global ⌘N — opens a new session draft, pre-attached to the worktree
 	// last used in the target workspace.
@@ -123,11 +120,6 @@ function MainBody() {
 	const sessionMatch = useMatch("/sessions/:id/*");
 	const activeSessionId = sessionMatch?.params.id;
 
-	// Notes and Sidequest are remembered per session and resolve to null off a
-	// session route, so there's no auto-close effect: rendering them for an
-	// undefined session is structurally impossible. (The sidequest itself
-	// survives navigation — it's keyed by parent session id in
-	// useSidequestsStore, so returning brings its transcript back.)
 	const rightPanel = useActiveRightPanel(activeSessionId);
 	const setInboxOpen = useRightPanelStore((s) => s.setInboxOpen);
 	const setSessionPanel = useRightPanelStore((s) => s.setSessionPanel);
@@ -141,16 +133,8 @@ function MainBody() {
 					<Route path="/sessions/:id" element={<SessionRoute />} />
 				</Routes>
 			</div>
-			{/* One exclusive chain, not three independent conditions: all three
-			    panels are `flexShrink: 0` flex siblings, so rendering two would
-			    squash the transcript. */}
 			{rightPanel === "inbox" ? (
 				<InboxSidebar onClose={() => setInboxOpen(false)} />
-			) : rightPanel === "notes" && activeSessionId ? (
-				<NotesSidebarShell
-					sessionId={activeSessionId}
-					onClose={() => setSessionPanel(activeSessionId, null)}
-				/>
 			) : rightPanel === "sidequest" && activeSessionId ? (
 				<SidequestSidebarShell
 					sessionId={activeSessionId}

@@ -20,7 +20,7 @@ const REMARK_PLUGINS = [remarkGfm];
 // single Shift+Enter newline still renders as a hard line break instead of
 // collapsing into a space the way standard markdown treats soft breaks —
 // preserving how multi-line messages have always looked, on top of now
-// also rendering markdown. Assistant/plan/notes markdown keeps standard
+// also rendering markdown. Assistant/plan markdown keeps standard
 // soft-break behavior via REMARK_PLUGINS above.
 const REMARK_PLUGINS_BREAKS = [remarkGfm, remarkBreaks];
 const REHYPE_PLUGINS = [rehypeHighlight];
@@ -174,7 +174,7 @@ export const MarkdownText = memo(function MarkdownText({
 	text: string;
 	/** Render single newlines as hard breaks (see REMARK_PLUGINS_BREAKS above).
 	 * Used for user bubbles; defaults to off so existing callers (assistant
-	 * messages, plan approval, notes) render exactly as before. */
+	 * messages, plan approval) render exactly as before. */
 	breaks?: boolean;
 }) {
 	return (

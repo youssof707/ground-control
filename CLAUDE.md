@@ -24,7 +24,12 @@ the single source of truth so shortcuts are easy to find.
 - `Cmd+S` — open a side quest
 - `Cmd+K` — open the shortcut menu
 - `Cmd+R` — quote the current selection into the composer and focus it
-- `Cmd+.` — stop/interrupt the active session's running turn
+- `Ctrl+C` — interrupt the running turn, like a terminal. Stops the side quest
+  when focus is inside the side quest panel, otherwise the active session —
+  including one parked on a permission prompt (the prompt is denied). Works
+  from anywhere, including inside a composer. A no-op (key passes through)
+  when that target has no running turn, on a draft, or off a session route.
+  Replaced the old `Cmd+.`
 - `Cmd+P` — toggle plan ⇄ auto-edit, only while a session composer is focused
 - `Enter` in a composer (main or side quest) — sends when the session is idle.
   While its turn is running, Enter queues the message instead (it shows as a
@@ -34,7 +39,7 @@ the single source of truth so shortcuts are easy to find.
 - `Cmd+D` — start/stop voice dictation. Works from anywhere while a session
   is open: starts in whichever composer has focus (main or side quest),
   stops whichever take is already running regardless of focus, and is a
-  no-op in any other text field (rename box, notes editor) or with no
+  no-op in any other text field (rename box, Babysitter text box) or with no
   session open
 - `Cmd+Shift+B` — open the Babysitter modal for the active session, where
   Ground Control's auto-answers for that session's plan / permission /
@@ -44,8 +49,9 @@ the single source of truth so shortcuts are easy to find.
   button), even while typing in its text box. Plain `Enter` does the same
   when no text field has focus (a focused Cancel / Stop button keeps its
   native Enter). No-op when the primary button is disabled
-- `Cmd+Shift+S` — open the Scheduler modal (schedules and the sessions they
-  spawned). Works from anywhere
+- `Cmd+Shift+S` — open the Scheduler modal on its Logs tab (the sessions
+  schedules spawned, split into Unread / Read), with Schedules as the second
+  tab. Works from anywhere
 - `Cmd+Shift+M` — open the model picker for the active session or draft, or
   for the side quest when focus is inside the side quest panel (picking a
   model while a turn is running interrupts it, switches, and resumes

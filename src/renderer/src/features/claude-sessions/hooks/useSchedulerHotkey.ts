@@ -8,7 +8,7 @@ export function useSchedulerHotkey() {
 			if (e.key.toLowerCase() !== "s") return;
 			e.preventDefault();
 			e.stopPropagation();
-			useSchedulerModalStore.getState().open("schedules");
+			useSchedulerModalStore.getState().open();
 		};
 		window.addEventListener("keydown", handler, true);
 		return () => window.removeEventListener("keydown", handler, true);

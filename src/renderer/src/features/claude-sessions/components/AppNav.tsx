@@ -21,10 +21,6 @@ export function AppNav() {
 	const sessionMatch = useMatch("/sessions/:id/*");
 	const inSession = !!sessionMatch;
 	const activeSessionId = sessionMatch?.params.id;
-	// The panel actually on screen — Notes/Sidequest are remembered per session,
-	// the Inbox overlays them. Every `active=` below compares against this, so a
-	// button reads inactive whenever its panel is hidden behind the Inbox, which
-	// is what the user sees.
 	const rightPanel = useActiveRightPanel(activeSessionId);
 	const inboxOpen = useRightPanelStore((s) => s.inboxOpen);
 	const setInboxOpen = useRightPanelStore((s) => s.setInboxOpen);
@@ -174,17 +170,6 @@ export function AppNav() {
 				/>
 			</div>
 			<div style={{ flex: 1 }} />
-			{inSession && activeSessionId ? (
-				<NotesToggle
-					active={rightPanel === "notes"}
-					onClick={() =>
-						setSessionPanel(
-							activeSessionId,
-							rightPanel === "notes" ? null : "notes",
-						)
-					}
-				/>
-			) : null}
 			{inSession ? (
 				<SidequestToggle
 					active={rightPanel === "sidequest"}
@@ -199,39 +184,6 @@ export function AppNav() {
 				onClick={() => setInboxOpen(!inboxOpen)}
 			/>
 		</nav>
-	);
-}
-
-function NotesToggle({
-	active,
-	onClick,
-}: {
-	active: boolean;
-	onClick: () => void;
-}) {
-	return (
-		<button
-			type="button"
-			onClick={onClick}
-			aria-pressed={active}
-			style={{
-				display: "inline-flex",
-				alignItems: "center",
-				gap: 8,
-				padding: "6px 12px",
-				borderRadius: 8,
-				fontSize: 13,
-				fontWeight: 500,
-				color: active ? T.text : T.textMute,
-				background: active ? T.surface : "transparent",
-				boxShadow: active ? `inset 0 0 0 0.5px ${T.border}` : "none",
-				border: "none",
-				cursor: "pointer",
-				marginRight: 6,
-			}}
-		>
-			<span>Notes</span>
-		</button>
 	);
 }
 

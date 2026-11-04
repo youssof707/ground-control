@@ -24,7 +24,6 @@ interface State {
 	showIoTokens?: boolean;
 	showContextTokens?: boolean;
 	sessionsSidebarWidth?: number;
-	notesSidebarWidth?: number;
 	sidequestSidebarWidth?: number;
 	hydrate: (settings: AppSettingsFile) => void;
 	setLastUsedWorkspace: (cwd: string) => void;
@@ -34,7 +33,6 @@ interface State {
 	setShowIoTokens: (on: boolean) => void;
 	setShowContextTokens: (on: boolean) => void;
 	setSessionsSidebarWidth: (width: number) => void;
-	setNotesSidebarWidth: (width: number) => void;
 	setSidequestSidebarWidth: (width: number) => void;
 }
 
@@ -43,7 +41,6 @@ export const useSettingsStore = create<State>((set, get) => ({
 	defaultModel: undefined,
 	autoBabysitNewSessions: undefined,
 	sessionsSidebarWidth: undefined,
-	notesSidebarWidth: undefined,
 	sidequestSidebarWidth: undefined,
 	hydrate: (settings) =>
 		set({
@@ -54,7 +51,6 @@ export const useSettingsStore = create<State>((set, get) => ({
 			showIoTokens: settings.showIoTokens,
 			showContextTokens: settings.showContextTokens,
 			sessionsSidebarWidth: settings.sessionsSidebarWidth,
-			notesSidebarWidth: settings.notesSidebarWidth,
 			sidequestSidebarWidth: settings.sidequestSidebarWidth,
 		}),
 	setLastUsedWorkspace: (cwd) => {
@@ -99,11 +95,6 @@ export const useSettingsStore = create<State>((set, get) => ({
 		if (get().sessionsSidebarWidth === width) return;
 		void window.claude?.setSessionsSidebarWidth(width);
 		set({ sessionsSidebarWidth: width });
-	},
-	setNotesSidebarWidth: (width) => {
-		if (get().notesSidebarWidth === width) return;
-		void window.claude?.setNotesSidebarWidth(width);
-		set({ notesSidebarWidth: width });
 	},
 	setSidequestSidebarWidth: (width) => {
 		if (get().sidequestSidebarWidth === width) return;

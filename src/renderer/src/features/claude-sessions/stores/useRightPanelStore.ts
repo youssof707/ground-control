@@ -1,16 +1,6 @@
 import { create } from "zustand";
 
-/**
- * The right-hand panel slot. Only one panel is ever on screen — all three are
- * `flexShrink: 0` siblings in `MainBody`'s flex row, so rendering two would
- * squash the transcript.
- *
- * Notes and Sidequest are session-scoped: their *contents* are already keyed by
- * session id (`useSessionNotesStore.notesBySession`, `useSidequestsStore.byParent`),
- * so their open/closed choice is too. Inbox is genuinely app-global and
- * *overlays* — opening it hides the session's panel without forgetting it.
- */
-export type SessionPanel = "notes" | "sidequest";
+export type SessionPanel = "sidequest";
 export type RightPanel = "inbox" | SessionPanel | null;
 
 interface State {

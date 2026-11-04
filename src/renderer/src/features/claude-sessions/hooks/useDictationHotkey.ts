@@ -29,8 +29,8 @@ import { useSidequestsStore } from "../stores/useSidequestsStore";
  *      focus is. Same `[data-sidequest-panel]` boundary Cmd+R/Cmd+S use, so
  *      all three agree on what "inside the sidequest" means.
  *
- * Rule 2 bails out of any OTHER editable element (a rename box, the notes
- * editor, a search field): starting a take there would rip focus out of it
+ * Rule 2 bails out of any OTHER editable element (a rename box, a search
+ * field): starting a take there would rip focus out of it
  * seconds later when the transcript lands, with no visible cause in the
  * meantime. Same gap `useCommandPaletteHotkey` documents and leaves
  * deliberately. Focus on a non-editable element (transcript, sidebar, empty

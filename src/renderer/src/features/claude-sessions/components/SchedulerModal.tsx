@@ -181,7 +181,6 @@ function SchedulerDialog({
 							value={tab}
 							onChange={setTab}
 							tabs={[
-								{ id: "schedules", label: "Schedules" },
 								{
 									id: "sessions",
 									label: "Logs",
@@ -194,6 +193,7 @@ function SchedulerDialog({
 										/>
 									) : null,
 								},
+								{ id: "schedules", label: "Schedules" },
 							]}
 						/>
 					) : (

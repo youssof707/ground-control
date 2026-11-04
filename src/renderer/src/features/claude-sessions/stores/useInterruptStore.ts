@@ -4,8 +4,8 @@ interface State {
 	/**
 	 * Session ids with an interrupt request in flight. Lifted out of
 	 * `SessionChat`'s local state so the composer's Stop pill and the global
-	 * ⌘. hotkey share one re-entrancy guard — as component state they'd each
-	 * have their own, and pressing ⌘. while the button was mid-request (or
+	 * Ctrl+C hotkey share one re-entrancy guard — as component state they'd each
+	 * have their own, and pressing Ctrl+C while the button was mid-request (or
 	 * vice versa) would fire a second `interruptSession` and a second
 	 * `hold()`. Same "signal outside the component subtree" reasoning as
 	 * `useModelPickerStore` / `useCommandPaletteStore`.

@@ -1,10 +1,16 @@
 import type { ClaudeSessionFull } from "@shared/claude-sessions/types";
 import { pushUndo } from "../stores/useUndoStore";
-import { useDraftStore } from "../stores/useDraftStore";
+import {
+	type Draft as ComposerDraft,
+	useDraftStore,
+} from "../stores/useDraftStore";
 import type { DraftSession } from "../stores/useDraftSessionsStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
-import { useQueuedMessagesStore } from "../stores/useQueuedMessagesStore";
+import {
+	type QueuedMessage,
+	useQueuedMessagesStore,
+} from "../stores/useQueuedMessagesStore";
 import { runBackgroundTask } from "../../background-tasks/stores/useBackgroundTasksStore";
 import { createSessionFromDraft } from "./promoteDraft";
 import { sendTurn } from "./sendTurn";
@@ -44,6 +50,20 @@ function handoffTitle(oldTitle: string): string {
 	return `${base.trimEnd()}${TITLE_SUFFIX}`;
 }
 
+function carryComposerState(
+	newId: string,
+	carriedDraft: ComposerDraft | undefined,
+	carriedQueue: QueuedMessage[],
+): void {
+	if (carriedDraft) {
+		const { setDraftText, setDraftImages } = useDraftStore.getState();
+		setDraftText(newId, carriedDraft.text);
+		setDraftImages(newId, carriedDraft.images);
+	}
+	const { enqueue } = useQueuedMessagesStore.getState();
+	for (const msg of carriedQueue) enqueue(newId, msg);
+}
+
 /**
  * The source session disappears on the click itself. Everything async —
  * creating the successor, sending it the handoff turn, deleting the source
@@ -71,6 +91,9 @@ export function runHandoff(input: {
 	const { session, text, navigate } = input;
 	const oldId = session.id;
 	const title = session.title;
+	const carriedDraft = useDraftStore.getState().draftsBySession[oldId];
+	const carriedQueue =
+		useQueuedMessagesStore.getState().queuesBySession[oldId] ?? [];
 
 	// Same local cleanup a sidebar delete does, plus the two stores it
 	// doesn't touch but that would otherwise leak a keyed entry for a session
@@ -108,6 +131,7 @@ export function runHandoff(input: {
 			// successor record is persisted — so from here on the source can
 			// be deleted without racing the group prune.
 			const newId = await createSessionFromDraft(draft);
+			carryComposerState(newId, carriedDraft, carriedQueue);
 			navigate(`/sessions/${newId}`);
 			// Send and delete are independent; neither waits on the other.
 			// `allSettled` so the undo entry still lands when the delete

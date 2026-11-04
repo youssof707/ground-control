@@ -103,16 +103,8 @@ const claude = {
 		ipcRenderer.invoke("settings:setShowContextTokens", { on }),
 	setSessionsSidebarWidth: (width: number) =>
 		ipcRenderer.invoke("settings:setSessionsSidebarWidth", { width }),
-	setNotesSidebarWidth: (width: number) =>
-		ipcRenderer.invoke("settings:setNotesSidebarWidth", { width }),
 	setSidequestSidebarWidth: (width: number) =>
 		ipcRenderer.invoke("settings:setSidequestSidebarWidth", { width }),
-	listNotes: (sessionId: string) => ipcRenderer.invoke("notes:list", sessionId),
-	createNote: (sessionId: string) =>
-		ipcRenderer.invoke("notes:create", sessionId),
-	updateNote: (id: string, markdown: string) =>
-		ipcRenderer.invoke("notes:update", { id, markdown }),
-	deleteNote: (id: string) => ipcRenderer.invoke("notes:delete", id),
 	listPermissions: () => ipcRenderer.invoke("permissions:list"),
 	listBabysit: () => ipcRenderer.invoke("babysit:list"),
 	listAutoResumes: () => ipcRenderer.invoke("autoResume:list"),

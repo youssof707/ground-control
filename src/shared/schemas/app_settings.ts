@@ -59,7 +59,6 @@ export const AppSettingsFileSchema = z.object({
 	showIoTokens: z.boolean().optional().catch(undefined),
 	showContextTokens: z.boolean().optional().catch(undefined),
 	sessionsSidebarWidth: sidebarWidth(200, 800),
-	notesSidebarWidth: sidebarWidth(280, 900),
 	sidequestSidebarWidth: sidebarWidth(280, 900),
 });
 export type AppSettingsFile = z.infer<typeof AppSettingsFileSchema>;

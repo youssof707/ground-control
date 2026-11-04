@@ -13,7 +13,7 @@ const SIDEQUEST_MIN_WIDTH = 280;
 
 /**
  * Owns the resize handle + persisted width for the right sidequest panel.
- * Mirrors `NotesSidebarShell` exactly — handle on the LEFT edge, so dragging
+ * Handle on the LEFT edge, so dragging
  * left grows the panel.
  *
  * Width persists in `app_settings.json` as `sidequestSidebarWidth`. Single

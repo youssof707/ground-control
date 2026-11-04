@@ -30,7 +30,7 @@ const SHORTCUTS: { keys: string[]; label: string }[] = [
 	{ keys: ["⌘", "S"], label: "Open a side quest" },
 	{ keys: ["⌘", "K"], label: "Open the shortcut menu" },
 	{ keys: ["⌘", "R"], label: "Quote selection into the composer" },
-	{ keys: ["⌘", "."], label: "Stop the running session" },
+	{ keys: ["⌃", "C"], label: "Stop the running session" },
 	{ keys: ["⌘", "P"], label: "Toggle plan mode (in the composer)" },
 	{ keys: ["⌘", "D"], label: "Start / stop voice dictation" },
 	{ keys: ["⌘", "⇧", "B"], label: "Open the babysitter" },

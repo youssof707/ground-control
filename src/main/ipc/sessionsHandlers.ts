@@ -26,7 +26,6 @@ import type { DeletedSessionSnapshot } from "../../shared/claude-sessions/undo";
 import type { BabysitConfig } from "../../shared/claude-sessions/babysit";
 import * as appSettings from "../core/store/app_settings";
 import * as sessionStore from "../core/store/claude_session";
-import * as notesStore from "../core/store/session_notes";
 import * as worktreesStore from "../core/store/worktrees";
 import * as groupsStore from "../core/store/session_groups";
 import * as schedulesStore from "../core/store/schedules";
@@ -34,7 +33,6 @@ import { broadcast } from "../windows";
 import { registerReadHandlers } from "./readHandlers";
 import { registerSettingsHandlers } from "./settingsHandlers";
 import { registerAppInfoHandlers } from "./appInfoHandlers";
-import { registerNotesHandlers } from "./notesHandlers";
 import { registerRateLimitHandlers } from "./rateLimitHandlers";
 import { registerWorktreesHandlers } from "./worktreesHandlers";
 import {
@@ -184,7 +182,6 @@ export function registerSessionsHandlers(): SessionManager {
 	registerReadHandlers();
 	registerSettingsHandlers();
 	registerAppInfoHandlers();
-	registerNotesHandlers();
 	registerRateLimitHandlers();
 	registerWorktreesHandlers();
 	registerGroupsHandlers();
@@ -451,10 +448,8 @@ export function registerSessionsHandlers(): SessionManager {
 		const groupIdToPrune = preDeleteSession?.groupId;
 		// Undo snapshot, captured here for the same reason as the two lines
 		// above: everything below this point destroys one of these, and after
-		// that the data is unrecoverable. Notes are read now because
-		// `deleteAllForSession` is about to drop them; the group record is read
-		// now because `pruneGroupIfEmpty` may remove it.
-		const preDeleteNotes = notesStore.listForSession(sessionId);
+		// that the data is unrecoverable. The group record is read now because
+		// `pruneGroupIfEmpty` may remove it.
 		const preDeleteGroup = groupIdToPrune
 			? (groupsStore.get(groupIdToPrune) ?? null)
 			: null;
@@ -490,10 +485,6 @@ export function registerSessionsHandlers(): SessionManager {
 		// shared write_queue short-circuit (Set check, no file write) and
 		// drain quickly instead of forcing a full-file flush per message.
 		await sessionStore.deleteSession(sessionId);
-		// Cascade-delete any notes attached to this session. Awaited before
-		// broadcasting so other windows don't briefly see notes attached to a
-		// missing session during a refetch.
-		await notesStore.deleteAllForSession(sessionId);
 		// Detach from the worktree registry so future deletes of the
 		// worktree itself can succeed. Best-effort — a missing worktree
 		// (externally deleted) is a no-op.
@@ -530,7 +521,6 @@ export function registerSessionsHandlers(): SessionManager {
 		if (!preDeleteSession) return null;
 		const snapshot: DeletedSessionSnapshot = {
 			session: preDeleteSession,
-			notes: preDeleteNotes,
 			// Only report the group if the prune actually took it. If it
 			// survived (other members remain), `session.groupId` still points
 			// at a live record and there's nothing to re-create.
@@ -548,7 +538,7 @@ export function registerSessionsHandlers(): SessionManager {
 	ipcMain.handle(
 		"session:restore",
 		async (e, snapshot: DeletedSessionSnapshot) => {
-			const { session, notes, prunedGroup, worktreeDeleted } = snapshot;
+			const { session, prunedGroup, worktreeDeleted } = snapshot;
 
 			// Lift the runtime tombstone first, so the broadcasts below (and
 			// any future status the restored row reports) aren't dropped by
@@ -617,10 +607,6 @@ export function registerSessionsHandlers(): SessionManager {
 					console.error("[ccw] restore worktree attach failed:", err);
 				}
 			}
-
-			// Notes last: they're the least structural part, and the session
-			// row they hang off now exists.
-			await notesStore.restoreMany(notes);
 
 			// Skip-self — the originating window upserts from this invoke's
 			// return value, same contract as `groups:create` / `worktrees:create`.

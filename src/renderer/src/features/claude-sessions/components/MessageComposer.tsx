@@ -335,6 +335,10 @@ export function MessageComposer({
 
 	const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
 		if (e.key !== "Enter") return;
+		if (busy) {
+			e.preventDefault();
+			return;
+		}
 
 		// Plain Enter → send
 		if (!e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -378,8 +382,8 @@ export function MessageComposer({
 			if (e.key !== "Enter") return;
 			if (e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
 			const target = e.target as HTMLElement | null;
-			// Don't steal Enter from some *other* text field (rename inputs,
-			// the note editor) — only from the composer or from nothing.
+			// Don't steal Enter from some *other* text field (rename inputs)
+			// — only from the composer or from nothing.
 			if (
 				target
 				&& target !== textareaRef.current
@@ -445,7 +449,6 @@ export function MessageComposer({
 	// does NOT gate the textarea: Cmd+S forks and immediately focuses the
 	// panel, so the user types straight into a still-starting sidequest.
 	// It only gates the settings row below.
-	const inputDisabled = disabled || busy;
 	const settingsDisabled = disabled || busy || target.starting;
 	const sendDisabled = disabled || busy || !canSend;
 	const shownError = error ?? target.sendError;
@@ -584,9 +587,10 @@ export function MessageComposer({
 					autoFocus
 					value={text}
 					onChange={(e) => setText(e.target.value)}
-					onPaste={onPaste}
+					onPaste={busy ? undefined : onPaste}
 					onKeyDown={onKeyDown}
-					disabled={inputDisabled}
+					disabled={disabled}
+					readOnly={busy}
 					placeholder={target.placeholder}
 					style={{
 						width: "100%",

@@ -11,7 +11,7 @@ import type { PendingImage } from "../lib/pendingImage";
  * empty, so the record doesn't accumulate one stale key per session ever
  * opened.
  */
-interface Draft {
+export interface Draft {
 	text: string;
 	images: PendingImage[];
 }

@@ -13,8 +13,8 @@ import { enqueue } from "./write_queue";
 /**
  * App-owned registry of git worktrees. Lives in its own JSON file
  * (`worktrees.json`, sibling of `claude_sessions.json`) so writes are
- * cheap even as the session store grows. Mirrors the `session_notes`
- * store's read-modify-write-atop-shared-queue pattern.
+ * cheap even as the session store grows. Read-modify-write atop the
+ * shared write queue.
  *
  * The on-disk checkouts themselves live under `resolveWorktreesRoot()/<slug>/`
  * — a space-free path outside the userData dir so git hooks that unquote

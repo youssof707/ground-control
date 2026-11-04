@@ -6,7 +6,7 @@ type Props = {
 	editing?: number;
 	waiting?: number;
 	inbox?: number;
-	active?: "Notes" | "Sidequest" | "Inbox";
+	active?: "Sidequest" | "Inbox";
 	sidequestLive?: "ok" | "warn";
 	className?: string;
 };
@@ -25,7 +25,6 @@ export function AppNavMock({ running = 0, editing = 0, waiting = 0, inbox = 0, a
 				<Stat n={waiting} label="waiting" dot="bg-gc-warn" />
 			</div>
 			<div className="ml-auto flex items-center gap-1">
-				<Toggle label="Notes" active={active === "Notes"} />
 				<Toggle label="Sidequest" active={active === "Sidequest"} dot={sidequestLive} />
 				<Toggle label="Inbox" active={active === "Inbox"} badge={inbox} />
 			</div>

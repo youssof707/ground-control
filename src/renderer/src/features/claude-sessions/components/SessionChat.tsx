@@ -48,7 +48,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	const queue = usePermissionsStore((s) => s.queue);
 	const pending = queue.filter((q) => q.sessionId === sessionId);
 	const resumeAt = useAutoResumeStore((s) => s.resumeAtBySession[sessionId]);
-	// Lives in a store, not local state, so the Stop pill and the global ⌘.
+	// Lives in a store, not local state, so the Stop pill and the global Ctrl+C
 	// hotkey share one in-flight guard — see `stopSession`.
 	const interrupting = useInterruptStore((s) => !!s.interrupting[sessionId]);
 	const [forkingId, setForkingId] = useState<string | null>(null);

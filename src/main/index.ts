@@ -10,7 +10,6 @@ import {
 	deleteSession,
 } from "./core/store/claude_session";
 import { initialize as initializeReadStore } from "./core/store/read_state";
-import { initialize as initializeSessionNotesStore } from "./core/store/session_notes";
 import { initialize as initializeWorktreesStore } from "./core/store/worktrees";
 import { initialize as initializeSessionGroupsStore } from "./core/store/session_groups";
 import { initialize as initializeShortcutsStore } from "./core/store/shortcuts";
@@ -227,7 +226,6 @@ app.whenReady().then(async () => {
 		await initializeClaudeSessionStore(dataDir);
 		await initializeReadStore(dataDir);
 		await initializeAppSettingsStore(dataDir);
-		await initializeSessionNotesStore(dataDir);
 		await initializeWorktreesStore(dataDir);
 		await initializeSessionGroupsStore(dataDir);
 		await initializeShortcutsStore(dataDir);

@@ -1,6 +1,5 @@
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { useSessionGroupsStore } from "../stores/useSessionGroupsStore";
-import { useSessionNotesStore } from "../stores/useSessionNotesStore";
 import { useUndoStore, type UndoEntry } from "../stores/useUndoStore";
 import { runBackgroundTask } from "../../background-tasks/stores/useBackgroundTasksStore";
 
@@ -87,15 +86,6 @@ export function restoreEntry(entry: UndoEntry, navigate: NavigateFn): void {
 			// Lifts the renderer tombstone AND re-inserts the row, atomically.
 			// Without the untombstone the row would go straight back to inert.
 			useSessionsStore.getState().restoreSession(session);
-
-			// Seed the notes cache from the snapshot rather than waiting for
-			// the panel's lazy fetch, so opening Notes right after an undo
-			// shows the restored notes immediately.
-			if (snapshot.notes.length > 0) {
-				useSessionNotesStore
-					.getState()
-					.hydrateForSession(session.id, snapshot.notes);
-			}
 
 			// Deliberately NOT touching useWorktreesStore's `sessionIds`
 			// reverse index: this window's copy is already known-stale (main

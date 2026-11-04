@@ -4,7 +4,7 @@ import { useQueuedMessagesStore } from "../stores/useQueuedMessagesStore";
 
 /**
  * Imperative session-control operations, shared by the working chip's stop
- * affordance (via `SessionChat` / `SidequestPanel`) and the global ⌘. handler.
+ * affordance (via `SessionChat` / `SidequestPanel`) and the global Ctrl+C handler.
  * Deliberately store-only (no hooks) so it can run from a window keydown
  * listener outside React's render cycle — same pattern as
  * lib/composerActions.ts and lib/sidequestActions.ts.

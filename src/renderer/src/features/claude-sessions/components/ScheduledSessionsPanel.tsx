@@ -5,15 +5,13 @@ import { StatusPill } from "../../../design/Atoms";
 import { T } from "../../../design/tokens";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
-import { useSchedulesStore } from "../stores/useSchedulesStore";
 import { isScheduledSession } from "../lib/scheduledSessions";
-import { isSessionUnread } from "../lib/unread";
+import { isSessionUnread, lastIncomingMessageText } from "../lib/unread";
 import { useReadStore } from "../stores/useReadStore";
 import { deleteSessionWithUndo } from "../lib/deleteSessionActions";
 import { formatMessageTime } from "../lib/messageTime";
 import { BabysitBadge } from "./BabysitBadge";
 import { ConfirmDeleteButton } from "./ConfirmDeleteButton";
-import { scheduleLabel } from "./SchedulesPanel";
 
 const ROW_SELECTED_BG = `color-mix(in oklab, ${T.text} 4%, transparent)`;
 
@@ -24,28 +22,24 @@ export function ScheduledSessionsPanel({
 }) {
 	const sessions = useSessionsStore((s) => s.sessions);
 	const order = useSessionsStore((s) => s.order);
-	const schedules = useSchedulesStore((s) => s.byId);
+	const lastReadAt = useReadStore((s) => s.lastReadAt);
 
 	const groups = useMemo(() => {
 		const scheduled = order
 			.map((id) => sessions[id])
 			.filter((s): s is ClaudeSessionFull => !!s && isScheduledSession(s))
 			.sort((a, b) => b.createdAt - a.createdAt);
-		const byScheduleId = new Map<string, ClaudeSessionFull[]>();
+		const unread: ClaudeSessionFull[] = [];
+		const read: ClaudeSessionFull[] = [];
 		for (const s of scheduled) {
-			const key = s.scheduleId ?? "";
-			const list = byScheduleId.get(key);
-			if (list) list.push(s);
-			else byScheduleId.set(key, [s]);
+			if (isSessionUnread(s, lastReadAt[s.id] ?? 0)) unread.push(s);
+			else read.push(s);
 		}
-		return Array.from(byScheduleId.entries()).map(([scheduleId, list]) => ({
-			scheduleId,
-			title: schedules[scheduleId]
-				? scheduleLabel(schedules[scheduleId])
-				: "Deleted schedule",
-			sessions: list,
-		}));
-	}, [order, sessions, schedules]);
+		return [
+			{ key: "unread", title: "Unread", unread: true, sessions: unread },
+			{ key: "read", title: "Read", unread: false, sessions: read },
+		].filter((g) => g.sessions.length > 0);
+	}, [order, sessions, lastReadAt]);
 
 	if (groups.length === 0) {
 		return (
@@ -65,7 +59,7 @@ export function ScheduledSessionsPanel({
 	return (
 		<div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 			{groups.map((g) => (
-				<div key={g.scheduleId}>
+				<div key={g.key}>
 					<div
 						style={{
 							fontSize: 10.5,
@@ -83,6 +77,7 @@ export function ScheduledSessionsPanel({
 							<ScheduledSessionRow
 								key={s.id}
 								session={s}
+								unread={g.unread}
 								onOpen={() => onOpenSession(s.id)}
 							/>
 						))}
@@ -95,9 +90,11 @@ export function ScheduledSessionsPanel({
 
 function ScheduledSessionRow({
 	session,
+	unread,
 	onOpen,
 }: {
 	session: ClaudeSessionFull;
+	unread: boolean;
 	onOpen: () => void;
 }) {
 	const [hover, setHover] = useState(false);
@@ -108,8 +105,9 @@ function ScheduledSessionRow({
 		s.queue.find((q) => q.sessionId === session.id),
 	);
 	const status = pending ? "awaiting_permission" : session.status;
-	const unread = useReadStore((s) =>
-		isSessionUnread(session, s.lastReadAt[session.id] ?? 0),
+	const preview = useMemo(
+		() => (unread ? lastIncomingMessageText(session) : ""),
+		[unread, session],
 	);
 
 	const remove = async () => {
@@ -188,7 +186,34 @@ function ScheduledSessionRow({
 					>
 						{session.title || "Untitled"}
 					</span>
+					<span
+						style={{
+							fontSize: 11,
+							fontWeight: 400,
+							color: T.textMute,
+							flexShrink: 0,
+						}}
+					>
+						{formatMessageTime(session.createdAt)}
+					</span>
 				</span>
+				{preview ? (
+					<span
+						style={{
+							fontSize: 12,
+							lineHeight: 1.45,
+							color: T.textDim,
+							whiteSpace: "pre-wrap",
+							overflowWrap: "anywhere",
+							display: "-webkit-box",
+							WebkitLineClamp: 4,
+							WebkitBoxOrient: "vertical",
+							overflow: "hidden",
+						}}
+					>
+						{preview}
+					</span>
+				) : null}
 				<span
 					style={{
 						display: "flex",
@@ -204,7 +229,6 @@ function ScheduledSessionRow({
 						pendingToolName={pending?.toolName}
 					/>
 					<BabysitBadge sessionId={session.id} />
-					<span>{formatMessageTime(session.createdAt)}</span>
 				</span>
 			</div>
 			<div onClick={stop} onKeyDown={stop} style={{ flexShrink: 0 }}>

@@ -10,6 +10,6 @@ interface State {
 
 export const useSchedulerModalStore = create<State>((set) => ({
 	openTab: null,
-	open: (tab = "schedules") => set({ openTab: tab }),
+	open: (tab = "sessions") => set({ openTab: tab }),
 	close: () => set({ openTab: null }),
 }));

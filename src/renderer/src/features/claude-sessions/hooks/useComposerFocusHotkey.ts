@@ -31,7 +31,7 @@ function hasPendingRequest(sessionId: string): boolean {
  *   - Selection started inside the sidequest panel (and a sidequest exists)
  *     → the sidequest's composer. The main composer is left alone and never
  *     takes focus.
- *   - Anything else — main transcript, notes, or no selection at all → the
+ *   - Anything else — main transcript or no selection at all → the
  *     main composer, even while the sidequest panel is open.
  *
  * That's the same `[data-sidequest-panel]` attribution rule `useSidequestHotkey`

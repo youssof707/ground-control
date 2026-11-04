@@ -1,5 +1,4 @@
 import type { ClaudeSessionFull } from "../schemas/claude_session";
-import type { Note } from "../schemas/session_notes";
 import type { SessionGroup } from "../schemas/session_groups";
 
 /**
@@ -7,11 +6,11 @@ import type { SessionGroup } from "../schemas/session_groups";
  * be put again by `session:restore`.
  *
  * Deleting a session is not a single-row operation — `session:delete` also
- * cascade-deletes the session's notes, detaches it from its worktree, and
+ * detaches it from its worktree, and
  * auto-deletes its sidebar group if it was that group's last member. A
  * restore that only brought back the session row would be a *partial*
- * resurrection: the user would believe they were made whole while their notes
- * and their group stayed gone. So the delete handler captures all of it here,
+ * resurrection: the user would believe they were made whole while their group
+ * stayed gone. So the delete handler captures all of it here,
  * before it starts destroying things, and hands the whole snapshot back as its
  * return value.
  *
@@ -22,8 +21,6 @@ import type { SessionGroup } from "../schemas/session_groups";
 export interface DeletedSessionSnapshot {
 	/** The full session record as it was immediately before deletion. */
 	session: ClaudeSessionFull;
-	/** Every note that the delete cascade removed. Often empty. */
-	notes: Note[];
 	/**
 	 * The session's sidebar group, but ONLY when the delete auto-pruned it
 	 * (i.e. this session was its last member). Null when the group survived —
