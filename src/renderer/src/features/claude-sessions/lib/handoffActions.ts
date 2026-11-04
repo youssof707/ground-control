@@ -87,9 +87,16 @@ export function runHandoff(input: {
 	session: ClaudeSessionFull;
 	text: string;
 	navigate: (to: string) => void;
+	followIfViewing?: boolean;
 }): void {
-	const { session, text, navigate } = input;
+	const { session, text } = input;
 	const oldId = session.id;
+	const follow =
+		!input.followIfViewing ||
+		window.location.hash === `#/sessions/${oldId}`;
+	const navigate = (to: string) => {
+		if (follow) input.navigate(to);
+	};
 	const title = session.title;
 	const carriedDraft = useDraftStore.getState().draftsBySession[oldId];
 	const carriedQueue =

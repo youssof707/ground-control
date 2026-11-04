@@ -19,6 +19,13 @@ import { useComposerImages } from "../hooks/useComposerImages";
 import { useComposerTarget } from "../hooks/useComposerTarget";
 import { appendPromptBlock } from "../lib/composerActions";
 import { isMcpCommand, openMcpSettingsFor } from "../lib/openMcpSettings";
+import {
+	HANDOFF_COMMAND,
+	HANDOFF_PROMPT,
+	isHandoffCommand,
+} from "../lib/handoffCommand";
+import { isDraftId } from "../stores/useDraftSessionsStore";
+import { isSidequestId } from "../stores/useSidequestsStore";
 import { T } from "../../../design/tokens";
 import { ModeToggle, isBranchStale } from "../../../design/Atoms";
 import { DictationButton, type DictationHandle } from "./DictationButton";
@@ -272,6 +279,12 @@ export function MessageComposer({
 
 	const busy = sending || target.sending;
 
+	const isHandoff =
+		images.length === 0 &&
+		isHandoffCommand(text) &&
+		!isDraftId(sessionId) &&
+		!isSidequestId(sessionId);
+
 	const send = async () => {
 		if (busy) return;
 		if (!text.trim() && images.length === 0) return;
@@ -280,7 +293,8 @@ export function MessageComposer({
 			openMcpSettingsFor(sessionId);
 			return;
 		}
-		const blocks = buildUserBlocks(text, images);
+		const blocks = buildUserBlocks(isHandoff ? HANDOFF_PROMPT : text, images);
+		const queueStore = useQueuedMessagesStore.getState();
 
 		setSending(true);
 		setError(null);
@@ -288,8 +302,10 @@ export function MessageComposer({
 		const nextModel = picker.takeNextMessageModel(sessionId);
 		try {
 			await applyModelForMessage(sessionId, nextModel);
+			if (isHandoff) queueStore.markHandoff(sessionId);
 			await target.send(blocks);
 		} catch (err) {
+			if (isHandoff) queueStore.clearHandoff(sessionId);
 			if (nextModel && !useModelPickerStore.getState().nextMessageModel[sessionId]) {
 				picker.setNextMessageModel(sessionId, nextModel);
 			}
@@ -306,7 +322,7 @@ export function MessageComposer({
 	// these one per turn as each turn completes.
 	const queueMessage = () => {
 		if (!text.trim() && images.length === 0) return;
-		const blocks = buildUserBlocks(text, images);
+		const blocks = buildUserBlocks(isHandoff ? HANDOFF_PROMPT : text, images);
 		const trimmed = text.trim();
 		useQueuedMessagesStore.getState().enqueue(sessionId, {
 			id: crypto.randomUUID(),
@@ -316,6 +332,7 @@ export function MessageComposer({
 			switchModel: useModelPickerStore
 				.getState()
 				.takeNextMessageModel(sessionId),
+			...(isHandoff ? { handoffAfter: true as const } : {}),
 		});
 		useQueuedMessagesStore.getState().setError(sessionId, null);
 		useDraftStore.getState().clearDraft(sessionId);
@@ -330,9 +347,9 @@ export function MessageComposer({
 	// `text`/`images` from the stored blocks rather than the
 	// `preview`/`imageCount` summary, so nothing is lost on the round trip.
 	const restoreQueuedMessage = (msg: QueuedMessage) => {
-		const { text: restoredText, images: restoredImages } = draftFromBlocks(
-			msg.blocks,
-		);
+		const restored = draftFromBlocks(msg.blocks);
+		const restoredText = msg.handoffAfter ? HANDOFF_COMMAND : restored.text;
+		const restoredImages = restored.images;
 		useQueuedMessagesStore.getState().cancel(sessionId, msg.id);
 		useQueuedMessagesStore.getState().setError(sessionId, null);
 		if (msg.switchModel) {

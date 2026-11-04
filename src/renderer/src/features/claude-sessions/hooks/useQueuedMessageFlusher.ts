@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import {
@@ -9,6 +10,8 @@ import { isSidequestId, useSidequestsStore } from "../stores/useSidequestsStore"
 import { sendTurn } from "../lib/sendTurn";
 import { sendToSidequest } from "../lib/sidequestActions";
 import { applyModelForMessage } from "../lib/modelSwitchActions";
+import { handoffReplyText } from "../lib/handoffCommand";
+import { runHandoff } from "../lib/handoffActions";
 
 /**
  * App-level (not composer-level) owner of "fire the queued pre-move the
@@ -37,6 +40,10 @@ import { applyModelForMessage } from "../lib/modelSwitchActions";
  * and clears the latch.
  */
 export function useQueuedMessageFlusher() {
+	const navigate = useNavigate();
+	const navigateRef = useRef(navigate);
+	navigateRef.current = navigate;
+
 	useEffect(() => {
 		if (!window.claude) return;
 
@@ -59,7 +66,17 @@ export function useQueuedMessageFlusher() {
 		const deliver = async (id: string, msg: QueuedMessage) => {
 			if (!isSidequestId(id)) {
 				await applyModelForMessage(id, msg.switchModel);
-				await sendTurn(id, msg.blocks);
+				if (msg.handoffAfter) {
+					useQueuedMessagesStore.getState().markHandoff(id);
+				}
+				try {
+					await sendTurn(id, msg.blocks);
+				} catch (err) {
+					if (msg.handoffAfter) {
+						useQueuedMessagesStore.getState().clearHandoff(id);
+					}
+					throw err;
+				}
 				return;
 			}
 			const parentId = useSidequestsStore.getState().parentOf(id);
@@ -81,6 +98,24 @@ export function useQueuedMessageFlusher() {
 				useSidequestsStore.getState().byParent[parentIdAtStart]?.sidequestId
 				?? id
 			);
+		};
+
+		const tryHandoff = (id: string): boolean => {
+			const { pendingHandoff, heldSessions } =
+				useQueuedMessagesStore.getState();
+			if (!pendingHandoff[id] || heldSessions[id]) return false;
+			useQueuedMessagesStore.getState().clearHandoff(id);
+			const session = useSessionsStore.getState().sessions[id];
+			if (!session) return false;
+			const text = handoffReplyText(session);
+			if (text === null) return false;
+			runHandoff({
+				session,
+				text,
+				navigate: (to) => navigateRef.current(to),
+				followIfViewing: true,
+			});
+			return true;
 		};
 
 		const tryFlush = (id: string) => {
@@ -133,7 +168,7 @@ export function useQueuedMessageFlusher() {
 				} else if (nextStatus === "usage_limit") {
 					hold(id);
 				} else if (prevStatus === "running" && nextStatus === "idle") {
-					tryFlush(id);
+					if (!tryHandoff(id)) tryFlush(id);
 				}
 			}
 			// A session dropped out of the store entirely (deleted) —
@@ -147,6 +182,13 @@ export function useQueuedMessageFlusher() {
 				if (isSidequestId(id)) continue;
 				if (!state.sessions[id]) {
 					useQueuedMessagesStore.getState().clearSession(id);
+				}
+			}
+			for (const id of Object.keys(
+				useQueuedMessagesStore.getState().pendingHandoff,
+			)) {
+				if (!state.sessions[id]) {
+					useQueuedMessagesStore.getState().clearHandoff(id);
 				}
 			}
 		});

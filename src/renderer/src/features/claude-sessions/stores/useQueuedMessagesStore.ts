@@ -15,6 +15,7 @@ export interface QueuedMessage {
 	preview: string;
 	imageCount: number;
 	switchModel?: NextMessageModel;
+	handoffAfter?: true;
 }
 
 interface State {
@@ -37,6 +38,7 @@ interface State {
 	heldSessions: Record<string, true>;
 	/** Last flush failure per session, surfaced on the chip. */
 	errorsBySession: Record<string, string>;
+	pendingHandoff: Record<string, true>;
 
 	enqueue: (sessionId: string, msg: QueuedMessage) => void;
 	/** Pop the head. Returns undefined if the queue is empty. */
@@ -50,6 +52,8 @@ interface State {
 	hold: (sessionId: string) => void;
 	release: (sessionId: string) => void;
 	setError: (sessionId: string, err: string | null) => void;
+	markHandoff: (sessionId: string) => void;
+	clearHandoff: (sessionId: string) => void;
 }
 
 function withoutKey<T>(
@@ -66,6 +70,7 @@ export const useQueuedMessagesStore = create<State>((set, get) => ({
 	queuesBySession: {},
 	heldSessions: {},
 	errorsBySession: {},
+	pendingHandoff: {},
 
 	enqueue: (sessionId, msg) =>
 		set((s) => {
@@ -120,6 +125,7 @@ export const useQueuedMessagesStore = create<State>((set, get) => ({
 			queuesBySession: withoutKey(s.queuesBySession, sessionId),
 			heldSessions: withoutKey(s.heldSessions, sessionId),
 			errorsBySession: withoutKey(s.errorsBySession, sessionId),
+			pendingHandoff: withoutKey(s.pendingHandoff, sessionId),
 		})),
 
 	// Mirrors useDraftStore.moveDraft: a sidequest re-fork mints a fresh id,
@@ -162,5 +168,15 @@ export const useQueuedMessagesStore = create<State>((set, get) => ({
 				err === null
 					? withoutKey(s.errorsBySession, sessionId)
 					: { ...s.errorsBySession, [sessionId]: err },
+		})),
+
+	markHandoff: (sessionId) =>
+		set((s) => ({
+			pendingHandoff: { ...s.pendingHandoff, [sessionId]: true },
+		})),
+
+	clearHandoff: (sessionId) =>
+		set((s) => ({
+			pendingHandoff: withoutKey(s.pendingHandoff, sessionId),
 		})),
 }));
