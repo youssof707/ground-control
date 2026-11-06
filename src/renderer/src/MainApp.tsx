@@ -37,6 +37,7 @@ import { useDictationHotkey } from "./features/claude-sessions/hooks/useDictatio
 import { useBabysitHotkey } from "./features/claude-sessions/hooks/useBabysitHotkey";
 import { useSchedulerHotkey } from "./features/claude-sessions/hooks/useSchedulerHotkey";
 import { useDeleteSessionHotkey } from "./features/claude-sessions/hooks/useDeleteSessionHotkey";
+import { useHandoffLastMessageHotkey } from "./features/claude-sessions/hooks/useHandoffLastMessageHotkey";
 import { CommandPaletteModal } from "./features/claude-sessions/components/CommandPaletteModal";
 import { T } from "./design/tokens";
 
@@ -83,6 +84,7 @@ export default function MainApp() {
 	useBabysitHotkey();
 	useSchedulerHotkey();
 	useDeleteSessionHotkey();
+	useHandoffLastMessageHotkey();
 	return (
 		<div
 			style={{

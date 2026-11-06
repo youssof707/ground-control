@@ -68,6 +68,13 @@ the single source of truth so shortcuts are easy to find.
 - `Cmd+Shift+T` — restore the most recently deleted / handed-off
   session, from anywhere (including inside a composer). No-op when nothing
   is buffered
+- `Cmd+Shift+H` — hand off the active session right now using its last
+  assistant message with text, exactly like that message's ⋯ Handoff item.
+  Works mid-turn (the running turn is killed with the old session) and from
+  anywhere, including inside a composer. Unlike `/handoff`, it never asks
+  Claude to write a brief or waits for the turn to end. No-op off a session
+  route, on a draft, while a modal is open, or when there is no assistant
+  text yet
 - `Cmd+Delete` (Cmd+Backspace) — delete the active session, exactly like its
   row's Delete item: if it's the last session on a worktree, the same
   delete-worktree confirm modal opens instead of deleting outright. No-op off

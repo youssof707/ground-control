@@ -40,6 +40,16 @@ function textOf(m: SessionMessage): string {
 		.join("\n\n");
 }
 
+export function lastAssistantText(session: ClaudeSessionFull): string | null {
+	for (let i = session.messages.length - 1; i >= 0; i--) {
+		const m = session.messages[i];
+		if (m.role !== "assistant" || isSubagentContent(m.content)) continue;
+		const text = textOf(m);
+		if (text) return text;
+	}
+	return null;
+}
+
 export function handoffReplyText(session: ClaudeSessionFull): string | null {
 	const replies: string[] = [];
 	for (let i = session.messages.length - 1; i >= 0; i--) {
