@@ -37,11 +37,9 @@ import { useDeleteSessionRequestStore } from "../stores/useDeleteSessionRequestS
 import { RenameGroupModal } from "./RenameGroupModal";
 import { SettingsModal } from "./SettingsModal";
 import { useSettingsModalStore } from "../stores/useSettingsModalStore";
-import { SchedulerButton } from "./SchedulerButton";
-import { useScheduledUnreadIds } from "../hooks/useScheduledUnreadIds";
+import { SchedulerWidget } from "./SchedulerWidget";
 import { SchedulerModal } from "./SchedulerModal";
 import { useSchedulerModalStore } from "../stores/useSchedulerModalStore";
-import { useSchedulesStore } from "../stores/useSchedulesStore";
 import { isScheduledSession } from "../lib/scheduledSessions";
 import { deleteSessionWithUndo } from "../lib/deleteSessionActions";
 import { folderName } from "../lib/folderName";
@@ -123,7 +121,6 @@ export function SessionsList({
 		string | null
 	>(null);
 	const groups = useSessionGroupsStore((s) => s.groups);
-	const schedules = useSchedulesStore((s) => s.byId);
 	const schedulerOpen = useSchedulerModalStore((s) => s.openTab !== null);
 	// Read-only settings modal, opened from the view-options dropdown.
 	// "Recently deleted" list, also opened from the view-options dropdown —
@@ -237,23 +234,6 @@ export function SessionsList({
 			}),
 		[sortedOrder, sessions],
 	);
-
-	const scheduledUnreadIds = useScheduledUnreadIds();
-	const schedulerCounts = useMemo(() => {
-		const armed = Object.values(schedules).filter(
-			(s) => s.enabled && s.nextFireAt !== undefined,
-		).length;
-		const running = order.filter((id) => {
-			const s = sessions[id];
-			return isScheduledSession(s) && s?.status === "running";
-		}).length;
-		const waiting = new Set(
-			queue
-				.filter((q) => isScheduledSession(sessions[q.sessionId]))
-				.map((q) => q.sessionId),
-		).size;
-		return { armed, running, waiting };
-	}, [schedules, order, sessions, queue]);
 
 	// Partition the visible rows into "ungrouped" (rendered first, bucketed
 	// by cwd — or by worktree for worktree-bound sessions — under subtle
@@ -984,10 +964,10 @@ export function SessionsList({
 			    instead of the wide page-header flexbox. */}
 			<div
 				style={{
-					padding: "12px 12px 10px",
+					padding: 12,
 					display: "flex",
 					flexDirection: "column",
-					gap: 8,
+					gap: 12,
 				}}
 			>
 				<div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -1019,18 +999,10 @@ export function SessionsList({
 						onOpenWorktrees={() => setWorktreesOpen(true)}
 					/>
 				</div>
-				<div style={{ display: "flex" }}>
-					<SchedulerButton
-						armed={schedulerCounts.armed}
-						running={schedulerCounts.running}
-						waiting={schedulerCounts.waiting}
-						unread={scheduledUnreadIds.length}
-						open={schedulerOpen}
-						onClick={() =>
-							useSchedulerModalStore.getState().open()
-						}
-					/>
-				</div>
+				<SchedulerWidget
+					open={schedulerOpen}
+					onOpen={() => useSchedulerModalStore.getState().open()}
+				/>
 			</div>
 
 			{startError ? (
@@ -1058,7 +1030,7 @@ export function SessionsList({
 						No sessions yet. Click "New Session".
 					</div>
 				) : (
-					<div>
+					<div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
 						{draftHost.kind === "top"
 							? renderDraftRow(sidebarRows.length === 0)
 							: null}
@@ -1088,7 +1060,6 @@ export function SessionsList({
 											// framed look. Rows render
 											// transparent, so T.bg shows through
 											// the full section.
-											margin: "8px 0",
 											background: T.bg,
 											// Top hairline only — same recipe as
 											// the header's under-rule. It sits
@@ -1137,7 +1108,6 @@ export function SessionsList({
 											// buckets — worktrees are the neutral
 											// sibling of GroupSection too, just
 											// keyed by worktree instead of folder.
-											margin: "8px 0",
 											background: T.bg,
 											borderTop: `1px solid ${T.borderSoft}`,
 											overflow: "hidden",
@@ -1670,7 +1640,6 @@ function GroupSection({
 				// the comment on those wrapping divs in the sidebar's
 				// render map. Rows render transparent, so T.bg shows
 				// through the full section.
-				margin: "8px 0",
 				background: T.bg,
 				borderTop: `1px solid ${T.borderSoft}`,
 				overflow: "hidden",

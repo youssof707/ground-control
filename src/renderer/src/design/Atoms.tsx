@@ -3,6 +3,31 @@ import { T } from "./tokens";
 import { ConfirmModal } from "../components/ConfirmModal";
 import type { SessionMode } from "@shared/claude-sessions/types";
 
+export function CountPill({ n, fg, bg }: { n: number; fg: string; bg: string }) {
+	return (
+		<span
+			style={{
+				display: "inline-flex",
+				alignItems: "center",
+				justifyContent: "center",
+				minWidth: 16,
+				height: 16,
+				padding: "0 5px",
+				borderRadius: 8,
+				background: bg,
+				color: fg,
+				fontSize: 10,
+				fontWeight: 600,
+				fontFamily: T.mono,
+				letterSpacing: "-0.2px",
+				flexShrink: 0,
+			}}
+		>
+			{n}
+		</span>
+	);
+}
+
 // ─── StatusPill ──────────────────────────────────────────────────────────────
 
 interface StatusStyle {

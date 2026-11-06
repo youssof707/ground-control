@@ -13,6 +13,16 @@ import { enqueue } from "./write_queue";
 let initialized = false;
 let filePath: string | null = null;
 let db: SchedulesFile = { items: {} };
+const changeListeners = new Set<() => void>();
+
+export function onChange(listener: () => void): () => void {
+	changeListeners.add(listener);
+	return () => changeListeners.delete(listener);
+}
+
+function notifyChange(): void {
+	for (const listener of changeListeners) listener();
+}
 
 const RawFileSchema = z.object({
 	items: z.record(z.string(), z.unknown()),
@@ -98,6 +108,7 @@ export async function create(entry: Schedule): Promise<Schedule> {
 		}
 		db.items[validated.id] = validated;
 		await persist();
+		notifyChange();
 		return structuredClone(validated);
 	});
 }
@@ -115,6 +126,7 @@ export async function update(
 		);
 		db.items[id] = merged;
 		await persist();
+		notifyChange();
 		return structuredClone(merged);
 	});
 }
@@ -126,6 +138,7 @@ export async function remove(id: string): Promise<Schedule | null> {
 		if (!current) return null;
 		delete db.items[id];
 		await persist();
+		notifyChange();
 		return structuredClone(current);
 	});
 }

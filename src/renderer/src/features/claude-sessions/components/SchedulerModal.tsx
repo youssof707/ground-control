@@ -16,7 +16,7 @@ import {
 	type ScheduleDraft,
 } from "./ScheduleForm";
 import { SchedulesPanel } from "./SchedulesPanel";
-import { CountPill } from "./SchedulerButton";
+import { CountPill } from "../../../design/Atoms";
 import { ModelPickerModal } from "./ModelPickerModal";
 import { useScheduledUnreadIds } from "../hooks/useScheduledUnreadIds";
 import { useReadStore } from "../stores/useReadStore";

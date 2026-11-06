@@ -242,7 +242,7 @@ function SessionsListSidebarShell() {
 					cursor: "ew-resize",
 					touchAction: "none",
 					display: "flex",
-					justifyContent: "center",
+					justifyContent: "flex-start",
 				}}
 			>
 				<div

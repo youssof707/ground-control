@@ -1,4 +1,5 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import type { Schedule } from "@shared/schemas/schedules";
 import type {
 	ClaudeSessionFull,
 	PermissionRequest,
@@ -8,6 +9,13 @@ import { useSessionsStore } from "../stores/useSessionsStore";
 import { useMinimizedPermissionsStore } from "../stores/useMinimizedPermissionsStore";
 import { isSidequestId } from "../stores/useSidequestsStore";
 import { PermissionCard } from "./PermissionCard";
+import { scheduleLabel } from "./SchedulesPanel";
+import { useSchedulesStore } from "../stores/useSchedulesStore";
+import {
+	dismissScheduleAlert,
+	scheduleSessionTarget,
+	sortedScheduleAlerts,
+} from "../lib/scheduleAlerts";
 import { T } from "../../../design/tokens";
 import {
 	BranchChipWithDelta,
@@ -18,6 +26,18 @@ import {
 export function InboxSidebar({ onClose }: { onClose: () => void }) {
 	const queue = usePermissionsStore((s) => s.queue);
 	const sessions = useSessionsStore((s) => s.sessions);
+	const schedules = useSchedulesStore((s) => s.byId);
+	const alerts = sortedScheduleAlerts(schedules);
+	const navigate = useNavigate();
+	const openAlert = (schedule: Schedule) => {
+		const target = scheduleSessionTarget(
+			schedule,
+			sessions,
+			schedule.alert?.sessionId,
+		);
+		dismissScheduleAlert(schedule);
+		if (target) navigate(`/sessions/${target}`);
+	};
 	const ordered = [...queue]
 		.reverse()
 		// Sidequests have no session row — they'd otherwise leak into the
@@ -61,9 +81,18 @@ export function InboxSidebar({ onClose }: { onClose: () => void }) {
 						Inbox
 					</h1>
 					<div style={{ fontSize: 12.5, color: T.textDim, marginTop: 4 }}>
-						{ordered.length === 0
-							? "No pending questions."
-							: `${ordered.length} pending · sessions pause until you respond.`}
+						{ordered.length + alerts.length === 0
+							? "Nothing needs you."
+							: [
+								alerts.length > 0
+									? `${alerts.length} ${alerts.length === 1 ? "alert" : "alerts"}`
+									: null,
+								ordered.length > 0
+									? `${ordered.length} pending · sessions pause until you respond.`
+									: null,
+							]
+								.filter(Boolean)
+								.join(" · ")}
 					</div>
 				</div>
 				<button
@@ -103,8 +132,16 @@ export function InboxSidebar({ onClose }: { onClose: () => void }) {
 					padding: "16px 16px 24px",
 				}}
 			>
-				{ordered.length > 0 && (
+				{alerts.length + ordered.length > 0 && (
 					<div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+						{alerts.map((schedule) => (
+							<ScheduleAlertCard
+								key={schedule.id}
+								schedule={schedule}
+								onOpen={() => openAlert(schedule)}
+								onDismiss={() => dismissScheduleAlert(schedule)}
+							/>
+						))}
 						{ordered.map((req) => (
 							<InboxCard
 								key={req.requestId}
@@ -116,6 +153,139 @@ export function InboxSidebar({ onClose }: { onClose: () => void }) {
 				)}
 			</div>
 		</aside>
+	);
+}
+
+function ScheduleAlertCard({
+	schedule,
+	onOpen,
+	onDismiss,
+}: {
+	schedule: Schedule;
+	onOpen: () => void;
+	onDismiss: () => void;
+}) {
+	const alert = schedule.alert;
+	if (!alert) return null;
+	return (
+		<div
+			style={{
+				borderRadius: 12,
+				background: T.surface,
+				border: `0.5px solid ${T.warnBorder}`,
+				overflow: "hidden",
+			}}
+		>
+			<div
+				style={{
+					padding: "10px 14px",
+					borderBottom: `0.5px solid ${T.border}`,
+					display: "flex",
+					alignItems: "center",
+					gap: 8,
+				}}
+			>
+				<div style={{ fontSize: 12, color: T.textDim, flexShrink: 0 }}>
+					Alert from
+				</div>
+				<button
+					type="button"
+					onClick={onOpen}
+					style={{
+						appearance: "none",
+						padding: 0,
+						background: "transparent",
+						border: "none",
+						cursor: "pointer",
+						fontSize: 12.5,
+						color: T.warn,
+						fontWeight: 500,
+						display: "inline-flex",
+						alignItems: "center",
+						gap: 6,
+						minWidth: 0,
+					}}
+				>
+					<span
+						style={{
+							minWidth: 0,
+							overflow: "hidden",
+							textOverflow: "ellipsis",
+							whiteSpace: "nowrap",
+						}}
+					>
+						{scheduleLabel(schedule)}
+					</span>
+					<svg
+						width="10"
+						height="10"
+						viewBox="0 0 10 10"
+						fill="none"
+						style={{ flexShrink: 0 }}
+					>
+						<path
+							d="M3 2h5v5M3 7l5-5"
+							stroke="currentColor"
+							strokeWidth="1.4"
+							strokeLinecap="round"
+						/>
+					</svg>
+				</button>
+				<div style={{ flex: 1 }} />
+				<span
+					style={{
+						fontSize: 11.5,
+						color: T.textFaint,
+						fontFamily: T.mono,
+						flexShrink: 0,
+					}}
+				>
+					{new Date(alert.at).toLocaleTimeString([], {
+						hour: "2-digit",
+						minute: "2-digit",
+					})}
+				</span>
+				<button
+					type="button"
+					aria-label="Dismiss alert"
+					onClick={onDismiss}
+					style={{
+						flexShrink: 0,
+						width: 20,
+						height: 20,
+						padding: 0,
+						borderRadius: 5,
+						border: "none",
+						background: "transparent",
+						color: T.textDim,
+						cursor: "pointer",
+						display: "inline-flex",
+						alignItems: "center",
+						justifyContent: "center",
+					}}
+				>
+					<svg width="9" height="9" viewBox="0 0 9 9" fill="none" aria-hidden>
+						<path
+							d="M1.5 1.5l6 6M7.5 1.5l-6 6"
+							stroke="currentColor"
+							strokeWidth="1.4"
+							strokeLinecap="round"
+						/>
+					</svg>
+				</button>
+			</div>
+			<div
+				style={{
+					padding: 14,
+					fontSize: 13,
+					lineHeight: 1.5,
+					color: T.text,
+					overflowWrap: "anywhere",
+				}}
+			>
+				{alert.message}
+			</div>
+		</div>
 	);
 }
 

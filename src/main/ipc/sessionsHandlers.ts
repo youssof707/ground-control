@@ -13,6 +13,7 @@ import { Babysitter } from "../sessions/Babysitter";
 import { KeepAwake } from "../sessions/KeepAwake";
 import { UsageLimitResumer } from "../sessions/UsageLimitResumer";
 import { ScheduleRunner } from "../sessions/ScheduleRunner";
+import * as scheduleStatus from "../sessions/scheduleStatus";
 import { directoryExists } from "../sessions/fsUtils";
 import * as rateLimitTracker from "../sessions/RateLimitTracker";
 import { requestAuthorization } from "../sessions/wakeScheduler";
@@ -73,6 +74,12 @@ async function showFolderPicker(
 
 export function registerSessionsHandlers(): SessionManager {
 	const notifications = new NotificationManager();
+	const syncScheduleAlertBadge = () =>
+		notifications.setScheduleAlertCount(
+			schedulesStore.list().filter((s) => s.alert).length,
+		);
+	syncScheduleAlertBadge();
+	schedulesStore.onChange(syncScheduleAlertBadge);
 	let manager: SessionManager;
 	// Babysit mode: per-session rules for answering prompts while the user is
 	// away. In memory only — nothing here is ever written to disk.
@@ -136,6 +143,16 @@ export function registerSessionsHandlers(): SessionManager {
 		},
 		keepAwake.setBusy,
 		resumer.onChange,
+		{
+			onReport: (report) => {
+				void scheduleStatus.report(report).then((schedule) => {
+					if (report.alert && schedule) notifications.notifyScheduleAlert(schedule);
+				});
+			},
+			onSettled: (scheduleId, sessionId, outcome) => {
+				void scheduleStatus.settle(scheduleId, sessionId, outcome);
+			},
+		},
 	);
 
 	const isSessionBusy = (id: string): boolean => {

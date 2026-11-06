@@ -168,6 +168,7 @@ declare global {
 			updateSchedule: (input: UpdateScheduleInput) => Promise<Schedule>;
 			removeSchedule: (id: string) => Promise<void>;
 			setScheduleEnabled: (id: string, enabled: boolean) => Promise<Schedule>;
+			clearScheduleAlert: (id: string) => Promise<void>;
 			listSkills: () => Promise<Skill[]>;
 			openSkillsFolder: () => Promise<void>;
 			getAppInfo: () => Promise<{

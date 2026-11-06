@@ -146,6 +146,8 @@ const claude = {
 	removeSchedule: (id: string) => ipcRenderer.invoke("schedules:remove", id),
 	setScheduleEnabled: (id: string, enabled: boolean) =>
 		ipcRenderer.invoke("schedules:setEnabled", { id, enabled }),
+	clearScheduleAlert: (id: string) =>
+		ipcRenderer.invoke("schedules:clearAlert", id),
 	listSkills: () => ipcRenderer.invoke("skills:list"),
 	openSkillsFolder: () => ipcRenderer.invoke("skills:openFolder"),
 	getAppInfo: () => ipcRenderer.invoke("appInfo:get"),

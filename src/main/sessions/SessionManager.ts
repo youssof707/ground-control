@@ -10,6 +10,23 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { app } from "electron";
 import { randomUUID } from "node:crypto";
+import {
+	createScheduleReportServer,
+	REPORT_INSTRUCTIONS,
+	REPORT_SERVER_NAME,
+	REPORT_TOOL_NAME,
+	type ScheduleReport,
+} from "./scheduleReportTool";
+import type { ScheduledRunOutcome } from "./scheduleStatus";
+
+export interface ScheduleRunHooks {
+	onReport?: (report: ScheduleReport) => void;
+	onSettled?: (
+		scheduleId: string,
+		sessionId: string,
+		outcome: ScheduledRunOutcome,
+	) => void;
+}
 import { accessSync, existsSync, constants as fsConstants } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -578,6 +595,7 @@ export class SessionManager {
 		) => void,
 		private onBusyChange: (runtimeId: string, busy: boolean) => void = () => {},
 		private onUsageLimitChange: UsageLimitListener = () => {},
+		private scheduleHooks: ScheduleRunHooks = {},
 	) {}
 
 	/**
@@ -1495,6 +1513,28 @@ export class SessionManager {
 		resumed.pushTurn(blocks);
 	}
 
+	private scheduledRunOptions(
+		session: ClaudeSession,
+		scheduleId: string,
+	): Partial<Options> {
+		const server = createScheduleReportServer(
+			{ scheduleId, sessionId: session.id },
+			(report) => {
+				if (session.scheduleId !== scheduleId) return;
+				this.scheduleHooks.onReport?.(report);
+			},
+		);
+		return {
+			mcpServers: { [REPORT_SERVER_NAME]: server },
+			allowedTools: [REPORT_TOOL_NAME],
+			systemPrompt: {
+				type: "preset",
+				preset: "claude_code",
+				append: REPORT_INSTRUCTIONS,
+			},
+		};
+	}
+
 	private async runLoop(cfg: {
 		session: ClaudeSession;
 		cwd: string;
@@ -1558,6 +1598,13 @@ export class SessionManager {
 		let limitHit = false;
 		let rejectedEventSeen = false;
 		let lastRejectedResetMs: number | undefined;
+
+		let scheduledRunSettled = false;
+		const settleScheduledRun = (outcome: ScheduledRunOutcome) => {
+			if (scheduledRunSettled || !session.scheduleId) return;
+			scheduledRunSettled = true;
+			this.scheduleHooks.onSettled?.(session.scheduleId, id, outcome);
+		};
 		const currentUsageLimitHit = (): UsageLimitHit => ({
 			resetsAt: lastRejectedResetMs ?? rateLimitTracker.latestRejectedResetMs(),
 		});
@@ -1597,6 +1644,9 @@ export class SessionManager {
 			// appeared. Only real work clears the flag.
 			if (session.status === "usage_limit" && next !== "running") return;
 			const wasLimited = session.status === "usage_limit";
+			if (session.status === "running") {
+				settleScheduledRun(next === "usage_limit" ? "failed" : "ok");
+			}
 			session.status = next;
 			const d = activity.debug;
 			console.log(
@@ -1799,6 +1849,9 @@ export class SessionManager {
 					? { resumeSessionAt: cfg.resumeSessionAt }
 					: {}),
 				...(cfg.ephemeral ? { forkSession: true } : {}),
+				...(session.scheduleId
+					? this.scheduledRunOptions(session, session.scheduleId)
+					: {}),
 			};
 
 			const q = query({ prompt: userStream(), options });
@@ -2169,6 +2222,7 @@ export class SessionManager {
 				// `terminal_reason`. Route that case to its own status so it
 				// gets its own badge instead of reading as "done".
 				const hitUsageLimit = limitHit;
+				settleScheduledRun(hitUsageLimit ? "failed" : "ok");
 				session.status = hitUsageLimit ? "usage_limit" : "done";
 				session.finishedAt = Date.now();
 				this.onUsageLimitChange(
@@ -2198,6 +2252,7 @@ export class SessionManager {
 				console.warn(`[session ${id}] fork resume failed:`, err);
 				return;
 			}
+			settleScheduledRun("failed");
 			session.status = "errored";
 			session.error = err instanceof Error ? err.message : String(err);
 			session.finishedAt = Date.now();

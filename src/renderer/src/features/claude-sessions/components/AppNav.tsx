@@ -2,6 +2,7 @@ import { Link, useMatch } from "react-router-dom";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { isSidequestId, useSidequestsStore } from "../stores/useSidequestsStore";
+import { useSchedulesStore } from "../stores/useSchedulesStore";
 import { lastForkableMessageId } from "../lib/sidequestForkPoint";
 import {
 	openSidequestPanelAndFocus,
@@ -66,7 +67,11 @@ export function AppNav() {
 			.map((q) => q.sessionId),
 	).size;
 
-	const inboxBadge = attentionQueue.length;
+	const scheduleAlertCount = useSchedulesStore(
+		(s) => Object.values(s.byId).filter((x) => x.alert !== undefined).length,
+	);
+
+	const inboxBadge = attentionQueue.length + scheduleAlertCount;
 
 	/**
 	 * Opening the panel *is* the request for a sidequest — don't make the user

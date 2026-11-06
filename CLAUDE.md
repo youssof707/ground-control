@@ -85,6 +85,22 @@ the single source of truth so shortcuts are easy to find.
   has focus so native delete-to-line-start keeps working, and while another
   modal is open
 
+## Schedules
+
+Every scheduled session gets an in-process MCP tool, `mcp__ground-control__report`
+(`src/main/sessions/scheduleReportTool.ts`), pre-allowed so the Babysitter never sees it,
+plus a system-prompt append telling Claude to call it once when done with
+`{ color: green|yellow|red, line, alert? }`. The latest call becomes `schedule.status`;
+`alert` is a separate message to the user (not a copy of `line`) and also sets
+`schedule.alert`. A run that ends without calling it settles as
+green `nothing to report`; one that errors or hits a usage limit settles as yellow
+`run failed` (`src/main/sessions/scheduleStatus.ts`). The sidebar `SchedulerWidget`
+shows one row per enabled schedule with a status, pins alerts at the top, and clears an
+alert when it is clicked (which also opens the session) or dismissed with its x.
+Each alert also shows as a card in the Inbox, counts toward the Inbox badge and the dock
+badge, and fires a macOS notification when raised. Clicking the notification opens the
+session and clears the alert, same as clicking it in the widget or Inbox.
+
 ## Code rules
 
 **ZERO COMMENTS. EVER. No exceptions.** Code must explain itself.
