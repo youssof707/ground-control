@@ -94,6 +94,8 @@ const DENSITY: Record<
 	},
 };
 
+const SEND_QUEUED_ON_ENTER_WINDOW_MS = 30_000;
+
 // A fresh [] literal on every render would break the zustand selector's
 // reference equality and re-render the composer on every unrelated store
 // update. (The images equivalent lives in `lib/composerImages`, shared with
@@ -329,6 +331,7 @@ export function MessageComposer({
 			blocks,
 			preview: trimmed,
 			imageCount: images.length,
+			queuedAt: Date.now(),
 			switchModel: useModelPickerStore
 				.getState()
 				.takeNextMessageModel(sessionId),
@@ -367,6 +370,40 @@ export function MessageComposer({
 		});
 	};
 
+	const takeFreshSoleQueuedMessage = (): QueuedMessage | undefined => {
+		if (text.trim() || images.length > 0) return undefined;
+		if (queuedMessages.length !== 1) return undefined;
+		const [only] = queuedMessages;
+		if (Date.now() - only.queuedAt > SEND_QUEUED_ON_ENTER_WINDOW_MS) {
+			return undefined;
+		}
+		return only;
+	};
+
+	const sendQueuedNow = async (msg: QueuedMessage) => {
+		const queueStore = useQueuedMessagesStore.getState();
+		queueStore.cancel(sessionId, msg.id);
+		queueStore.setError(sessionId, null);
+		setSending(true);
+		setError(null);
+		try {
+			await applyModelForMessage(sessionId, msg.switchModel);
+			if (msg.handoffAfter) queueStore.markHandoff(sessionId);
+			await target.send(msg.blocks);
+		} catch (err) {
+			if (msg.handoffAfter) queueStore.clearHandoff(sessionId);
+			const message = err instanceof Error ? err.message : String(err);
+			if (isSidequestId(sessionId)) {
+				setError(message);
+			} else {
+				useQueuedMessagesStore.getState().unshift(sessionId, msg);
+				useQueuedMessagesStore.getState().setError(sessionId, message);
+			}
+		} finally {
+			setSending(false);
+		}
+	};
+
 	const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
 		if (e.key !== "Enter") return;
 		if (busy) {
@@ -382,6 +419,11 @@ export function MessageComposer({
 			// half-finished message. A second Enter sends.
 			if (dictationRef.current?.commitIfRecording()) return;
 			if (target.isRunning) {
+				const queued = takeFreshSoleQueuedMessage();
+				if (queued) {
+					void sendQueuedNow(queued);
+					return;
+				}
 				queueMessage();
 				return;
 			}

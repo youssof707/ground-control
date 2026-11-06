@@ -14,6 +14,7 @@ export interface QueuedMessage {
 	/** Trimmed text for the chip. Empty when the message is images-only. */
 	preview: string;
 	imageCount: number;
+	queuedAt: number;
 	switchModel?: NextMessageModel;
 	handoffAfter?: true;
 }

@@ -33,9 +33,12 @@ the single source of truth so shortcuts are easy to find.
 - `Cmd+P` — toggle plan ⇄ auto-edit, only while a session composer is focused
 - `Enter` in a composer (main or side quest) — sends when the session is idle.
   While its turn is running, Enter queues the message instead (it shows as a
-  chip above the composer and fires once the turn fully finishes). The only
-  way to send mid-turn is a mouse click on the Send button; keyboard
-  activation of that button queues too
+  chip above the composer and fires once the turn fully finishes). Pressing
+  Enter again mid-turn sends that queued message immediately, but only when
+  the composer is empty (no text or images), exactly one message is queued,
+  and it was queued within the last 30 seconds; otherwise Enter behaves as
+  above. Besides that, the only way to send mid-turn is a mouse click on the
+  Send button; keyboard activation of that button queues too
 - `Cmd+D` — start/stop voice dictation. Works from anywhere while a session
   is open: starts in whichever composer has focus (main or side quest),
   stops whichever take is already running regardless of focus, and is a
