@@ -5,6 +5,7 @@ export const ACTIVITY_SOURCES = [
 	"auto-resume",
 	"schedule",
 	"power",
+	"delete-hook",
 ] as const;
 
 export type ActivitySource = (typeof ACTIVITY_SOURCES)[number];

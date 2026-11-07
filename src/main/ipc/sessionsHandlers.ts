@@ -10,6 +10,7 @@ import { dirname } from "node:path";
 import { SessionManager } from "../sessions/SessionManager";
 import { PermissionBroker } from "../sessions/PermissionBroker";
 import { Babysitter } from "../sessions/Babysitter";
+import { DeleteHookRunner } from "../sessions/DeleteHookRunner";
 import { KeepAwake } from "../sessions/KeepAwake";
 import { UsageLimitResumer } from "../sessions/UsageLimitResumer";
 import { ScheduleRunner } from "../sessions/ScheduleRunner";
@@ -23,7 +24,10 @@ import type {
 	StartSessionInput,
 	UserTurn,
 } from "../../shared/schemas/claude_session";
-import type { DeletedSessionSnapshot } from "../../shared/claude-sessions/undo";
+import type {
+	DeleteSessionResult,
+	DeletedSessionSnapshot,
+} from "../../shared/claude-sessions/undo";
 import type { BabysitConfig } from "../../shared/claude-sessions/babysit";
 import * as appSettings from "../core/store/app_settings";
 import * as sessionStore from "../core/store/claude_session";
@@ -120,12 +124,14 @@ export function registerSessionsHandlers(): SessionManager {
 		// One set of rules per session: a sidequest's prompts are judged by
 		// its parent's config. Only the lookup id changes — the broker still
 		// logs and records the plan under the sidequest's own id.
-		(args) =>
-			babysitter.decide({
+		(args) => {
+			const mapped = {
 				...args,
 				sessionId:
 					manager?.getSidequestParentId(args.sessionId) ?? args.sessionId,
-			}),
+			};
+			return deleteHooks.decide(mapped) ?? babysitter.decide(mapped);
+		},
 	);
 	manager = new SessionManager(
 		broker,
@@ -145,6 +151,7 @@ export function registerSessionsHandlers(): SessionManager {
 		resumer.onChange,
 		{
 			onReport: (report) => {
+				if (deleteHooks.isRunning(report.sessionId)) return;
 				void scheduleStatus.report(report).then((schedule) => {
 					if (report.alert && schedule) notifications.notifyScheduleAlert(schedule);
 				});
@@ -154,6 +161,7 @@ export function registerSessionsHandlers(): SessionManager {
 			},
 		},
 	);
+	const deleteHooks = new DeleteHookRunner(manager);
 
 	const isSessionBusy = (id: string): boolean => {
 		const live = manager.getSession(id);
@@ -200,7 +208,9 @@ export function registerSessionsHandlers(): SessionManager {
 	registerSettingsHandlers();
 	registerAppInfoHandlers();
 	registerRateLimitHandlers();
-	registerWorktreesHandlers();
+	registerWorktreesHandlers({
+		waitForDeleteHooks: (worktreeId) => deleteHooks.waitForWorktree(worktreeId),
+	});
 	registerGroupsHandlers();
 	registerShortcutsHandlers();
 	registerSchedulesHandlers(runner);
@@ -468,7 +478,16 @@ export function registerSessionsHandlers(): SessionManager {
 	async function deleteSessionById(
 		sessionId: string,
 		exceptWebContentsId?: number,
-	): Promise<DeletedSessionSnapshot | null> {
+		opts: { runHook?: boolean } = {},
+	): Promise<DeleteSessionResult> {
+		const hookPrompt = appSettings.get().onSessionDeletePrompt?.trim();
+		const runHook =
+			opts.runHook === true &&
+			!!hookPrompt &&
+			!!sessionStore.getSession(sessionId) &&
+			!!manager.getSession(sessionId) &&
+			!manager.isEphemeral(sessionId) &&
+			!deleteHooks.isRunning(sessionId);
 		// Capture the worktree binding BEFORE we tombstone / delete the
 		// session record — we need it to detach from the worktree registry
 		// afterwards so the "no delete while attached" invariant holds.
@@ -495,14 +514,14 @@ export function registerSessionsHandlers(): SessionManager {
 		// BEFORE tripping the abort below. Aborting tears down the CLI before
 		// it can reap them, orphaning the processes. Awaited, but bounded
 		// inside stopAllBackgroundTasks so a wedged CLI can't hang delete.
-		await manager.stopAllBackgroundTasks(sessionId);
+		if (!runHook) await manager.stopAllBackgroundTasks(sessionId);
 		// Kill any sidequest forked off this session — its fork point is about
 		// to stop existing.
 		void manager.discardSidequest(sessionId);
 		// Trip the abort signal so the SDK loop breaks out on its next tick.
 		// We don't await its `done` here: the tombstone above means we don't
 		// need its broadcasts anyway.
-		manager.cancel(sessionId);
+		if (!runHook) manager.cancel(sessionId);
 		// Babysitting ends with the session — an undo-restore brings the
 		// session back, but not its babysitter.
 		babysitter.clear(sessionId);
@@ -543,14 +562,22 @@ export function registerSessionsHandlers(): SessionManager {
 		// block the IPC critical path; now the renderer doesn't wait on it.
 		// The tombstone in SessionManager.send filters any of its emitted
 		// events; the store-level tombstone no-ops any of its writes.
-		void manager.cancelAndWait(sessionId).catch((err) => {
-			console.error("[ccw] background cancelAndWait failed:", err);
-		});
+		if (runHook && hookPrompt) {
+			deleteHooks.start(sessionId, {
+				prompt: hookPrompt,
+				worktreeId: worktreeIdToDetach,
+				babysit: appSettings.get().defaultBabysit,
+			});
+		} else {
+			void manager.cancelAndWait(sessionId).catch((err) => {
+				console.error("[ccw] background cancelAndWait failed:", err);
+			});
+		}
 
 		// Hand the renderer everything it needs to put this back. Returning
 		// null (rather than throwing) when the session didn't exist keeps
 		// delete idempotent — the caller just gets no undo entry.
-		if (!preDeleteSession) return null;
+		if (!preDeleteSession) return { snapshot: null, hookRunning: runHook };
 		const snapshot: DeletedSessionSnapshot = {
 			session: preDeleteSession,
 			// Only report the group if the prune actually took it. If it
@@ -561,16 +588,20 @@ export function registerSessionsHandlers(): SessionManager {
 					? preDeleteGroup
 					: null,
 		};
-		return snapshot;
+		return { snapshot, hookRunning: runHook };
 	}
 	ipcMain.handle("session:delete", (e, sessionId: string) =>
-		deleteSessionById(sessionId, e.sender.id),
+		deleteSessionById(sessionId, e.sender.id, { runHook: true }),
+	);
+	ipcMain.handle("session:awaitDeleteHook", (_e, sessionId: string) =>
+		deleteHooks.wait(sessionId),
 	);
 
 	ipcMain.handle(
 		"session:restore",
 		async (e, snapshot: DeletedSessionSnapshot) => {
 			const { session, prunedGroup, worktreeDeleted } = snapshot;
+			await deleteHooks.abort(session.id);
 
 			// Lift the runtime tombstone first, so the broadcasts below (and
 			// any future status the restored row reports) aren't dropped by

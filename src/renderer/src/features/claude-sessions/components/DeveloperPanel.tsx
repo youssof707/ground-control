@@ -19,6 +19,7 @@ const SOURCE_TONES: Record<ActivitySource, string> = {
 	"auto-resume": T.ok,
 	schedule: T.accent,
 	power: T.textDim,
+	"delete-hook": T.danger,
 };
 
 const SOURCE_LABELS: Record<ActivitySource, string> = {
@@ -28,6 +29,7 @@ const SOURCE_LABELS: Record<ActivitySource, string> = {
 	"auto-resume": "resume",
 	schedule: "schedule",
 	power: "power",
+	"delete-hook": "delete hook",
 };
 
 type SourceFilter = ActivitySource | "all";

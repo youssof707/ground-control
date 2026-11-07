@@ -5,6 +5,7 @@ import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useQueuedMessagesStore } from "../stores/useQueuedMessagesStore";
 import { runBackgroundTask } from "../../background-tasks/stores/useBackgroundTasksStore";
+import { deleteSessionOnMain } from "./deleteSessionActions";
 
 /**
  * Fork and delete: one click from a message's ⋯ menu replaces the current
@@ -56,7 +57,7 @@ export function runForkAndDelete(input: {
 			useDraftStore.getState().clearDraft(oldId);
 			navigate(`/sessions/${next.id}`);
 
-			const snapshot = await window.claude.deleteSession(oldId);
+			const snapshot = await deleteSessionOnMain(oldId, title);
 			if (snapshot) {
 				pushUndo({
 					kind: "fork",

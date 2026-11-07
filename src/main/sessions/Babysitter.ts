@@ -85,37 +85,42 @@ export class Babysitter {
 		input: Record<string, unknown>;
 	}): PermissionResult | null {
 		const config = this.configs.get(args.sessionId);
-		if (!config) return null;
-
-		const kind = babysitRuleKindForTool(args.toolName);
-
-		if (kind === "question") {
-			const rule = config.question;
-			if (rule.action !== "answer") return null;
-			const answers = presetAnswers(args.input, rule.message);
-			if (!answers) return null;
-			return {
-				behavior: "allow",
-				updatedInput: { ...args.input, answers },
-			};
-		}
-
-		const rule = kind === "plan" ? config.plan : config.permission;
-		if (rule.action === "approve") {
-			return { behavior: "allow", updatedInput: args.input };
-		}
-		if (rule.action === "deny") {
-			return {
-				behavior: "deny",
-				message:
-					rule.message ||
-					(kind === "plan"
-						? DEFAULT_PLAN_DENY_MESSAGE
-						: DEFAULT_PERMISSION_DENY_MESSAGE),
-			};
-		}
-		return null;
+		return config ? decideWithConfig(config, args) : null;
 	}
+}
+
+export function decideWithConfig(
+	config: BabysitConfig,
+	args: { toolName: string; input: Record<string, unknown> },
+): PermissionResult | null {
+	const kind = babysitRuleKindForTool(args.toolName);
+
+	if (kind === "question") {
+		const rule = config.question;
+		if (rule.action !== "answer") return null;
+		const answers = presetAnswers(args.input, rule.message);
+		if (!answers) return null;
+		return {
+			behavior: "allow",
+			updatedInput: { ...args.input, answers },
+		};
+	}
+
+	const rule = kind === "plan" ? config.plan : config.permission;
+	if (rule.action === "approve") {
+		return { behavior: "allow", updatedInput: args.input };
+	}
+	if (rule.action === "deny") {
+		return {
+			behavior: "deny",
+			message:
+				rule.message ||
+				(kind === "plan"
+					? DEFAULT_PLAN_DENY_MESSAGE
+					: DEFAULT_PERMISSION_DENY_MESSAGE),
+		};
+	}
+	return null;
 }
 
 function summarizeConfig(config: BabysitConfig): string {

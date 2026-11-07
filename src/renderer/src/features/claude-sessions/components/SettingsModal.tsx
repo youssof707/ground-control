@@ -19,6 +19,7 @@ import {
 import { ModelPickerModal } from "./ModelPickerModal";
 import { McpServersPanel } from "./McpServersPanel";
 import { DeveloperPanel } from "./DeveloperPanel";
+import { HooksPanel } from "./HooksPanel";
 import { Section } from "./SettingsSection";
 import {
 	useSettingsModalStore,
@@ -142,6 +143,7 @@ function SettingsDialog({
 								label: "Babysitter",
 								accent: T.babysit,
 							},
+							{ id: "hooks", label: "Hooks" },
 							{ id: "mcp", label: "MCP servers" },
 							{ id: "developer", label: "Developer" },
 						]}
@@ -163,6 +165,8 @@ function SettingsDialog({
 								modelLabel={modelLabel}
 								onPickModel={() => setModelPickerOpen(true)}
 							/>
+						) : tab === "hooks" ? (
+							<HooksPanel />
 						) : tab === "mcp" ? (
 							<McpServersPanel initialCwd={initialMcpCwd} />
 						) : tab === "developer" ? (

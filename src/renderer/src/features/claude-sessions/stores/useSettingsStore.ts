@@ -25,6 +25,7 @@ interface State {
 	showContextTokens?: boolean;
 	sessionsSidebarWidth?: number;
 	sidequestSidebarWidth?: number;
+	onSessionDeletePrompt?: string;
 	hydrate: (settings: AppSettingsFile) => void;
 	setLastUsedWorkspace: (cwd: string) => void;
 	setDefaultModel: (model: string | undefined) => void;
@@ -34,6 +35,7 @@ interface State {
 	setShowContextTokens: (on: boolean) => void;
 	setSessionsSidebarWidth: (width: number) => void;
 	setSidequestSidebarWidth: (width: number) => void;
+	setOnSessionDeletePrompt: (prompt: string) => void;
 }
 
 export const useSettingsStore = create<State>((set, get) => ({
@@ -52,6 +54,7 @@ export const useSettingsStore = create<State>((set, get) => ({
 			showContextTokens: settings.showContextTokens,
 			sessionsSidebarWidth: settings.sessionsSidebarWidth,
 			sidequestSidebarWidth: settings.sidequestSidebarWidth,
+			onSessionDeletePrompt: settings.onSessionDeletePrompt,
 		}),
 	setLastUsedWorkspace: (cwd) => {
 		// No-op if unchanged — avoids unnecessary IPC churn when starting
@@ -100,6 +103,12 @@ export const useSettingsStore = create<State>((set, get) => ({
 		if (get().sidequestSidebarWidth === width) return;
 		void window.claude?.setSidequestSidebarWidth(width);
 		set({ sidequestSidebarWidth: width });
+	},
+	setOnSessionDeletePrompt: (prompt) => {
+		const next = prompt.trim().length > 0 ? prompt : undefined;
+		if (get().onSessionDeletePrompt === next) return;
+		void window.claude?.setOnSessionDeletePrompt(next);
+		set({ onSessionDeletePrompt: next });
 	},
 }));
 

@@ -7,7 +7,10 @@ import type {
 	StartSessionInput,
 	UserTurn,
 } from "../shared/schemas/claude_session";
-import type { DeletedSessionSnapshot } from "../shared/claude-sessions/undo";
+import type {
+	DeleteSessionResult,
+	DeletedSessionSnapshot,
+} from "../shared/claude-sessions/undo";
 import type { BabysitConfig } from "../shared/claude-sessions/babysit";
 import type {
 	ActivityLogSnapshot,
@@ -96,9 +99,8 @@ declare global {
 			 * (session + auto-pruned group), for `restoreSession` to
 			 * put back. Null when the session didn't exist.
 			 */
-			deleteSession: (
-				sessionId: string,
-			) => Promise<DeletedSessionSnapshot | null>;
+			deleteSession: (sessionId: string) => Promise<DeleteSessionResult>;
+			awaitDeleteHook: (sessionId: string) => Promise<void>;
 			restoreSession: (
 				snapshot: DeletedSessionSnapshot,
 			) => Promise<ClaudeSessionFull>;
@@ -126,6 +128,7 @@ declare global {
 			setShowContextTokens: (on: boolean) => Promise<void>;
 			setSessionsSidebarWidth: (width: number) => Promise<void>;
 			setSidequestSidebarWidth: (width: number) => Promise<void>;
+			setOnSessionDeletePrompt: (prompt?: string) => Promise<void>;
 			listPermissions: () => Promise<PermissionRequest[]>;
 			/** Every session currently being babysat, keyed by session id. */
 			listBabysit: () => Promise<Record<string, BabysitConfig>>;

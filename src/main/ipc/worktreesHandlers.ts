@@ -71,7 +71,9 @@ async function pickWorktreePath(
  * Every mutation broadcasts `state:changed` (skip-self) so other
  * windows re-hydrate their local `useWorktreesStore`.
  */
-export function registerWorktreesHandlers(): void {
+export function registerWorktreesHandlers(deps: {
+	waitForDeleteHooks: (worktreeId: string) => Promise<void>;
+}): void {
 	ipcMain.handle("worktrees:list", () => worktreesStore.list());
 
 	ipcMain.handle(
@@ -182,6 +184,8 @@ export function registerWorktreesHandlers(): void {
 				`Cannot delete worktree "${wt.displayName}" — ${wt.sessionIds.length} session(s) still reference it.`,
 			);
 		}
+
+		await deps.waitForDeleteHooks(id);
 
 		// Git first. If cleanup fails, we KEEP the registry entry so the
 		// user can retry from the UI — mirrors the "run git first, write

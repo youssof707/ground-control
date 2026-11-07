@@ -288,13 +288,15 @@ function RuleCard({
 	);
 }
 
-function MessageField({
+export function MessageField({
 	ariaLabel,
 	value,
 	onChange,
 	placeholder,
 	autoFocus,
 	disabled,
+	rows = 2,
+	maxLength = BABYSIT_MESSAGE_MAX_LENGTH,
 }: {
 	ariaLabel: string;
 	value: string;
@@ -302,6 +304,8 @@ function MessageField({
 	placeholder: string;
 	autoFocus?: boolean;
 	disabled?: boolean;
+	rows?: number;
+	maxLength?: number;
 }) {
 	return (
 		<textarea
@@ -312,8 +316,8 @@ function MessageField({
 			placeholder={placeholder}
 			autoFocus={autoFocus}
 			disabled={disabled}
-			rows={2}
-			maxLength={BABYSIT_MESSAGE_MAX_LENGTH}
+			rows={rows}
+			maxLength={maxLength}
 			style={{
 				display: "block",
 				width: "100%",

@@ -70,6 +70,8 @@ const claude = {
 	listSessions: () => ipcRenderer.invoke("sessions:list"),
 	deleteSession: (sessionId: string) =>
 		ipcRenderer.invoke("session:delete", sessionId),
+	awaitDeleteHook: (sessionId: string) =>
+		ipcRenderer.invoke("session:awaitDeleteHook", sessionId),
 	restoreSession: (snapshot: DeletedSessionSnapshot) =>
 		ipcRenderer.invoke("session:restore", snapshot),
 	renameSession: (sessionId: string, title: string) =>
@@ -105,6 +107,8 @@ const claude = {
 		ipcRenderer.invoke("settings:setSessionsSidebarWidth", { width }),
 	setSidequestSidebarWidth: (width: number) =>
 		ipcRenderer.invoke("settings:setSidequestSidebarWidth", { width }),
+	setOnSessionDeletePrompt: (prompt?: string) =>
+		ipcRenderer.invoke("settings:setOnSessionDeletePrompt", { prompt }),
 	listPermissions: () => ipcRenderer.invoke("permissions:list"),
 	listBabysit: () => ipcRenderer.invoke("babysit:list"),
 	listAutoResumes: () => ipcRenderer.invoke("autoResume:list"),

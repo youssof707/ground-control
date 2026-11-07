@@ -59,6 +59,13 @@ export function registerSettingsHandlers(): void {
 		},
 	);
 	ipcMain.handle(
+		"settings:setOnSessionDeletePrompt",
+		async (e, payload: { prompt?: string }) => {
+			await appSettings.setOnSessionDeletePrompt(payload.prompt);
+			broadcast("state:changed", undefined, e.sender.id);
+		},
+	);
+	ipcMain.handle(
 		"settings:setSidequestSidebarWidth",
 		async (e, payload: { width: number }) => {
 			await appSettings.setSidequestSidebarWidth(payload.width);

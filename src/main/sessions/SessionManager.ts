@@ -281,6 +281,7 @@ interface RunningEntry {
 	 * off the loop's `SessionActivity`, same closure pattern as
 	 * `getLastTurnBlocks`. Backs `listBackgroundTasks` for window reloads. */
 	getLiveTasks: () => LiveBackgroundTask[];
+	waitForIdle: () => Promise<void>;
 }
 
 function roleFromSdkMessage(
@@ -1595,6 +1596,19 @@ export class SessionManager {
 			},
 		});
 
+		const idleWaiters = new Set<{ armed: boolean; resolve: () => void }>();
+		const settleIdleWaiters = (force: boolean) => {
+			for (const waiter of idleWaiters) {
+				if (!force && !waiter.armed) continue;
+				idleWaiters.delete(waiter);
+				waiter.resolve();
+			}
+		};
+		const waitForIdle = () =>
+			new Promise<void>((resolve) => {
+				idleWaiters.add({ armed: false, resolve });
+			});
+
 		let limitHit = false;
 		let rejectedEventSeen = false;
 		let lastRejectedResetMs: number | undefined;
@@ -1654,6 +1668,7 @@ export class SessionManager {
 			);
 			this.send(ch("status"), { sessionId: id, status: next });
 			if (persist) void sessionStore.updateSession(id, { status: next });
+			if (next !== "running") settleIdleWaiters(false);
 			if (next === "usage_limit") {
 				this.onUsageLimitChange(id, currentUsageLimitHit());
 			} else if (wasLimited) {
@@ -1767,6 +1782,7 @@ export class SessionManager {
 			// got cut off. See `lastTurnBlocks` above.
 			getLastTurnBlocks: () => lastTurnBlocks,
 			getLiveTasks: () => activity.liveTasks,
+			waitForIdle,
 		});
 		this.send(
 			ch("started"),
@@ -1952,7 +1968,10 @@ export class SessionManager {
 				// status flip should not wait on the persist/broadcast path,
 				// and some of the messages that drive it are dropped below.
 				activity.apply(msg);
-				if (msg.type === "assistant") assistantReplySeen = true;
+				if (msg.type === "assistant") {
+					assistantReplySeen = true;
+					for (const waiter of idleWaiters) waiter.armed = true;
+				}
 
 				// Context-size capture points. Early (before every `continue`
 				// filter below) out of the same caution as the model-rejection
@@ -2284,6 +2303,7 @@ export class SessionManager {
 			}
 			state.finished = true;
 			state.waitForTurn?.();
+			settleIdleWaiters(true);
 			this.sessions.delete(id);
 			resolveDone();
 			if (forkResumeFallbackTurns) {
@@ -2757,6 +2777,14 @@ export class SessionManager {
 	 */
 	listBackgroundTasks(sessionId: string): LiveBackgroundTask[] {
 		return this.sessions.get(sessionId)?.getLiveTasks() ?? [];
+	}
+
+	waitForIdle(sessionId: string): Promise<void> {
+		return this.sessions.get(sessionId)?.waitForIdle() ?? Promise.resolve();
+	}
+
+	isEphemeral(sessionId: string): boolean {
+		return this.sessions.get(sessionId)?.ephemeral === true;
 	}
 
 	cancel(sessionId: string) {

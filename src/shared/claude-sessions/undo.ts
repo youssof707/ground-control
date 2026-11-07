@@ -39,3 +39,8 @@ export interface DeletedSessionSnapshot {
 	 */
 	worktreeDeleted?: boolean;
 }
+
+export interface DeleteSessionResult {
+	snapshot: DeletedSessionSnapshot | null;
+	hookRunning: boolean;
+}

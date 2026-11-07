@@ -1,6 +1,11 @@
 import { create } from "zustand";
 
-export type SettingsTab = "general" | "babysitter" | "mcp" | "developer";
+export type SettingsTab =
+	| "general"
+	| "babysitter"
+	| "hooks"
+	| "mcp"
+	| "developer";
 
 interface State {
 	openTab: SettingsTab | null;

@@ -13,6 +13,7 @@ import {
 } from "../stores/useQueuedMessagesStore";
 import { runBackgroundTask } from "../../background-tasks/stores/useBackgroundTasksStore";
 import { createSessionFromDraft } from "./promoteDraft";
+import { deleteSessionOnMain } from "./deleteSessionActions";
 import { sendTurn } from "./sendTurn";
 
 /**
@@ -145,7 +146,7 @@ export function runHandoff(input: {
 			// succeeded but the send didn't — the session really is gone, and
 			// the buffer must say so.
 			const [deleted, sent] = await Promise.allSettled([
-				window.claude.deleteSession(oldId),
+				deleteSessionOnMain(oldId, title),
 				sendTurn(newId, [{ type: "text", text: buildHandoffPrompt(text) }]),
 			]);
 			// `kind: "handoff"` gives the toast its own wording: the user is

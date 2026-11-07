@@ -140,6 +140,18 @@ export async function setSessionsSidebarWidth(width: number): Promise<void> {
 	});
 }
 
+export async function setOnSessionDeletePrompt(
+	prompt: string | undefined,
+): Promise<void> {
+	assertInitialized();
+	const next = prompt && prompt.trim().length > 0 ? prompt : undefined;
+	return enqueue(async () => {
+		if (db.onSessionDeletePrompt === next) return;
+		db = { ...db, onSessionDeletePrompt: next };
+		await persist();
+	});
+}
+
 export async function setSidequestSidebarWidth(width: number): Promise<void> {
 	assertInitialized();
 	const w = Math.round(width);
