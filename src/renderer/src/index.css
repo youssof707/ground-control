@@ -654,6 +654,14 @@ input[type="number"]::-webkit-outer-spin-button {
 	background: oklch(0.245 0.008 60) !important;
 }
 
+.sched-card-header:hover {
+	background: oklch(0.245 0.008 60);
+}
+
+.sched-card-chevron:hover {
+	background: oklch(0.29 0.008 60) !important;
+}
+
 .sched-card-alert:hover {
 	background: oklch(0.75 0.15 60 / 0.06) !important;
 }

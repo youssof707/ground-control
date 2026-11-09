@@ -276,23 +276,8 @@ export function registerSessionsHandlers(): SessionManager {
 	ipcMain.handle("session:cancel", (_e, sessionId: string) => {
 		manager.cancel(sessionId);
 	});
-	async function detachFromSchedule(sessionId: string): Promise<void> {
-		const scheduleId = sessionStore.getSession(sessionId)?.scheduleId;
-		if (!scheduleId) return;
-		manager.detachFromSchedule(sessionId);
-		keepAwake.refresh();
-		await sessionStore.updateSession(sessionId, { scheduleId: undefined });
-		broadcast("session:patch", { sessionId, scheduleId: undefined });
-		if (schedulesStore.get(scheduleId)?.lastSessionId === sessionId) {
-			await schedulesStore.update(scheduleId, { lastSessionId: undefined });
-			broadcast("schedules:changed", schedulesStore.list());
-		}
-	}
 	ipcMain.handle("session:userMessage", (_e, turn: UserTurn) => {
 		manager.pushUserMessage(turn.sessionId, turn.blocks);
-		void detachFromSchedule(turn.sessionId).catch((err) =>
-			console.error("[ccw] detach from schedule failed:", err),
-		);
 	});
 	ipcMain.handle("session:finish", (_e, sessionId: string) => {
 		manager.finish(sessionId);

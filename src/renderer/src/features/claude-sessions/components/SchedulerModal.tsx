@@ -2,12 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Schedule } from "@shared/schemas/schedules";
 import { useBackdropDismiss } from "../../../components/useBackdropDismiss";
-import { TabStrip } from "../../../design/TabStrip";
 import { T } from "../../../design/tokens";
-import {
-	useSchedulerModalStore,
-	type SchedulerTab,
-} from "../stores/useSchedulerModalStore";
+import { useSchedulerModalStore } from "../stores/useSchedulerModalStore";
 import { useSchedulesStore } from "../stores/useSchedulesStore";
 import {
 	ScheduleFormFields,
@@ -16,11 +12,7 @@ import {
 	type ScheduleDraft,
 } from "./ScheduleForm";
 import { SchedulesPanel } from "./SchedulesPanel";
-import { CountPill } from "../../../design/Atoms";
 import { ModelPickerModal } from "./ModelPickerModal";
-import { useScheduledUnreadIds } from "../hooks/useScheduledUnreadIds";
-import { useReadStore } from "../stores/useReadStore";
-import { ScheduledSessionsPanel } from "./ScheduledSessionsPanel";
 
 const NOW_TICK_MS = 30_000;
 
@@ -44,20 +36,13 @@ function errorMessage(err: unknown): string {
 }
 
 export function SchedulerModal() {
-	const openTab = useSchedulerModalStore((s) => s.openTab);
+	const isOpen = useSchedulerModalStore((s) => s.isOpen);
 	const close = useSchedulerModalStore((s) => s.close);
-	if (!openTab) return null;
-	return <SchedulerDialog key={openTab} initialTab={openTab} onClose={close} />;
+	if (!isOpen) return null;
+	return <SchedulerDialog onClose={close} />;
 }
 
-function SchedulerDialog({
-	initialTab,
-	onClose,
-}: {
-	initialTab: SchedulerTab;
-	onClose: () => void;
-}) {
-	const [tab, setTab] = useState<SchedulerTab>(initialTab);
+function SchedulerDialog({ onClose }: { onClose: () => void }) {
 	const [view, setView] = useState<View>({ kind: "list" });
 	const [draft, setDraft] = useState<ScheduleDraft>(() => draftFromSchedule());
 	const [busy, setBusy] = useState(false);
@@ -66,8 +51,6 @@ function SchedulerDialog({
 	modelPickerOpenRef.current = modelPickerOpen;
 	const [error, setError] = useState<string | null>(null);
 	const now = useNowTick(NOW_TICK_MS);
-	const unreadIds = useScheduledUnreadIds();
-	const markAllRead = useReadStore((s) => s.markAllRead);
 	const navigate = useNavigate();
 	const openCreate = () => {
 		setDraft(draftFromSchedule());
@@ -174,42 +157,14 @@ function SchedulerDialog({
 						{title}
 					</h2>
 
-					{view.kind === "list" ? (
-						<TabStrip
-							idPrefix="scheduler"
-							ariaLabel="Scheduler sections"
-							value={tab}
-							onChange={setTab}
-							tabs={[
-								{
-									id: "sessions",
-									label: "Logs",
-									badge:
-									unreadIds.length > 0 ? (
-										<CountPill
-											n={unreadIds.length}
-											fg={T.accent}
-											bg={T.accentSoft}
-										/>
-									) : null,
-								},
-								{ id: "schedules", label: "Schedules" },
-							]}
-						/>
-					) : (
-						<div
-							style={{
-								margin: "14px -22px 0",
-								borderBottom: `0.5px solid ${T.border}`,
-							}}
-						/>
-					)}
+					<div
+						style={{
+							margin: "14px -22px 0",
+							borderBottom: `0.5px solid ${T.border}`,
+						}}
+					/>
 
 					<div
-						role={view.kind === "list" ? "tabpanel" : undefined}
-						aria-labelledby={
-							view.kind === "list" ? `scheduler-tab-${tab}` : undefined
-						}
 						style={{
 							flex: 1,
 							minHeight: 0,
@@ -225,14 +180,12 @@ function SchedulerDialog({
 								onPickModel={() => setModelPickerOpen(true)}
 								disabled={busy}
 							/>
-						) : tab === "schedules" ? (
+						) : (
 							<SchedulesPanel
 								now={now}
 								onEdit={openEdit}
 								onOpenSession={openSession}
 							/>
-						) : (
-							<ScheduledSessionsPanel onOpenSession={openSession} />
 						)}
 					</div>
 
@@ -252,24 +205,13 @@ function SchedulerDialog({
 					>
 						{view.kind === "list" ? (
 							<>
-								{tab === "schedules" ? (
-									<button
-										className="btn btn-primary"
-										onClick={openCreate}
-										style={{ marginRight: "auto" }}
-									>
-										New schedule
-									</button>
-								) : (
-									<button
-										className="btn"
-										onClick={() => markAllRead(unreadIds)}
-										disabled={unreadIds.length === 0}
-										style={{ marginRight: "auto" }}
-									>
-										Mark all as read
-									</button>
-								)}
+								<button
+									className="btn btn-primary"
+									onClick={openCreate}
+									style={{ marginRight: "auto" }}
+								>
+									New schedule
+								</button>
 								<button className="btn" onClick={onClose}>
 									Done
 								</button>

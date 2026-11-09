@@ -1,13 +1,12 @@
 import { useState } from "react";
 import {
-	DEFAULT_SCHEDULE_KEEP_LAST,
-	MAX_SCHEDULE_KEEP_LAST,
 	type CreateScheduleInput,
 	type Schedule,
 	type ScheduleKind,
 } from "@shared/schemas/schedules";
 import { T } from "../../../design/tokens";
 import { LabeledInput } from "../../../design/FormControls";
+import { Switch } from "../../../design/Switch";
 import {
 	BabysitRuleCards,
 	Segmented,
@@ -40,9 +39,9 @@ export interface ScheduleDraft {
 	everyAmount: string;
 	everyUnit: "minutes" | "hours";
 	dailyTime: string;
-	keepLast: string;
 	babysit: BabysitDraft;
 	model: string | undefined;
+	alwaysShowStatus: boolean;
 }
 
 export function draftFromSchedule(s?: Schedule): ScheduleDraft {
@@ -57,9 +56,9 @@ export function draftFromSchedule(s?: Schedule): ScheduleDraft {
 			everyAmount: "30",
 			everyUnit: "minutes",
 			dailyTime: DEFAULT_DAILY_TIME,
-			keepLast: String(DEFAULT_SCHEDULE_KEEP_LAST),
 			babysit: draftFromConfig(defaultBabysit),
 			model: useSettingsStore.getState().defaultModel,
+			alwaysShowStatus: false,
 		};
 	}
 	const kind = s.kind;
@@ -83,9 +82,9 @@ export function draftFromSchedule(s?: Schedule): ScheduleDraft {
 		everyUnit: wholeHours ? "hours" : "minutes",
 		dailyTime:
 			kind.type === "daily" ? toTimeValue(kind.minuteOfDay) : DEFAULT_DAILY_TIME,
-		keepLast: String(s.keepLast),
 		babysit: draftFromConfig(s.babysit ?? defaultBabysit),
 		model: s.model,
+		alwaysShowStatus: s.alwaysShowStatus ?? false,
 	};
 }
 
@@ -100,17 +99,6 @@ export function validateDraft(
 	const prompt = d.prompt.trim();
 	if (!prompt) return { ok: false, error: "Prompt is required" };
 	if (!d.cwd) return { ok: false, error: "Choose a folder" };
-	const keepLast = Number(d.keepLast);
-	if (
-		!Number.isInteger(keepLast) ||
-		keepLast < 1 ||
-		keepLast > MAX_SCHEDULE_KEEP_LAST
-	) {
-		return {
-			ok: false,
-			error: `Keep last must be between 1 and ${MAX_SCHEDULE_KEEP_LAST}`,
-		};
-	}
 	let kind: ScheduleKind;
 	if (d.kind === "once") {
 		const at = fromDatetimeLocalValue(d.onceAt);
@@ -139,9 +127,9 @@ export function validateDraft(
 			prompt,
 			cwd: d.cwd,
 			kind,
-			keepLast,
 			babysit: configFromDraft(d.babysit),
 			model: d.model,
+			alwaysShowStatus: d.alwaysShowStatus,
 		},
 	};
 }
@@ -341,23 +329,19 @@ export function ScheduleFormFields({
 			</div>
 
 			<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-				<span style={fieldLabelStyle}>Keep last runs</span>
+				<span style={fieldLabelStyle}>Always show status</span>
 				<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-					<input
-						type="number"
-						aria-label="Keep last runs"
-						min={1}
-						max={MAX_SCHEDULE_KEEP_LAST}
-						step={1}
-						value={value.keepLast}
+					<Switch
+						checked={value.alwaysShowStatus}
+						onChange={(alwaysShowStatus) =>
+							onChange({ ...value, alwaysShowStatus })
+						}
+						label="Always show status"
 						disabled={disabled}
-						onChange={(e) => onChange({ ...value, keepLast: e.target.value })}
-						style={{ ...inputStyle, width: 64, fontFamily: T.mono }}
-						onFocus={focusBorder}
-						onBlur={blurBorder}
 					/>
 					<span style={{ fontSize: 11, color: T.textFaint }}>
-						Older finished runs from this schedule are deleted automatically.
+						When off, the sidebar only shows this schedule while its status
+						isn't green.
 					</span>
 				</div>
 			</div>

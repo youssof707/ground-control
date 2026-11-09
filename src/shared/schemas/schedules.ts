@@ -2,8 +2,6 @@ import { z } from "zod";
 import { BabysitConfigSchema } from "./app_settings";
 
 export const MIN_SCHEDULE_INTERVAL_MS = 60_000;
-export const DEFAULT_SCHEDULE_KEEP_LAST = 1;
-export const MAX_SCHEDULE_KEEP_LAST = 500;
 export const MINUTES_PER_DAY = 1440;
 
 export const ScheduleKindSchema = z.discriminatedUnion("type", [
@@ -42,8 +40,6 @@ export function nextFireAfter(
 export const ScheduleSkipReasonSchema = z.enum(["busy", "usageLimit"]);
 export type ScheduleSkipReason = z.infer<typeof ScheduleSkipReasonSchema>;
 
-const KeepLastSchema = z.number().int().min(1).max(MAX_SCHEDULE_KEEP_LAST);
-
 export const ScheduleStatusColorSchema = z.enum(["green", "yellow", "red"]);
 export type ScheduleStatusColor = z.infer<typeof ScheduleStatusColorSchema>;
 
@@ -70,8 +66,8 @@ export const ScheduleSchema = z.object({
 	model: z.string().optional(),
 	kind: ScheduleKindSchema,
 	babysit: BabysitConfigSchema.optional().catch(undefined),
-	keepLast: KeepLastSchema.catch(DEFAULT_SCHEDULE_KEEP_LAST),
 	enabled: z.boolean().catch(true),
+	alwaysShowStatus: z.boolean().optional().catch(undefined),
 	createdAt: z.number(),
 	nextFireAt: z.number().optional(),
 	lastFiredAt: z.number().optional(),
@@ -96,7 +92,7 @@ export const CreateScheduleInputSchema = z.object({
 	model: z.string().optional(),
 	kind: ScheduleKindSchema,
 	babysit: BabysitConfigSchema.optional(),
-	keepLast: KeepLastSchema.optional(),
+	alwaysShowStatus: z.boolean().optional(),
 });
 export type CreateScheduleInput = z.infer<typeof CreateScheduleInputSchema>;
 

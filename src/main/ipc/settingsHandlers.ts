@@ -66,6 +66,13 @@ export function registerSettingsHandlers(): void {
 		},
 	);
 	ipcMain.handle(
+		"settings:setSchedulerWidgetCollapsed",
+		async (e, payload: { collapsed: boolean }) => {
+			await appSettings.setSchedulerWidgetCollapsed(payload.collapsed);
+			broadcast("state:changed", undefined, e.sender.id);
+		},
+	);
+	ipcMain.handle(
 		"settings:setSidequestSidebarWidth",
 		async (e, payload: { width: number }) => {
 			await appSettings.setSidequestSidebarWidth(payload.width);

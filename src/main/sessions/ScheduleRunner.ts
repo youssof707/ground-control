@@ -77,6 +77,29 @@ export class ScheduleRunner {
 		this.disarm(id);
 	}
 
+	async runNow(id: string): Promise<ClaudeSession> {
+		const s = this.deps.get(id);
+		if (!s) throw new Error("Schedule not found");
+		if (
+			this.firing.has(id) ||
+			(s.lastSessionId && this.deps.isSessionBusy(s.lastSessionId))
+		) {
+			throw new Error("This schedule is already running");
+		}
+		this.firing.add(id);
+		logActivity("schedule", `${this.label(id)} run on demand`);
+		try {
+			if (!(await this.deps.directoryExists(s.cwd))) {
+				throw new Error(`Folder "${s.cwd}" no longer exists`);
+			}
+			await this.deps.update(id, { lastFiredAt: this.now(), lastError: undefined });
+			return await this.spawn(s);
+		} finally {
+			this.firing.delete(id);
+			this.broadcast();
+		}
+	}
+
 	reconcile = (): void => {
 		const now = this.now();
 		if (this.armed.size > 0) {
@@ -148,7 +171,17 @@ export class ScheduleRunner {
 
 	private async fire(id: string): Promise<void> {
 		const s = this.deps.get(id);
-		if (!s || !s.enabled || this.firing.has(id)) return;
+		if (!s || !s.enabled) return;
+		if (this.firing.has(id)) {
+			const next =
+				s.kind.type === "once" ? undefined : nextFireAfter(s.kind, this.now());
+			await this.rearm(id, next, {
+				lastSkippedAt: this.now(),
+				lastSkipReason: "busy",
+			});
+			this.broadcast();
+			return;
+		}
 		this.firing.add(id);
 		logActivity("schedule", `${this.label(id)} firing`);
 		try {
@@ -244,10 +277,7 @@ export class ScheduleRunner {
 	}
 
 	private async prune(schedule: Schedule, keepId: string): Promise<void> {
-		const all = this.deps
-			.listSessionsForSchedule(schedule.id)
-			.sort((a, b) => b.createdAt - a.createdAt);
-		for (const s of all.slice(schedule.keepLast)) {
+		for (const s of this.deps.listSessionsForSchedule(schedule.id)) {
 			if (s.id === keepId) continue;
 			if (!isFinished(s) || this.deps.isSessionBusy(s.id)) continue;
 			try {

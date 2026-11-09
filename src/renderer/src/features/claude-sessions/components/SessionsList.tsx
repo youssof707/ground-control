@@ -121,7 +121,7 @@ export function SessionsList({
 		string | null
 	>(null);
 	const groups = useSessionGroupsStore((s) => s.groups);
-	const schedulerOpen = useSchedulerModalStore((s) => s.openTab !== null);
+	const schedulerOpen = useSchedulerModalStore((s) => s.isOpen);
 	// Read-only settings modal, opened from the view-options dropdown.
 	// "Recently deleted" list, also opened from the view-options dropdown —
 	// the durable surface for undo once the toast has expired.
@@ -1002,6 +1002,7 @@ export function SessionsList({
 				<SchedulerWidget
 					open={schedulerOpen}
 					onOpen={() => useSchedulerModalStore.getState().open()}
+					activeSessionId={activeSessionId}
 				/>
 			</div>
 

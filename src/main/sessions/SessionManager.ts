@@ -644,11 +644,6 @@ export class SessionManager {
 		entry.session.titleLocked = true;
 	}
 
-	detachFromSchedule(sessionId: string): void {
-		const entry = this.sessions.get(sessionId);
-		if (entry) entry.session.scheduleId = undefined;
-	}
-
 	get activeCount(): number {
 		let n = 0;
 		for (const { session } of this.sessions.values()) {

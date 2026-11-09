@@ -52,9 +52,8 @@ the single source of truth so shortcuts are easy to find.
   button), even while typing in its text box. Plain `Enter` does the same
   when no text field has focus (a focused Cancel / Stop button keeps its
   native Enter). No-op when the primary button is disabled
-- `Cmd+Shift+S` — open the Scheduler modal on its Logs tab (the sessions
-  schedules spawned, split into Unread / Read), with Schedules as the second
-  tab. Works from anywhere
+- `Cmd+Shift+S` — open the Scheduler modal (the list of schedules). Works
+  from anywhere
 - `Cmd+Shift+M` — open the model picker for the active session or draft, or
   for the side quest when focus is inside the side quest panel (picking a
   model while a turn is running interrupts it, switches, and resumes
@@ -87,6 +86,10 @@ the single source of truth so shortcuts are easy to find.
 
 ## Schedules
 
+Each schedule owns exactly one session. Every run deletes the schedule's previous
+session (`ScheduleRunner.prune`), and there is no option to keep past runs. Replying
+to a scheduled session never detaches it from its schedule.
+
 Every scheduled session gets an in-process MCP tool, `mcp__ground-control__report`
 (`src/main/sessions/scheduleReportTool.ts`), pre-allowed so the Babysitter never sees it,
 plus a system-prompt append telling Claude to call it once when done with
@@ -95,9 +98,12 @@ plus a system-prompt append telling Claude to call it once when done with
 `schedule.alert`. A run that ends without calling it settles as
 green `nothing to report`; one that errors or hits a usage limit settles as yellow
 `run failed` (`src/main/sessions/scheduleStatus.ts`). The sidebar `SchedulerWidget`
-shows one row per enabled schedule with a status, pins alerts at the top, and clears an
+shows one row per enabled schedule with a status, except that a schedule whose
+per-schedule "Always show status" toggle (`schedule.alwaysShowStatus`, off by default, set
+in the schedule form) is off only gets a row while its status is not green; the collapsed
+header summary covers only those visible rows. It pins alerts at the top regardless, and clears an
 alert when it is clicked (which also opens the session) or dismissed with its x.
-Each alert also shows as a card in the Inbox, counts toward the Inbox badge and the dock
+Each alert also shows inside its schedule's card in the Scheduler modal, as a card in the Inbox, counts toward the Inbox badge and the dock
 badge, and fires a macOS notification when raised. Clicking the notification opens the
 session and clears the alert, same as clicking it in the widget or Inbox.
 

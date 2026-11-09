@@ -4,7 +4,6 @@ import * as schedulesStore from "../core/store/schedules";
 import { broadcast } from "../windows";
 import {
 	CreateScheduleInputSchema,
-	DEFAULT_SCHEDULE_KEEP_LAST,
 	UpdateScheduleInputSchema,
 	nextFireAfter,
 	type CreateScheduleInput,
@@ -55,7 +54,7 @@ export function registerSchedulesHandlers(runner: ScheduleRunner): void {
 			model: input.model,
 			kind: input.kind,
 			babysit: input.babysit,
-			keepLast: input.keepLast ?? DEFAULT_SCHEDULE_KEEP_LAST,
+			alwaysShowStatus: input.alwaysShowStatus ?? false,
 			enabled: true,
 			createdAt: now,
 			nextFireAt: nextFireAfter(input.kind, now),
@@ -93,7 +92,7 @@ export function registerSchedulesHandlers(runner: ScheduleRunner): void {
 			model: input.model,
 			kind: input.kind,
 			babysit: input.babysit ?? current.babysit,
-			keepLast: input.keepLast ?? current.keepLast,
+			alwaysShowStatus: input.alwaysShowStatus ?? current.alwaysShowStatus,
 			enabled,
 			nextFireAt,
 			lastError: undefined,
@@ -130,6 +129,11 @@ export function registerSchedulesHandlers(runner: ScheduleRunner): void {
 			return updated;
 		},
 	);
+
+	ipcMain.handle("schedules:runNow", async (_e, id: string) => {
+		const session = await runner.runNow(id);
+		return session.id;
+	});
 
 	ipcMain.handle("schedules:clearAlert", (_e, id: string) =>
 		clearAlert(id),
