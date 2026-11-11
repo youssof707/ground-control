@@ -3,8 +3,7 @@ import type { Schedule } from "@shared/schemas/schedules";
 import { T } from "../../../design/tokens";
 import { useSchedulesStore } from "../stores/useSchedulesStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
-import { useInterruptStore } from "../stores/useInterruptStore";
-import { stopScheduledRun } from "../lib/sessionControlActions";
+import { useScheduleControls } from "../hooks/useScheduleControls";
 import { formatMessageTime } from "../lib/messageTime";
 import { formatScheduleKind } from "../lib/scheduleFormat";
 import { dismissScheduleAlert } from "../lib/scheduleAlerts";
@@ -14,11 +13,6 @@ import { promptPreview } from "./ShortcutForm";
 
 export function scheduleLabel(s: Schedule): string {
 	return s.title.trim() || promptPreview(s.prompt) || "Untitled schedule";
-}
-
-function errorMessage(err: unknown): string {
-	const raw = err instanceof Error ? err.message : String(err);
-	return raw.replace(/^Error invoking remote method '[^']+': Error: /, "");
 }
 
 export function SchedulesPanel({
@@ -77,81 +71,21 @@ function ScheduleRow({
 	onOpenSession: (sessionId: string) => void;
 }) {
 	const [hover, setHover] = useState(false);
-	const [error, setError] = useState<string | null>(null);
-	const [starting, setStarting] = useState(false);
-	const lastSession = useSessionsStore((s) =>
-		schedule.lastSessionId ? s.sessions[schedule.lastSessionId] : undefined,
-	);
+	const {
+		error,
+		lastSession,
+		running,
+		stopping,
+		canStop,
+		setEnabled,
+		runNow,
+		stopRun,
+		remove,
+		clearStatus,
+	} = useScheduleControls(schedule);
 	const alertSession = useSessionsStore((s) =>
 		schedule.alert?.sessionId ? s.sessions[schedule.alert.sessionId] : undefined,
 	);
-
-	const setEnabled = async (enabled: boolean) => {
-		setError(null);
-		try {
-			const updated = await window.claude.setScheduleEnabled(
-				schedule.id,
-				enabled,
-			);
-			useSchedulesStore.getState().upsert(updated);
-		} catch (err) {
-			setError(errorMessage(err));
-		}
-	};
-
-	const stoppableSessionId =
-		lastSession?.status === "running" ||
-		lastSession?.status === "awaiting_permission"
-			? lastSession.id
-			: undefined;
-	const running = starting || stoppableSessionId !== undefined;
-	const stopping = useInterruptStore((s) =>
-		stoppableSessionId ? !!s.interrupting[stoppableSessionId] : false,
-	);
-
-	const stopRun = async () => {
-		if (!stoppableSessionId) return;
-		setError(null);
-		try {
-			await stopScheduledRun(stoppableSessionId);
-		} catch (err) {
-			setError(errorMessage(err));
-		}
-	};
-
-	const runNow = async () => {
-		setError(null);
-		setStarting(true);
-		try {
-			await window.claude.runScheduleNow(schedule.id);
-		} catch (err) {
-			setError(errorMessage(err));
-		} finally {
-			setStarting(false);
-		}
-	};
-
-	const remove = async () => {
-		setError(null);
-		try {
-			await window.claude.removeSchedule(schedule.id);
-			useSchedulesStore.getState().remove(schedule.id);
-		} catch (err) {
-			setError(errorMessage(err));
-		}
-	};
-
-	const clearStatus = async () => {
-		setError(null);
-		useSchedulesStore
-			.getState()
-			.upsert({ ...schedule, status: undefined, alert: undefined });
-		try {
-			await window.claude.clearScheduleStatus(schedule.id);
-		} catch (err) {
-			setError(errorMessage(err));
-		}
-	};
 
 	const targetId = alertSession?.id ?? lastSession?.id;
 	const open = targetId
@@ -357,7 +291,7 @@ function ScheduleRow({
 					running={running}
 					stopping={stopping}
 					onRunNow={() => void runNow()}
-					onStop={stoppableSessionId ? () => void stopRun() : undefined}
+					onStop={canStop ? () => void stopRun() : undefined}
 					onEdit={onEdit}
 					hasStatus={!!schedule.status || !!schedule.alert}
 					onClearStatus={() => void clearStatus()}

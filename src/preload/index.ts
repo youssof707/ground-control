@@ -111,8 +111,6 @@ const claude = {
 		ipcRenderer.invoke("settings:setSidequestSidebarWidth", { width }),
 	setOnSessionDeletePrompt: (prompt?: string) =>
 		ipcRenderer.invoke("settings:setOnSessionDeletePrompt", { prompt }),
-	setSchedulerWidgetCollapsed: (collapsed: boolean) =>
-		ipcRenderer.invoke("settings:setSchedulerWidgetCollapsed", { collapsed }),
 	listPermissions: () => ipcRenderer.invoke("permissions:list"),
 	listBabysit: () => ipcRenderer.invoke("babysit:list"),
 	listAutoResumes: () => ipcRenderer.invoke("autoResume:list"),
@@ -154,6 +152,11 @@ const claude = {
 	removeSchedule: (id: string) => ipcRenderer.invoke("schedules:remove", id),
 	setScheduleEnabled: (id: string, enabled: boolean) =>
 		ipcRenderer.invoke("schedules:setEnabled", { id, enabled }),
+	setScheduleAlwaysShowStatus: (id: string, alwaysShowStatus: boolean) =>
+		ipcRenderer.invoke("schedules:setAlwaysShowStatus", {
+			id,
+			alwaysShowStatus,
+		}),
 	clearScheduleAlert: (id: string) =>
 		ipcRenderer.invoke("schedules:clearAlert", id),
 	clearScheduleStatus: (id: string) =>

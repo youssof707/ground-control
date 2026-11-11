@@ -26,7 +26,6 @@ interface State {
 	sessionsSidebarWidth?: number;
 	sidequestSidebarWidth?: number;
 	onSessionDeletePrompt?: string;
-	schedulerWidgetCollapsed?: boolean;
 	hydrate: (settings: AppSettingsFile) => void;
 	setLastUsedWorkspace: (cwd: string) => void;
 	setDefaultModel: (model: string | undefined) => void;
@@ -37,7 +36,6 @@ interface State {
 	setSessionsSidebarWidth: (width: number) => void;
 	setSidequestSidebarWidth: (width: number) => void;
 	setOnSessionDeletePrompt: (prompt: string) => void;
-	setSchedulerWidgetCollapsed: (collapsed: boolean) => void;
 }
 
 export const useSettingsStore = create<State>((set, get) => ({
@@ -57,7 +55,6 @@ export const useSettingsStore = create<State>((set, get) => ({
 			sessionsSidebarWidth: settings.sessionsSidebarWidth,
 			sidequestSidebarWidth: settings.sidequestSidebarWidth,
 			onSessionDeletePrompt: settings.onSessionDeletePrompt,
-			schedulerWidgetCollapsed: settings.schedulerWidgetCollapsed,
 		}),
 	setLastUsedWorkspace: (cwd) => {
 		// No-op if unchanged — avoids unnecessary IPC churn when starting
@@ -112,11 +109,6 @@ export const useSettingsStore = create<State>((set, get) => ({
 		if (get().onSessionDeletePrompt === next) return;
 		void window.claude?.setOnSessionDeletePrompt(next);
 		set({ onSessionDeletePrompt: next });
-	},
-	setSchedulerWidgetCollapsed: (collapsed) => {
-		if ((get().schedulerWidgetCollapsed ?? false) === collapsed) return;
-		void window.claude?.setSchedulerWidgetCollapsed(collapsed);
-		set({ schedulerWidgetCollapsed: collapsed });
 	},
 }));
 

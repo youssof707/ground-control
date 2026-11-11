@@ -38,13 +38,33 @@ function errorMessage(err: unknown): string {
 export function SchedulerModal() {
 	const isOpen = useSchedulerModalStore((s) => s.isOpen);
 	const close = useSchedulerModalStore((s) => s.close);
+	const editScheduleId = useSchedulerModalStore((s) => s.editScheduleId);
+	const editSchedule = useSchedulesStore((s) =>
+		editScheduleId ? s.byId[editScheduleId] : undefined,
+	);
 	if (!isOpen) return null;
-	return <SchedulerDialog onClose={close} />;
+	return (
+		<SchedulerDialog
+			key={editSchedule?.id ?? "list"}
+			onClose={close}
+			directEdit={editSchedule}
+		/>
+	);
 }
 
-function SchedulerDialog({ onClose }: { onClose: () => void }) {
-	const [view, setView] = useState<View>({ kind: "list" });
-	const [draft, setDraft] = useState<ScheduleDraft>(() => draftFromSchedule());
+function SchedulerDialog({
+	onClose,
+	directEdit,
+}: {
+	onClose: () => void;
+	directEdit?: Schedule;
+}) {
+	const [view, setView] = useState<View>(() =>
+		directEdit ? { kind: "edit", schedule: directEdit } : { kind: "list" },
+	);
+	const [draft, setDraft] = useState<ScheduleDraft>(() =>
+		draftFromSchedule(directEdit),
+	);
 	const [busy, setBusy] = useState(false);
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
 	const modelPickerOpenRef = useRef(false);
@@ -64,6 +84,10 @@ function SchedulerDialog({ onClose }: { onClose: () => void }) {
 	};
 	const backToList = () => {
 		if (busy) return;
+		if (directEdit) {
+			onClose();
+			return;
+		}
 		setError(null);
 		setView({ kind: "list" });
 	};
@@ -89,6 +113,10 @@ function SchedulerDialog({ onClose }: { onClose: () => void }) {
 					...validation.input,
 				});
 				useSchedulesStore.getState().upsert(updated);
+			}
+			if (directEdit) {
+				onClose();
+				return;
 			}
 			setView({ kind: "list" });
 		} catch (err) {

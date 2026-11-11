@@ -7,7 +7,6 @@ import { useSchedulesStore } from "../stores/useSchedulesStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useReadStore } from "../stores/useReadStore";
-import { useSettingsStore } from "../stores/useSettingsStore";
 import { isScheduledSession } from "../lib/scheduledSessions";
 import { isSessionUnread } from "../lib/unread";
 import { formatShortAgo } from "../lib/messageTime";
@@ -19,19 +18,6 @@ import {
 import { scheduleLabel } from "./SchedulesPanel";
 
 const NOW_TICK_MS = 30_000;
-
-const COLOR_RANK: Record<ScheduleStatusColor, number> = {
-	green: 0,
-	yellow: 1,
-	red: 2,
-};
-
-const META_TEXT = {
-	color: T.textFaint,
-	fontSize: 10.5,
-	fontFamily: T.mono,
-	flexShrink: 0,
-} as const;
 
 const DOT: Record<ScheduleStatusColor, { fill: string; soft: string }> = {
 	green: { fill: T.ok, soft: T.okSoft },
@@ -64,10 +50,6 @@ export function SchedulerWidget({
 	const queue = usePermissionsStore((s) => s.queue);
 	const lastReadAt = useReadStore((s) => s.lastReadAt);
 	const now = useNow(NOW_TICK_MS);
-	const collapsed = useSettingsStore(
-		(s) => s.schedulerWidgetCollapsed ?? false,
-	);
-	const setCollapsed = useSettingsStore((s) => s.setSchedulerWidgetCollapsed);
 
 	const counts = useMemo(() => {
 		const armed = Object.values(schedules).filter(
@@ -98,34 +80,24 @@ export function SchedulerWidget({
 
 	const alerts = useMemo(() => sortedScheduleAlerts(schedules), [schedules]);
 
+	const activeScheduleId = activeSessionId
+		? sessions[activeSessionId]?.scheduleId
+		: undefined;
+
 	const rows = useMemo(
 		() =>
 			Object.values(schedules)
 				.filter(
 					(s) =>
-						s.enabled &&
-						s.status !== undefined &&
-						(s.alwaysShowStatus === true || s.status.color !== "green"),
+						s.id === activeScheduleId ||
+						(s.status !== undefined &&
+							(s.alwaysShowStatus === true ||
+								(s.status.color === "red" &&
+									(unreadByScheduleId[s.id]?.length ?? 0) > 0))),
 				)
 				.sort((a, b) => a.createdAt - b.createdAt),
-		[schedules],
+		[schedules, unreadByScheduleId, activeScheduleId],
 	);
-
-	const summary = useMemo(() => {
-		let color: ScheduleStatusColor | undefined;
-		let latestAt: number | undefined;
-		let unread = 0;
-		for (const s of rows) {
-			const status = s.status;
-			if (!status) continue;
-			if (!color || COLOR_RANK[status.color] > COLOR_RANK[color]) {
-				color = status.color;
-			}
-			if (latestAt === undefined || status.at > latestAt) latestAt = status.at;
-			unread += unreadByScheduleId[s.id]?.length ?? 0;
-		}
-		return { color, latestAt, unread };
-	}, [rows, unreadByScheduleId]);
 
 	const openSchedule = (schedule: Schedule, preferredSessionId?: string) => {
 		const target = scheduleSessionTarget(schedule, sessions, preferredSessionId);
@@ -140,9 +112,6 @@ export function SchedulerWidget({
 	};
 
 	const hasBody = alerts.length > 0 || rows.length > 0;
-	const activeScheduleId = activeSessionId
-		? sessions[activeSessionId]?.scheduleId
-		: undefined;
 
 	return (
 		<div
@@ -212,39 +181,7 @@ export function SchedulerWidget({
 						{counts.waiting > 0 ? (
 							<CountPill n={counts.waiting} fg={T.warn} bg={T.warnSoft} />
 						) : null}
-						{collapsed ? (
-							<CollapsedSummary
-								color={summary.color}
-								latestAt={summary.latestAt}
-								unread={summary.unread}
-								now={now}
-							/>
-						) : null}
 					</span>
-				</button>
-				<button
-					type="button"
-					className="sched-card-chevron"
-					aria-label={collapsed ? "Expand schedules" : "Collapse schedules"}
-					aria-expanded={!collapsed}
-					onClick={() => setCollapsed(!collapsed)}
-					style={{
-						display: "flex",
-						alignItems: "center",
-						justifyContent: "center",
-						flexShrink: 0,
-						width: 18,
-						height: 18,
-						marginRight: 5,
-						padding: 0,
-						borderRadius: 4,
-						background: "transparent",
-						border: "none",
-						color: T.textFaint,
-						cursor: "pointer",
-					}}
-				>
-					<ChevronIcon collapsed={collapsed} />
 				</button>
 			</div>
 			{hasBody ? (
@@ -257,22 +194,20 @@ export function SchedulerWidget({
 							onDismiss={() => dismissScheduleAlert(s)}
 						/>
 					))}
-					{collapsed
-						? null
-						: rows.map((s) => (
-							<StatusRow
-								key={s.id}
-								schedule={s}
-								now={now}
-								running={
-									!!s.lastSessionId &&
-										sessions[s.lastSessionId]?.status === "running"
-								}
-								unread={unreadByScheduleId[s.id]?.length ?? 0}
-								active={s.id === activeScheduleId}
-								onClick={() => openSchedule(s)}
-							/>
-						))}
+					{rows.map((s) => (
+						<StatusRow
+							key={s.id}
+							schedule={s}
+							now={now}
+							running={
+								!!s.lastSessionId &&
+								sessions[s.lastSessionId]?.status === "running"
+							}
+							unread={unreadByScheduleId[s.id]?.length ?? 0}
+							active={s.id === activeScheduleId}
+							onClick={() => openSchedule(s)}
+						/>
+					))}
 				</>
 			) : null}
 		</div>
@@ -390,7 +325,6 @@ function StatusRow({
 	onClick: () => void;
 }) {
 	const status = schedule.status;
-	if (!status) return null;
 	return (
 		<button
 			type="button"
@@ -404,7 +338,13 @@ function StatusRow({
 			}}
 		>
 			<IconSlot>
-				<StatusDot color={status.color} pulse={running} />
+				{status ? (
+					<StatusDot color={status.color} pulse={running} />
+				) : (
+					<span style={{ display: "inline-flex", color: T.textFaint }}>
+						<ClockIcon />
+					</span>
+				)}
 			</IconSlot>
 			<span
 				style={{
@@ -416,7 +356,7 @@ function StatusRow({
 			>
 				{scheduleLabel(schedule)}
 			</span>
-			<span style={{ ...ELLIPSIS, flex: 1 }}>{status.line}</span>
+			<span style={{ ...ELLIPSIS, flex: 1 }}>{status?.line}</span>
 			{unread > 0 ? (
 				<span
 					style={{
@@ -439,7 +379,7 @@ function StatusRow({
 					textAlign: "right",
 				}}
 			>
-				{formatShortAgo(status.at, now)}
+				{status ? formatShortAgo(status.at, now) : null}
 			</span>
 		</button>
 	);
@@ -515,56 +455,6 @@ export function WarningIcon() {
 				strokeLinecap="round"
 			/>
 			<circle cx="6" cy="9" r="0.6" fill="currentColor" />
-		</svg>
-	);
-}
-
-function CollapsedSummary({
-	color,
-	latestAt,
-	unread,
-	now,
-}: {
-	color?: ScheduleStatusColor;
-	latestAt?: number;
-	unread: number;
-	now: number;
-}) {
-	return (
-		<span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-			{unread > 0 ? <span style={META_TEXT}>{unread}</span> : null}
-			{latestAt !== undefined ? (
-				<span style={META_TEXT}>{formatShortAgo(latestAt, now)}</span>
-			) : null}
-			{color ? (
-				<IconSlot>
-					<StatusDot color={color} />
-				</IconSlot>
-			) : null}
-		</span>
-	);
-}
-
-function ChevronIcon({ collapsed }: { collapsed: boolean }) {
-	return (
-		<svg
-			width="8"
-			height="8"
-			viewBox="0 0 8 8"
-			fill="none"
-			aria-hidden
-			style={{
-				transform: collapsed ? "rotate(0deg)" : "rotate(90deg)",
-				transition: "transform 120ms ease",
-			}}
-		>
-			<path
-				d="M2.5 1.5L6 4L2.5 6.5"
-				stroke="currentColor"
-				strokeWidth="1.4"
-				strokeLinecap="round"
-				strokeLinejoin="round"
-			/>
 		</svg>
 	);
 }

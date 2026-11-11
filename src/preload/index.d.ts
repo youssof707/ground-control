@@ -130,7 +130,6 @@ declare global {
 			setSessionsSidebarWidth: (width: number) => Promise<void>;
 			setSidequestSidebarWidth: (width: number) => Promise<void>;
 			setOnSessionDeletePrompt: (prompt?: string) => Promise<void>;
-			setSchedulerWidgetCollapsed: (collapsed: boolean) => Promise<void>;
 			listPermissions: () => Promise<PermissionRequest[]>;
 			/** Every session currently being babysat, keyed by session id. */
 			listBabysit: () => Promise<Record<string, BabysitConfig>>;
@@ -173,6 +172,10 @@ declare global {
 			updateSchedule: (input: UpdateScheduleInput) => Promise<Schedule>;
 			removeSchedule: (id: string) => Promise<void>;
 			setScheduleEnabled: (id: string, enabled: boolean) => Promise<Schedule>;
+			setScheduleAlwaysShowStatus: (
+				id: string,
+				alwaysShowStatus: boolean,
+			) => Promise<Schedule>;
 			clearScheduleAlert: (id: string) => Promise<void>;
 			clearScheduleStatus: (id: string) => Promise<void>;
 			runScheduleNow: (id: string) => Promise<string>;

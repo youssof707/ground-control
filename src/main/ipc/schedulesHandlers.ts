@@ -130,6 +130,22 @@ export function registerSchedulesHandlers(runner: ScheduleRunner): void {
 		},
 	);
 
+	ipcMain.handle(
+		"schedules:setAlwaysShowStatus",
+		async (
+			_e,
+			{ id, alwaysShowStatus }: { id: string; alwaysShowStatus: boolean },
+		) => {
+			const updated = await schedulesStore.update(id, {
+				alwaysShowStatus: alwaysShowStatus === true,
+			});
+			if (!updated) throw new Error("Schedule not found");
+			runner.upsert(updated);
+			push();
+			return updated;
+		},
+	);
+
 	ipcMain.handle("schedules:runNow", async (_e, id: string) => {
 		const session = await runner.runNow(id);
 		return session.id;

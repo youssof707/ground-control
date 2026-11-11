@@ -152,17 +152,6 @@ export async function setOnSessionDeletePrompt(
 	});
 }
 
-export async function setSchedulerWidgetCollapsed(
-	collapsed: boolean,
-): Promise<void> {
-	assertInitialized();
-	return enqueue(async () => {
-		if (db.schedulerWidgetCollapsed === collapsed) return;
-		db = { ...db, schedulerWidgetCollapsed: collapsed };
-		await persist();
-	});
-}
-
 export async function setSidequestSidebarWidth(width: number): Promise<void> {
 	assertInitialized();
 	const w = Math.round(width);

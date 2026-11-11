@@ -6,6 +6,8 @@ import { useInterruptStore } from "../stores/useInterruptStore";
 import { useReadStore } from "../stores/useReadStore";
 import { isDraftId } from "../stores/useDraftSessionsStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
+import { useSchedulesStore } from "../stores/useSchedulesStore";
+import { ScheduleHeaderStrip } from "./ScheduleHeaderStrip";
 import {
 	formatResumeLabel,
 	useAutoResumeStore,
@@ -45,6 +47,9 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	// selector keeps the badge live.
 	const attachedWorktree = useWorktreesStore((s) =>
 		session?.worktreeId ? s.worktrees[session.worktreeId] : undefined,
+	);
+	const schedule = useSchedulesStore((s) =>
+		session?.scheduleId ? s.byId[session.scheduleId] : undefined,
 	);
 	const queue = usePermissionsStore((s) => s.queue);
 	const pending = queue.filter((q) => q.sessionId === sessionId);
@@ -230,7 +235,9 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 				{/* Row 0: worktree badge (only when this session is bound to
 				    one). Sits ABOVE the title row per product decision so it
 				    reads as a scope marker rather than a peer status chip. */}
-				{attachedWorktree ? (
+				{schedule ? (
+					<ScheduleHeaderStrip schedule={schedule} />
+				) : attachedWorktree ? (
 					<div
 						style={{
 							display: "flex",
@@ -304,54 +311,56 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 							}}
 						>
 							<span
-								onClick={beginEditTitle}
+								onClick={schedule ? undefined : beginEditTitle}
 								style={{
 									overflow: "hidden",
 									textOverflow: "ellipsis",
 									whiteSpace: "nowrap",
-									cursor: "pointer",
+									cursor: schedule ? "default" : "pointer",
 								}}
 							>
 								{session.title}
 							</span>
-							<button
-								type="button"
-								onClick={beginEditTitle}
-								aria-label="Rename session"
-								className="session-title-edit"
-								style={{
-									display: "inline-flex",
-									alignItems: "center",
-									justifyContent: "center",
-									width: 22,
-									height: 22,
-									padding: 0,
-									borderRadius: 5,
-									border: "none",
-									background: "transparent",
-									color: T.textFaint,
-									cursor: "pointer",
-									flexShrink: 0,
-								}}
-								onMouseEnter={(e) => {
-									e.currentTarget.style.background = T.surfaceHi;
-									e.currentTarget.style.color = T.text;
-								}}
-								onMouseLeave={(e) => {
-									e.currentTarget.style.background = "transparent";
-									e.currentTarget.style.color = T.textFaint;
-								}}
-							>
-								<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-									<path
-										d="M8.2 1.8a1.1 1.1 0 011.6 1.6L4.3 8.9 2 9.5l.6-2.3 5.6-5.4z"
-										stroke="currentColor"
-										strokeWidth="1.2"
-										strokeLinecap="round"
-										strokeLinejoin="round"
-									/>
-								</svg>
-							</button>
+							{schedule ? null : (
+								<button
+									type="button"
+									onClick={beginEditTitle}
+									aria-label="Rename session"
+									className="session-title-edit"
+									style={{
+										display: "inline-flex",
+										alignItems: "center",
+										justifyContent: "center",
+										width: 22,
+										height: 22,
+										padding: 0,
+										borderRadius: 5,
+										border: "none",
+										background: "transparent",
+										color: T.textFaint,
+										cursor: "pointer",
+										flexShrink: 0,
+									}}
+									onMouseEnter={(e) => {
+										e.currentTarget.style.background = T.surfaceHi;
+										e.currentTarget.style.color = T.text;
+									}}
+									onMouseLeave={(e) => {
+										e.currentTarget.style.background = "transparent";
+										e.currentTarget.style.color = T.textFaint;
+									}}
+								>
+									<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+										<path
+											d="M8.2 1.8a1.1 1.1 0 011.6 1.6L4.3 8.9 2 9.5l.6-2.3 5.6-5.4z"
+											stroke="currentColor"
+											strokeWidth="1.2"
+											strokeLinecap="round"
+											strokeLinejoin="round"
+										/>
+									</svg>
+								</button>
+							)}
 						</div>
 					)}
 					{session.cwd ? (

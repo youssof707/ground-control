@@ -13,13 +13,22 @@ plus a system-prompt append telling Claude to call it once when done with
 one that errors or hits a usage limit settles as yellow `run failed`
 (`src/main/sessions/scheduleStatus.ts`).
 
-The sidebar `SchedulerWidget` shows one row per enabled schedule with a status, except a
-schedule with `schedule.alwaysShowStatus` off (the default) only gets a row while its
-status is not green; the collapsed header summary covers only visible rows. Alerts pin
+The sidebar `SchedulerWidget` shows a row for a schedule with a status (enabled or not) only when
+`schedule.alwaysShowStatus` is on (always shown, any color) or its status is red and its
+session is unread; opening the session hides the red row. The schedule whose session is
+open always has a row (even with no status yet) and falls back to the normal rule once you
+navigate away. The widget is always expanded (it has no collapse). Alerts pin
 at the top regardless and clear when clicked (which opens the session) or dismissed.
 Each alert also shows in its schedule's card in the Scheduler modal and as an Inbox card,
 counts toward the Inbox and dock badges, and fires a macOS notification. Clicking the
 notification opens the session and clears the alert.
+
+A scheduled session's header replaces the worktree row with `ScheduleHeaderStrip`:
+cadence, next run (omitted when off or none), last run, skip reason or error, plus labeled Always show
+and On switches, Run now / Stop, and Edit, which opens the Scheduler directly on that
+schedule's form (Save or Cancel closes it). Delete and Clear status stay in the modal.
+Controls shared with the modal card live in `hooks/useScheduleControls.ts`. Run now
+switches to the new session when you were viewing the schedule's previous one.
 
 A schedule card's ⋯ menu has Clear status (shown only while it has a status or alert),
 which resets `schedule.status` and `schedule.alert`. While the session is running (or

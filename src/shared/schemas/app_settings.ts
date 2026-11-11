@@ -61,6 +61,5 @@ export const AppSettingsFileSchema = z.object({
 	sessionsSidebarWidth: sidebarWidth(200, 800),
 	sidequestSidebarWidth: sidebarWidth(280, 900),
 	onSessionDeletePrompt: z.string().optional().catch(undefined),
-	schedulerWidgetCollapsed: z.boolean().optional().catch(undefined),
 });
 export type AppSettingsFile = z.infer<typeof AppSettingsFileSchema>;
