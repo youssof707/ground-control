@@ -90,10 +90,8 @@ export function SchedulerWidget({
 				.filter(
 					(s) =>
 						s.id === activeScheduleId ||
-						(s.status !== undefined &&
-							(s.alwaysShowStatus === true ||
-								(s.status.color === "red" &&
-									(unreadByScheduleId[s.id]?.length ?? 0) > 0))),
+						(unreadByScheduleId[s.id]?.length ?? 0) > 0 ||
+						(s.status !== undefined && s.alwaysShowStatus === true),
 				)
 				.sort((a, b) => a.createdAt - b.createdAt),
 		[schedules, unreadByScheduleId, activeScheduleId],
