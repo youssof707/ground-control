@@ -12,6 +12,12 @@ window.addEventListener("unhandledrejection", (e) => {
 	console.error("[ccw] unhandled rejection:", e.reason);
 });
 
+for (const type of ["dragover", "drop"] as const) {
+	window.addEventListener(type, (e) => {
+		if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
+	});
+}
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
 	<React.StrictMode>
 		<ErrorBoundary>

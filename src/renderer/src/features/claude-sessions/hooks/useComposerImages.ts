@@ -1,4 +1,12 @@
-import { useCallback, useLayoutEffect, useRef, type ClipboardEvent } from "react";
+import {
+	useCallback,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+	type ClipboardEvent,
+	type DragEvent,
+} from "react";
 import { useDraftStore } from "../stores/useDraftStore";
 import type { PendingImage } from "../lib/pendingImage";
 import { EMPTY_IMAGES, toSupportedMediaType } from "../lib/composerImages";
@@ -14,12 +22,26 @@ import { EMPTY_IMAGES, toSupportedMediaType } from "../lib/composerImages";
  * `sessionId` is whatever key the composer drafts under — a real session id, a
  * draft id, or a sidequest id.
  */
+export type ComposerDropHandlers = {
+	onDragEnter: (e: DragEvent<HTMLElement>) => void;
+	onDragOver: (e: DragEvent<HTMLElement>) => void;
+	onDragLeave: (e: DragEvent<HTMLElement>) => void;
+	onDrop: (e: DragEvent<HTMLElement>) => void;
+};
+
+function carriesFiles(e: DragEvent<HTMLElement>): boolean {
+	return Array.from(e.dataTransfer.types).includes("Files");
+}
+
 export function useComposerImages(
 	sessionId: string,
 	onError?: (message: string | null) => void,
+	acceptDrops = true,
 ): {
 	images: PendingImage[];
 	onPaste: (e: ClipboardEvent<HTMLTextAreaElement>) => void;
+	dragActive: boolean;
+	dropHandlers: ComposerDropHandlers;
 	removeImage: (idx: number) => void;
 	setImages: (
 		next: PendingImage[] | ((prev: PendingImage[]) => PendingImage[]),
@@ -50,17 +72,9 @@ export function useComposerImages(
 		[sessionId],
 	);
 
-	const onPaste = useCallback(
-		(e: ClipboardEvent<HTMLTextAreaElement>) => {
-			const items = Array.from(e.clipboardData.items);
-			const imageItems = items.filter((it) => it.type.startsWith("image/"));
-			// No images in the payload — let the browser handle it as a normal
-			// text paste.
-			if (imageItems.length === 0) return;
-			e.preventDefault();
-			for (const item of imageItems) {
-				const file = item.getAsFile();
-				if (!file) continue;
+	const addImageFiles = useCallback(
+		(files: File[]) => {
+			for (const file of files) {
 				const mediaType = toSupportedMediaType(file.type);
 				if (!mediaType) {
 					onErrorRef.current?.(`Unsupported image type: ${file.type}`);
@@ -69,8 +83,6 @@ export function useComposerImages(
 				const reader = new FileReader();
 				reader.onload = () => {
 					const dataUrl = reader.result as string;
-					// Strip the "data:<type>;base64," prefix — the SDK wants raw
-					// base64, while the data URL doubles as the <img> preview src.
 					const data = dataUrl.split(",")[1] ?? "";
 					setImages((prev) => [
 						...prev,
@@ -83,10 +95,73 @@ export function useComposerImages(
 		[setImages],
 	);
 
+	const onPaste = useCallback(
+		(e: ClipboardEvent<HTMLTextAreaElement>) => {
+			const items = Array.from(e.clipboardData.items);
+			const imageItems = items.filter((it) => it.type.startsWith("image/"));
+			if (imageItems.length === 0) return;
+			e.preventDefault();
+			addImageFiles(
+				imageItems
+					.map((item) => item.getAsFile())
+					.filter((file): file is File => file !== null),
+			);
+		},
+		[addImageFiles],
+	);
+
+	const [dragActive, setDragActive] = useState(false);
+	const dragDepth = useRef(0);
+	const acceptDropsRef = useRef(acceptDrops);
+	useLayoutEffect(() => {
+		acceptDropsRef.current = acceptDrops;
+	});
+
+	const dropHandlers = useMemo<ComposerDropHandlers>(
+		() => ({
+			onDragEnter: (e) => {
+				if (!carriesFiles(e)) return;
+				e.preventDefault();
+				dragDepth.current += 1;
+				setDragActive(true);
+			},
+			onDragOver: (e) => {
+				if (!carriesFiles(e)) return;
+				e.preventDefault();
+				e.dataTransfer.dropEffect = acceptDropsRef.current ? "copy" : "none";
+			},
+			onDragLeave: (e) => {
+				if (!carriesFiles(e)) return;
+				dragDepth.current = Math.max(0, dragDepth.current - 1);
+				if (dragDepth.current === 0) setDragActive(false);
+			},
+			onDrop: (e) => {
+				if (!carriesFiles(e)) return;
+				e.preventDefault();
+				dragDepth.current = 0;
+				setDragActive(false);
+				if (!acceptDropsRef.current) return;
+				addImageFiles(
+					Array.from(e.dataTransfer.files).filter((file) =>
+						file.type.startsWith("image/"),
+					),
+				);
+			},
+		}),
+		[addImageFiles],
+	);
+
 	const removeImage = useCallback(
 		(idx: number) => setImages((prev) => prev.filter((_, i) => i !== idx)),
 		[setImages],
 	);
 
-	return { images, onPaste, removeImage, setImages };
+	return {
+		images,
+		onPaste,
+		dragActive: dragActive && acceptDrops,
+		dropHandlers,
+		removeImage,
+		setImages,
+	};
 }
