@@ -1,6 +1,7 @@
 import type { PermissionRequest } from "@shared/claude-sessions/types";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { stopSession } from "../lib/sessionControlActions";
+import { respondApplyingDeferredModel } from "../lib/modelSwitchActions";
 import { MarkdownText } from "./MarkdownText";
 import { T } from "../../../design/tokens";
 
@@ -32,18 +33,22 @@ export function PlanApprovalCard({
 		: [];
 
 	const approve = () => {
-		window.claude.respondPermission({
-			requestId: req.requestId,
-			behavior: "allow",
-		});
+		respondApplyingDeferredModel(req, () =>
+			window.claude.respondPermission({
+				requestId: req.requestId,
+				behavior: "allow",
+			}),
+		);
 		remove(req.requestId);
 	};
 	const keepPlanning = () => {
-		window.claude.respondPermission({
-			requestId: req.requestId,
-			behavior: "deny",
-			message: "Keep planning — don't exit plan mode yet.",
-		});
+		respondApplyingDeferredModel(req, () =>
+			window.claude.respondPermission({
+				requestId: req.requestId,
+				behavior: "deny",
+				message: "Keep planning — don't exit plan mode yet.",
+			}),
+		);
 		remove(req.requestId);
 	};
 	const stopAndDeny = () => {

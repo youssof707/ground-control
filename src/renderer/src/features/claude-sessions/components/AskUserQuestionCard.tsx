@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { PermissionRequest } from "@shared/claude-sessions/types";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { stopSession } from "../lib/sessionControlActions";
+import { respondApplyingDeferredModel } from "../lib/modelSwitchActions";
 import type {
 	AskUserQuestionInput,
 	QuestionDef,
@@ -78,14 +79,16 @@ export function AskUserQuestionCard({
 			);
 			formatted[q.question] = labels.join(", ");
 		}
-		window.claude.respondPermission({
-			requestId: req.requestId,
-			behavior: "allow",
-			updatedInput: {
-				...(req.input as Record<string, unknown>),
-				answers: formatted,
-			},
-		});
+		respondApplyingDeferredModel(req, () =>
+			window.claude.respondPermission({
+				requestId: req.requestId,
+				behavior: "allow",
+				updatedInput: {
+					...(req.input as Record<string, unknown>),
+					answers: formatted,
+				},
+			}),
+		);
 		remove(req.requestId);
 	};
 
