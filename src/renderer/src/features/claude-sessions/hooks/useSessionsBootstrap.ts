@@ -85,6 +85,23 @@ export function useSessionsBootstrap() {
 						console.error("[ccw] listTasks refetch failed", err),
 					);
 			}
+			void window.claude
+				.listDetachedTasks()
+				.then((bySession) => {
+					const open = new Set(
+						sessions
+							.filter((s) => s.status === "running" || s.status === "idle")
+							.map((s) => s.id),
+					);
+					for (const [sessionId, tasks] of Object.entries(bySession)) {
+						if (!open.has(sessionId)) {
+							useLiveTasksStore.getState().set(sessionId, tasks);
+						}
+					}
+				})
+				.catch((err) =>
+					console.error("[ccw] listDetachedTasks refetch failed", err),
+				);
 		}
 
 		async function refetchReadState(): Promise<void> {

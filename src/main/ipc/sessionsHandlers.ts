@@ -301,6 +301,9 @@ export function registerSessionsHandlers(): SessionManager {
 	ipcMain.handle("session:listTasks", (_e, sessionId: string) =>
 		manager.listBackgroundTasks(sessionId),
 	);
+	ipcMain.handle("session:listDetachedTasks", () =>
+		manager.listDetachedTasks(),
+	);
 	ipcMain.handle("session:resume", (_e, sessionId: string) =>
 		manager.resume(sessionId),
 	);

@@ -17,7 +17,9 @@ The sidebar `SchedulerWidget` shows a row for a schedule with a status (enabled 
 `schedule.alwaysShowStatus` is on (always shown, any color) or its session is unread (any
 color, including green). The schedule whose session is open always has a row (even with no
 status yet), so opening it from the widget (which marks it read) never makes the row vanish;
-once you navigate away it falls back to the normal rule, so a read always-show-off row hides. The widget is always expanded (it has no collapse). Alerts pin
+once you navigate away it falls back to the normal rule, so a read always-show-off row hides.
+A schedule with a running session always has a row, and its status dot becomes a spinner
+while it runs. The widget is always expanded (it has no collapse). Alerts pin
 at the top regardless and clear when clicked (which opens the session) or dismissed.
 Each alert also shows in its schedule's card in the Scheduler modal and as an Inbox card,
 counts toward the Inbox and dock badges, and fires a macOS notification. Clicking the

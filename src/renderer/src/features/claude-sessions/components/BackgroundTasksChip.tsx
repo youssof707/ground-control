@@ -440,6 +440,7 @@ function kindLabel(type: string | undefined): string {
 	if (!type) return "task";
 	if (type === "wakeup") return "wakeup";
 	if (type === "cron") return "loop";
+	if (type === "detached_process") return "detached";
 	if (/bash|shell/i.test(type)) return "shell";
 	if (/agent/i.test(type)) return "agent";
 	if (/workflow/i.test(type)) return "workflow";

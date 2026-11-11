@@ -209,6 +209,10 @@ import {
 	usageTotal,
 } from "../../shared/claude-sessions/sessionUsage";
 import type { LiveBackgroundTask } from "../../shared/claude-sessions/types";
+import {
+	DetachedProcessWatcher,
+	SESSION_ENV_KEY,
+} from "./detachedProcesses";
 import type { Schedule } from "../../shared/schemas/schedules";
 import { PermissionBroker } from "./PermissionBroker";
 import {
@@ -282,6 +286,7 @@ interface RunningEntry {
 	 * off the loop's `SessionActivity`, same closure pattern as
 	 * `getLastTurnBlocks`. Backs `listBackgroundTasks` for window reloads. */
 	getLiveTasks: () => LiveBackgroundTask[];
+	syncTasks: () => void;
 	waitForIdle: () => Promise<void>;
 }
 
@@ -598,7 +603,19 @@ export class SessionManager {
 		private onBusyChange: (runtimeId: string, busy: boolean) => void = () => {},
 		private onUsageLimitChange: UsageLimitListener = () => {},
 		private scheduleHooks: ScheduleRunHooks = {},
-	) {}
+	) {
+		this.detached.start();
+	}
+
+	private detached = new DetachedProcessWatcher((sessionId) => {
+		const entry = this.sessions.get(sessionId);
+		if (entry) entry.syncTasks();
+		else
+			this.send("session:tasks", {
+				sessionId,
+				tasks: this.detached.tasksFor(sessionId),
+			});
+	});
 
 	/**
 	 * Mark a session id as deleted. After this point, `send()` drops any
@@ -1678,7 +1695,7 @@ export class SessionManager {
 		// persisted, so a reloaded window re-primes via `session:listTasks`.
 		let lastTasksJson = "[]";
 		const syncTasks = () => {
-			const tasks = activity.liveTasks;
+			const tasks = [...activity.liveTasks, ...this.detached.tasksFor(id)];
 			const json = JSON.stringify(tasks);
 			if (json === lastTasksJson) return;
 			lastTasksJson = json;
@@ -1779,6 +1796,7 @@ export class SessionManager {
 			// got cut off. See `lastTurnBlocks` above.
 			getLastTurnBlocks: () => lastTurnBlocks,
 			getLiveTasks: () => activity.liveTasks,
+			syncTasks,
 			waitForIdle,
 		});
 		this.send(
@@ -1814,6 +1832,7 @@ export class SessionManager {
 				permissionMode: sdkPermissionModeFor(session.mode),
 				pathToClaudeCodeExecutable: resolveClaudeBinary(),
 				spawnClaudeCodeProcess: spawnClaudeProcess,
+				env: { ...process.env, [SESSION_ENV_KEY]: id },
 				// Per-session model override. Unset = the CLI default model, so
 				// we only pass the key when the user picked one explicitly.
 				...(session.model ? { model: session.model } : {}),
@@ -1965,6 +1984,9 @@ export class SessionManager {
 				// status flip should not wait on the persist/broadcast path,
 				// and some of the messages that drive it are dropped below.
 				activity.apply(msg);
+				if (msg.type === "user" || msg.type === "result") {
+					void this.detached.scan();
+				}
 				if (msg.type === "assistant") {
 					assistantReplySeen = true;
 					for (const waiter of idleWaiters) waiter.armed = true;
@@ -2291,8 +2313,9 @@ export class SessionManager {
 			// it. Clear the renderer's task chip; `send` (not `syncTasks`)
 			// because the activity model may still hold ids the CLI never
 			// closed out.
-			if (lastTasksJson !== "[]") {
-				this.send(ch("tasks"), { sessionId: id, tasks: [] });
+			const detachedTasks = this.detached.tasksFor(id);
+			if (lastTasksJson !== JSON.stringify(detachedTasks)) {
+				this.send(ch("tasks"), { sessionId: id, tasks: detachedTasks });
 			}
 			if (lastBusy) {
 				lastBusy = false;
@@ -2739,6 +2762,10 @@ export class SessionManager {
 	 * this is not an interrupt.
 	 */
 	async stopBackgroundTask(sessionId: string, taskId: string): Promise<void> {
+		if (this.detached.owns(taskId)) {
+			await this.detached.stopTask(sessionId, taskId);
+			return;
+		}
 		const entry = this.sessions.get(sessionId);
 		if (!entry) return;
 		try {
@@ -2778,7 +2805,14 @@ export class SessionManager {
 	 * opened or reloaded mid-session has missed them all.
 	 */
 	listBackgroundTasks(sessionId: string): LiveBackgroundTask[] {
-		return this.sessions.get(sessionId)?.getLiveTasks() ?? [];
+		return [
+			...(this.sessions.get(sessionId)?.getLiveTasks() ?? []),
+			...this.detached.tasksFor(sessionId),
+		];
+	}
+
+	listDetachedTasks(): Record<string, LiveBackgroundTask[]> {
+		return this.detached.all();
 	}
 
 	waitForIdle(sessionId: string): Promise<void> {
@@ -2816,6 +2850,11 @@ export class SessionManager {
 	 * handle any straggling writes.
 	 */
 	async cancelAndWait(sessionId: string, timeoutMs = 5000): Promise<void> {
+		await this.detached
+			.stopSession(sessionId)
+			.catch((err) =>
+				console.error("[ccw] stopping detached processes failed:", err),
+			);
 		const entry = this.sessions.get(sessionId);
 		if (!entry) return;
 		await this.stopAllBackgroundTasks(sessionId);

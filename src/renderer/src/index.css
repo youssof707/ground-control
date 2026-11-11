@@ -399,6 +399,12 @@ input::placeholder {
 	border-width: 1.5px;
 }
 
+.sched-row-spinner {
+	width: 10px;
+	height: 10px;
+	border-width: 1.5px;
+}
+
 /* ─── Dictation ──────────────────────────────────────────────────────────── */
 
 .dictation-recording,

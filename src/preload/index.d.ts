@@ -64,6 +64,7 @@ declare global {
 			stopScheduledRun: (sessionId: string) => Promise<void>;
 			stopTask: (sessionId: string, taskId: string) => Promise<void>;
 			listTasks: (sessionId: string) => Promise<LiveBackgroundTask[]>;
+			listDetachedTasks: () => Promise<Record<string, LiveBackgroundTask[]>>;
 			resumeSession: (sessionId: string) => Promise<void>;
 			retryUsageLimit: (sessionId: string) => Promise<void>;
 			refreshBranch: (sessionId: string) => Promise<void>;

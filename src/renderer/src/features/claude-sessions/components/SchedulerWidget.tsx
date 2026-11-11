@@ -55,17 +55,13 @@ export function SchedulerWidget({
 		const armed = Object.values(schedules).filter(
 			(s) => s.enabled && s.nextFireAt !== undefined,
 		).length;
-		const running = order.filter((id) => {
-			const s = sessions[id];
-			return isScheduledSession(s) && s?.status === "running";
-		}).length;
 		const waiting = new Set(
 			queue
 				.filter((q) => isScheduledSession(sessions[q.sessionId]))
 				.map((q) => q.sessionId),
 		).size;
-		return { armed, running, waiting };
-	}, [schedules, order, sessions, queue]);
+		return { armed, waiting };
+	}, [schedules, sessions, queue]);
 
 	const unreadByScheduleId = useMemo(() => {
 		const map: Record<string, string[]> = {};
@@ -77,6 +73,15 @@ export function SchedulerWidget({
 		}
 		return map;
 	}, [order, sessions, lastReadAt]);
+
+	const runningScheduleIds = useMemo(() => {
+		const ids = new Set<string>();
+		for (const id of order) {
+			const s = sessions[id];
+			if (s?.scheduleId && s.status === "running") ids.add(s.scheduleId);
+		}
+		return ids;
+	}, [order, sessions]);
 
 	const alerts = useMemo(() => sortedScheduleAlerts(schedules), [schedules]);
 
@@ -90,11 +95,12 @@ export function SchedulerWidget({
 				.filter(
 					(s) =>
 						s.id === activeScheduleId ||
+						runningScheduleIds.has(s.id) ||
 						(unreadByScheduleId[s.id]?.length ?? 0) > 0 ||
 						(s.status !== undefined && s.alwaysShowStatus === true),
 				)
 				.sort((a, b) => a.createdAt - b.createdAt),
-		[schedules, unreadByScheduleId, activeScheduleId],
+		[schedules, unreadByScheduleId, activeScheduleId, runningScheduleIds],
 	);
 
 	const openSchedule = (schedule: Schedule, preferredSessionId?: string) => {
@@ -173,9 +179,6 @@ export function SchedulerWidget({
 							gap: 5,
 						}}
 					>
-						{counts.running > 0 ? (
-							<CountPill n={counts.running} fg={T.ok} bg={T.okSoft} />
-						) : null}
 						{counts.waiting > 0 ? (
 							<CountPill n={counts.waiting} fg={T.warn} bg={T.warnSoft} />
 						) : null}
@@ -197,10 +200,7 @@ export function SchedulerWidget({
 							key={s.id}
 							schedule={s}
 							now={now}
-							running={
-								!!s.lastSessionId &&
-								sessions[s.lastSessionId]?.status === "running"
-							}
+							running={runningScheduleIds.has(s.id)}
 							unread={unreadByScheduleId[s.id]?.length ?? 0}
 							active={s.id === activeScheduleId}
 							onClick={() => openSchedule(s)}
@@ -336,8 +336,10 @@ function StatusRow({
 			}}
 		>
 			<IconSlot>
-				{status ? (
-					<StatusDot color={status.color} pulse={running} />
+				{running ? (
+					<span className="asyncy-btn-spinner sched-row-spinner" aria-hidden />
+				) : status ? (
+					<StatusDot color={status.color} />
 				) : (
 					<span style={{ display: "inline-flex", color: T.textFaint }}>
 						<ClockIcon />
