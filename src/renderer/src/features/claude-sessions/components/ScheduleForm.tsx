@@ -340,8 +340,8 @@ export function ScheduleFormFields({
 						disabled={disabled}
 					/>
 					<span style={{ fontSize: 11, color: T.textFaint }}>
-						When off, the sidebar only shows this schedule while it's red and
-						unread.
+						When off, the sidebar only shows this schedule while it's unread
+						or open.
 					</span>
 				</div>
 			</div>

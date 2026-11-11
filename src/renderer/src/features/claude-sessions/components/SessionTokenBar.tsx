@@ -15,7 +15,11 @@ import {
 } from "@shared/claude-sessions/sessionUsage";
 import { useModelPickerStore } from "../stores/useModelPickerStore";
 import { useDraftStore } from "../stores/useDraftStore";
-import { draftHasContent } from "../lib/modelSwitchActions";
+import {
+	defersModelSwitch,
+	draftHasContent,
+} from "../lib/modelSwitchActions";
+import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
 import { ModelPickerModal } from "./ModelPickerModal";
 
@@ -98,6 +102,12 @@ export function SessionTokenBar({
 	const composerHasDraft = useDraftStore((s) =>
 		draftHasContent(s.draftsBySession[target.id]),
 	);
+	const awaitingAnswer = usePermissionsStore((s) =>
+		s.queue.some(
+			(q) => q.sessionId === target.id && defersModelSwitch(q.toolName),
+		),
+	);
+	const deferSwitch = composerHasDraft || awaitingAnswer;
 	const [modelHover, setModelHover] = useState(false);
 	const showIo = useSettingsStore((s) => s.showIoTokens ?? true);
 	const showContext = useSettingsStore((s) => s.showContextTokens ?? true);
@@ -173,7 +183,9 @@ export function SessionTokenBar({
 				>
 					{modelLabel}
 					{showNext ? (
-						<span style={{ color: T.textMute }}> · next message</span>
+						<span style={{ color: T.textMute }}>
+							{awaitingAnswer ? " · after you respond" : " · next message"}
+						</span>
 					) : switching ? (
 						<span className="model-switching-dots" aria-hidden>
 							<span>.</span>
@@ -229,16 +241,18 @@ export function SessionTokenBar({
 				sessionId={target.id}
 				effectiveModel={labelModel}
 				subtitle={
-					composerHasDraft
-						? "Applies to your next message. The current response keeps its model."
-						: undefined
+					awaitingAnswer
+						? "Applies once you respond to Claude. Nothing is sent until then."
+						: composerHasDraft
+							? "Applies to your next message. The current response keeps its model."
+							: undefined
 				}
-				isRunning={isRunning && !composerHasDraft}
+				isRunning={isRunning && !deferSwitch}
 				focusComposerAfterSelect={!onAfterSelect}
 				onSelect={(value) => {
 					onAfterSelect?.();
 					const picker = useModelPickerStore.getState();
-					if (composerHasDraft) {
+					if (deferSwitch) {
 						picker.setNextMessageModel(target.id, { model: value });
 						return;
 					}

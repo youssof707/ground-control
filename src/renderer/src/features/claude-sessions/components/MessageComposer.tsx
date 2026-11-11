@@ -135,10 +135,12 @@ export function MessageComposer({
 	const [dictating, setDictating] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	// Paste-to-attach, shared by every composer instance.
-	const { images, onPaste, removeImage, setImages } = useComposerImages(
-		sessionId,
-		setError,
-	);
+	const { images, onPaste, dragActive, dropHandlers, removeImage, setImages } =
+		useComposerImages(
+			sessionId,
+			setError,
+			!disabled && !sending && !target.sending,
+		);
 	const [modeSwitching, setModeSwitching] = useState(false);
 
 	// Subscribe to the two branch fields so the send button mirrors the
@@ -589,17 +591,46 @@ export function MessageComposer({
 			}}
 		>
 			<div
+				{...dropHandlers}
+				data-composer-drop-target=""
+				data-drag-active={dragActive ? "true" : undefined}
 				style={{
 					position: "relative",
 					maxWidth: D.cardMaxWidth,
 					margin: D.cardMargin,
 					borderRadius: D.cardRadius,
-					border: `0.5px solid ${T.border}`,
+					border: dragActive
+						? `1px dashed ${T.accent}`
+						: `0.5px solid ${T.border}`,
 					background: D.cardBackground,
 					padding: D.cardPadding,
-					boxShadow: D.cardShadow,
+					boxShadow: dragActive
+						? `0 0 0 3px ${T.accentSoft}`
+						: D.cardShadow,
 				}}
 			>
+				{dragActive ? (
+					<div
+						aria-hidden
+						style={{
+							position: "absolute",
+							inset: 0,
+							zIndex: 5,
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+							borderRadius: D.cardRadius,
+							background: T.accentSoft,
+							backdropFilter: "blur(2px)",
+							color: T.accent,
+							fontSize: 13,
+							fontWeight: 500,
+							pointerEvents: "none",
+						}}
+					>
+						Drop images to attach
+					</div>
+				) : null}
 				{queuedMessages.length > 0 ? (
 					<div
 						style={{
