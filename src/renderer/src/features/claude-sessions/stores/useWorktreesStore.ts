@@ -32,6 +32,8 @@ interface State {
 	 * chips/rows until the next hydrate.
 	 */
 	remove: (id: string) => void;
+	deletingIds: Record<string, true>;
+	setDeleting: (id: string, deleting: boolean) => void;
 }
 
 export const useWorktreesStore = create<State>((set) => ({
@@ -51,5 +53,14 @@ export const useWorktreesStore = create<State>((set) => ({
 			const next = { ...s.worktrees };
 			delete next[id];
 			return { worktrees: next };
+		}),
+	deletingIds: {},
+	setDeleting: (id, deleting) =>
+		set((s) => {
+			if (deleting === id in s.deletingIds) return s;
+			const next = { ...s.deletingIds };
+			if (deleting) next[id] = true;
+			else delete next[id];
+			return { deletingIds: next };
 		}),
 }));

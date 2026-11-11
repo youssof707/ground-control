@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { T } from "../../../design/tokens";
 import { WORKTREE_COLOR_MAP } from "../../../design/WorktreeChip";
 import { useBackdropDismiss } from "../../../components/useBackdropDismiss";
 import type { Worktree } from "@shared/schemas/worktrees";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
+import { runBackgroundTask } from "../../background-tasks/stores/useBackgroundTasksStore";
 import { DeleteWorktreeButton } from "./AttachWorktreeModal";
 
 /**
@@ -30,7 +31,7 @@ export function WorktreesModal({
 	onClose: () => void;
 }) {
 	const worktrees = useWorktreesStore((s) => s.worktrees);
-	const [error, setError] = useState<string | null>(null);
+	const deletingIds = useWorktreesStore((s) => s.deletingIds);
 	const backdropProps = useBackdropDismiss(onClose);
 
 	// Refresh the store on open. It's already kept current by boot hydrate +
@@ -39,7 +40,6 @@ export function WorktreesModal({
 	// error, and the fetch is cheap.
 	useEffect(() => {
 		if (!open) return;
-		setError(null);
 		void (async () => {
 			try {
 				const list = await window.claude.listWorktrees();
@@ -67,6 +67,7 @@ export function WorktreesModal({
 	const groups = useMemo(() => {
 		const byBase = new Map<string, Worktree[]>();
 		for (const wt of Object.values(worktrees)) {
+			if (wt.id in deletingIds) continue;
 			const list = byBase.get(wt.baseDir);
 			if (list) list.push(wt);
 			else byBase.set(wt.baseDir, [wt]);
@@ -79,19 +80,26 @@ export function WorktreesModal({
 			.sort((a, b) =>
 				folderName(a.baseDir).localeCompare(folderName(b.baseDir)),
 			);
-	}, [worktrees]);
+	}, [worktrees, deletingIds]);
 
 	// Local `remove` mirrors AttachWorktreeModal: main's `state:changed`
 	// broadcast is skip-self, so the originating window has to drop the row
 	// itself or it lingers until the next hydrate.
-	const handleDelete = useCallback(async (id: string) => {
-		setError(null);
-		try {
-			await window.claude.deleteWorktree(id);
-			useWorktreesStore.getState().remove(id);
-		} catch (err) {
-			setError((err as Error).message || "Failed to delete worktree");
-		}
+	const handleDelete = useCallback(async (wt: Worktree) => {
+		const { setDeleting } = useWorktreesStore.getState();
+		setDeleting(wt.id, true);
+		runBackgroundTask({
+			label: `Deleting worktree ${wt.displayName}`,
+			run: () =>
+				window.claude.deleteWorktree(wt.id).catch((err: unknown) => {
+					setDeleting(wt.id, false);
+					throw err;
+				}),
+			onSuccess: () => {
+				useWorktreesStore.getState().remove(wt.id);
+				setDeleting(wt.id, false);
+			},
+		});
 	}, []);
 
 	if (!open) return null;
@@ -158,7 +166,7 @@ export function WorktreesModal({
 										<WorktreeRow
 											key={wt.id}
 											worktree={wt}
-											onDelete={() => handleDelete(wt.id)}
+											onDelete={() => handleDelete(wt)}
 										/>
 									))}
 								</div>
@@ -166,8 +174,6 @@ export function WorktreesModal({
 						))
 					)}
 				</div>
-
-				{error ? <div className="modal-error">{error}</div> : null}
 
 				<div className="modal-actions" style={{ marginTop: 14 }}>
 					<button className="btn" onClick={onClose}>

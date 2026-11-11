@@ -11,6 +11,7 @@ import { Section } from "./SettingsSection";
 const MAX_ENTRIES = 2000;
 const CLEAR_CONFIRM_MS = 3000;
 const DAY_MS = 86_400_000;
+const LOG_HEIGHT = "clamp(160px, calc(min(640px, 91vh - 24px) - 330px), 360px)";
 
 const SOURCE_TONES: Record<ActivitySource, string> = {
 	pmset: T.info,
@@ -91,12 +92,59 @@ function fileName(path: string): string {
 	return path.slice(path.lastIndexOf("/") + 1);
 }
 
+function tint(tone: string, percent: number): string {
+	return `color-mix(in oklab, ${tone} ${percent}%, transparent)`;
+}
+
 export function DeveloperPanel() {
 	return (
-		<div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+		<div>
 			<ActivityLogSection />
 			<CaffeinateSection />
 			<PmsetScheduleSection />
+		</div>
+	);
+}
+
+function Card({ children }: { children: React.ReactNode }) {
+	return (
+		<div
+			style={{
+				border: `0.5px solid ${T.border}`,
+				borderRadius: 8,
+				background: T.bg,
+				overflow: "hidden",
+			}}
+		>
+			{children}
+		</div>
+	);
+}
+
+function ScrollList({
+	maxHeight,
+	height,
+	children,
+	...aria
+}: {
+	maxHeight?: number;
+	height?: string;
+	children: React.ReactNode;
+	role?: string;
+	"aria-label"?: string;
+}) {
+	return (
+		<div
+			{...aria}
+			style={{
+				height,
+				maxHeight,
+				overflowY: "auto",
+				scrollbarWidth: "thin",
+				scrollbarColor: `${T.border} ${T.surfaceLow}`,
+			}}
+		>
+			{children}
 		</div>
 	);
 }
@@ -164,70 +212,77 @@ function ActivityLogSection() {
 		return [...list].reverse();
 	}, [entries, filter]);
 
+	const counts = useMemo(() => {
+		const bySource = new Map<SourceFilter, number>([["all", entries.length]]);
+		for (const e of entries) bySource.set(e.source, (bySource.get(e.source) ?? 0) + 1);
+		return bySource;
+	}, [entries]);
+
 	return (
-		<div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-			<Section
-				title="Activity log"
-				actions={
-					<>
-						<SmallButton onClick={() => void window.claude.revealActivityLog()}>
-							Show in Finder
-						</SmallButton>
-						<SmallButton
-							onClick={onClear}
-							disabled={entries.length === 0 && !confirmingClear}
-							tone={confirmingClear ? T.danger : undefined}
-						>
-							{confirmingClear ? "Confirm clear" : "Clear"}
-						</SmallButton>
-					</>
-				}
-			>
-				<SourceFilterBar value={filter} onChange={setFilter} />
-			</Section>
-
-			<div
-				role="log"
-				aria-label="Activity log entries"
-				style={{
-					flex: 1,
-					minHeight: 180,
-					marginTop: -6,
-					border: `0.5px solid ${T.border}`,
-					borderRadius: 8,
-					background: T.bg,
-					overflowY: "auto",
-				}}
-			>
-				{visible.length === 0 ? (
-					<EmptyState
-						text={
-							filter === "all"
-								? "Nothing logged yet"
-								: `No ${SOURCE_LABELS[filter]} events yet`
-						}
-					/>
-				) : (
-					<LogRows entries={visible} />
-				)}
-			</div>
-
-			<div
-				style={{
-					display: "flex",
-					justifyContent: "space-between",
-					gap: 12,
-					padding: "6px 2px 0",
-					fontSize: 11,
-					color: T.textFaint,
-				}}
-			>
-				<span style={{ fontFamily: T.mono }}>{path ? fileName(path) : ""}</span>
-				<span>
-					{visible.length} {visible.length === 1 ? "event" : "events"}
-				</span>
-			</div>
-		</div>
+		<Section
+			title="Activity log"
+			actions={
+				<>
+					<SmallButton onClick={() => void window.claude.revealActivityLog()}>
+						Show in Finder
+					</SmallButton>
+					<SmallButton
+						onClick={onClear}
+						disabled={entries.length === 0 && !confirmingClear}
+						tone={confirmingClear ? T.danger : undefined}
+					>
+						{confirmingClear ? "Confirm clear" : "Clear"}
+					</SmallButton>
+				</>
+			}
+		>
+			<SourceFilterBar value={filter} counts={counts} onChange={setFilter} />
+			<Card>
+				<ScrollList role="log" aria-label="Activity log entries" height={LOG_HEIGHT}>
+					{visible.length === 0 ? (
+						<EmptyState
+							text={
+								filter === "all"
+									? "Nothing logged yet"
+									: `No ${SOURCE_LABELS[filter]} events yet`
+							}
+						/>
+					) : (
+						<LogRows entries={visible} />
+					)}
+				</ScrollList>
+				<div
+					style={{
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "space-between",
+						gap: 12,
+						height: 26,
+						padding: "0 12px",
+						borderTop: `0.5px solid ${T.borderSoft}`,
+						background: T.surfaceLow,
+						fontSize: 11,
+						color: T.textMute,
+					}}
+				>
+					<span
+						style={{
+							minWidth: 0,
+							overflow: "hidden",
+							textOverflow: "ellipsis",
+							whiteSpace: "nowrap",
+							fontFamily: T.mono,
+							fontSize: 10.5,
+						}}
+					>
+						{path ? fileName(path) : ""}
+					</span>
+					<span style={{ flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+						{visible.length.toLocaleString()} {visible.length === 1 ? "event" : "events"}
+					</span>
+				</div>
+			</Card>
+		</Section>
 	);
 }
 
@@ -235,41 +290,46 @@ function LogRows({ entries }: { entries: ActivityEntry[] }) {
 	return (
 		<>
 			{entries.map((e, i) => {
-				const showDay = i === 0 || startOfDay(entries[i - 1].at) !== startOfDay(e.at);
+				const firstOfDay = i === 0 || startOfDay(entries[i - 1].at) !== startOfDay(e.at);
 				return (
 					<Fragment key={`${e.at}:${i}`}>
-						{showDay ? <DayDivider label={dayLabel(e.at)} first={i === 0} /> : null}
+						{firstOfDay ? <DayDivider label={dayLabel(e.at)} first={i === 0} /> : null}
 						<div
 							style={{
 								display: "grid",
-								gridTemplateColumns: "84px 78px 1fr",
-								alignItems: "baseline",
-								gap: 10,
-								padding: "4px 12px",
+								gridTemplateColumns: "82px 14px minmax(0, 1fr)",
+								alignItems: "start",
+								columnGap: 8,
+								padding: "7px 12px",
+								borderTop: firstOfDay ? "none" : `0.5px solid ${T.borderSoft}`,
 							}}
 						>
 							<span
 								style={{
 									fontFamily: T.mono,
 									fontSize: 10.5,
+									lineHeight: "18px",
 									color: T.textMute,
 									fontVariantNumeric: "tabular-nums",
 								}}
 							>
 								{clockTime(e.at, true)}
 							</span>
-							<SourceTag source={e.source} />
-							<span
-								style={{
-									minWidth: 0,
-									fontSize: 12,
-									lineHeight: 1.45,
-									color: T.text,
-									overflowWrap: "anywhere",
-								}}
-							>
-								{e.message}
-							</span>
+							<SourceDot source={e.source} />
+							<div style={{ minWidth: 0 }}>
+								<SourceLabel source={e.source} />
+								<div
+									style={{
+										marginTop: 1,
+										fontSize: 12,
+										lineHeight: 1.5,
+										color: T.text,
+										overflowWrap: "anywhere",
+									}}
+								>
+									{e.message}
+								</div>
+							</div>
 						</div>
 					</Fragment>
 				);
@@ -284,15 +344,19 @@ function DayDivider({ label, first }: { label: string; first: boolean }) {
 			style={{
 				position: "sticky",
 				top: 0,
-				padding: "6px 12px 4px",
-				marginTop: first ? 0 : 4,
-				background: T.bg,
+				zIndex: 1,
+				height: 24,
+				display: "flex",
+				alignItems: "center",
+				padding: "0 12px",
+				background: T.surfaceLow,
+				borderTop: first ? "none" : `0.5px solid ${T.borderSoft}`,
 				borderBottom: `0.5px solid ${T.borderSoft}`,
 				fontSize: 10,
 				fontWeight: 600,
-				letterSpacing: 0.5,
+				letterSpacing: 0.6,
 				textTransform: "uppercase",
-				color: T.textFaint,
+				color: T.textMute,
 			}}
 		>
 			{label}
@@ -300,23 +364,36 @@ function DayDivider({ label, first }: { label: string; first: boolean }) {
 	);
 }
 
-function SourceTag({ source }: { source: ActivitySource }) {
-	const tone = SOURCE_TONES[source];
+function SourceDot({ source }: { source: ActivitySource }) {
+	return (
+		<span
+			aria-hidden
+			style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 18 }}
+		>
+			<span
+				style={{
+					width: 6,
+					height: 6,
+					borderRadius: "50%",
+					background: SOURCE_TONES[source],
+					boxShadow: `0 0 0 3px ${tint(SOURCE_TONES[source], 16)}`,
+				}}
+			/>
+		</span>
+	);
+}
+
+function SourceLabel({ source }: { source: ActivitySource }) {
 	return (
 		<span
 			style={{
-				display: "inline-flex",
-				alignItems: "center",
-				gap: 6,
+				display: "block",
 				fontSize: 11,
-				color: tone,
-				whiteSpace: "nowrap",
+				fontWeight: 600,
+				lineHeight: "18px",
+				color: SOURCE_TONES[source],
 			}}
 		>
-			<span
-				aria-hidden
-				style={{ width: 5, height: 5, borderRadius: "50%", background: tone, flexShrink: 0 }}
-			/>
 			{SOURCE_LABELS[source]}
 		</span>
 	);
@@ -324,33 +401,30 @@ function SourceTag({ source }: { source: ActivitySource }) {
 
 function SourceFilterBar({
 	value,
+	counts,
 	onChange,
 }: {
 	value: SourceFilter;
+	counts: Map<SourceFilter, number>;
 	onChange: (value: SourceFilter) => void;
 }) {
 	const options: { value: SourceFilter; label: string; tone: string }[] = [
-		{ value: "all", label: "All", tone: T.text },
+		{ value: "all", label: "All", tone: T.accent },
 		...ACTIVITY_SOURCES.map((s) => ({ value: s, label: SOURCE_LABELS[s], tone: SOURCE_TONES[s] })),
 	];
 	return (
 		<div
 			role="radiogroup"
 			aria-label="Filter by source"
-			style={{
-				display: "flex",
-				padding: 2,
-				gap: 2,
-				border: `0.5px solid ${T.border}`,
-				borderRadius: 8,
-				background: T.bg,
-			}}
+			style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}
 		>
 			{options.map((o) => (
-				<FilterItem
+				<FilterChip
 					key={o.value}
 					label={o.label}
 					tone={o.tone}
+					count={counts.get(o.value) ?? 0}
+					dot={o.value !== "all"}
 					active={o.value === value}
 					onClick={() => onChange(o.value)}
 				/>
@@ -359,14 +433,18 @@ function SourceFilterBar({
 	);
 }
 
-function FilterItem({
+function FilterChip({
 	label,
 	tone,
+	count,
+	dot,
 	active,
 	onClick,
 }: {
 	label: string;
 	tone: string;
+	count: number;
+	dot: boolean;
 	active: boolean;
 	onClick: () => void;
 }) {
@@ -380,22 +458,40 @@ function FilterItem({
 			onMouseEnter={() => setHover(true)}
 			onMouseLeave={() => setHover(false)}
 			style={{
-				flex: 1,
+				display: "inline-flex",
+				alignItems: "center",
+				gap: 6,
 				height: 24,
-				padding: "0 6px",
-				border: "none",
-				borderRadius: 6,
-				background: active ? T.surfaceHi : hover ? T.surfaceLow : "transparent",
+				padding: "0 9px",
+				border: `0.5px solid ${active ? tint(tone, 45) : T.border}`,
+				borderRadius: 999,
+				background: active ? tint(tone, 14) : hover ? T.surface : "transparent",
 				fontFamily: T.sans,
 				fontSize: 11.5,
-				fontWeight: active ? 600 : 500,
-				color: active ? tone : hover ? T.textDim : T.textMute,
+				fontWeight: 500,
+				color: active ? tone : hover ? T.text : T.textDim,
 				cursor: "pointer",
 				whiteSpace: "nowrap",
-				transition: "background 120ms ease, color 120ms ease",
+				transition: "background 120ms ease, color 120ms ease, border-color 120ms ease",
 			}}
 		>
+			{dot ? (
+				<span
+					aria-hidden
+					style={{ width: 6, height: 6, borderRadius: "50%", background: tone, flexShrink: 0 }}
+				/>
+			) : null}
 			{label}
+			<span
+				style={{
+					fontSize: 10.5,
+					fontVariantNumeric: "tabular-nums",
+					color: active ? tone : T.textFaint,
+					opacity: active ? 0.75 : 1,
+				}}
+			>
+				{count.toLocaleString()}
+			</span>
 		</button>
 	);
 }
@@ -420,24 +516,16 @@ function CaffeinateSection() {
 	}, [refresh]);
 
 	return (
-		<div style={{ flexShrink: 0, marginTop: 18 }}>
-			<Section
-				title="Active caffeinate"
-				actions={
-					<SmallButton onClick={refresh} disabled={loading}>
-						Refresh
-					</SmallButton>
-				}
-			>
-				<div
-					style={{
-						border: `0.5px solid ${T.border}`,
-						borderRadius: 8,
-						background: T.bg,
-						maxHeight: 132,
-						overflowY: "auto",
-					}}
-				>
+		<Section
+			title="Active caffeinate"
+			actions={
+				<SmallButton onClick={refresh} disabled={loading}>
+					Refresh
+				</SmallButton>
+			}
+		>
+			<Card>
+				<ScrollList maxHeight={150}>
 					{processes === undefined ? (
 						<EmptyState text="Loading…" compact />
 					) : processes.length === 0 ? (
@@ -445,9 +533,9 @@ function CaffeinateSection() {
 					) : (
 						processes.map((p, i) => <CaffeinateRow key={p.pid} process={p} first={i === 0} />)
 					)}
-				</div>
-			</Section>
-		</div>
+				</ScrollList>
+			</Card>
+		</Section>
 	);
 }
 
@@ -461,10 +549,10 @@ function CaffeinateRow({ process, first }: { process: CaffeinateProcess; first: 
 		<div
 			style={{
 				display: "grid",
-				gridTemplateColumns: "84px 64px 1fr auto",
+				gridTemplateColumns: "84px 64px minmax(0, 1fr) auto",
 				alignItems: "baseline",
 				gap: 10,
-				padding: "6px 12px",
+				padding: "8px 12px",
 				borderTop: first ? "none" : `0.5px solid ${T.borderSoft}`,
 			}}
 		>
@@ -543,24 +631,16 @@ function PmsetScheduleSection() {
 	const events = useMemo(() => (output ? parsePmsetSchedule(output) : []), [output]);
 
 	return (
-		<div style={{ flexShrink: 0, marginTop: 18 }}>
-			<Section
-				title="Scheduled wakes"
-				actions={
-					<SmallButton onClick={refresh} disabled={loading}>
-						Refresh
-					</SmallButton>
-				}
-			>
-				<div
-					style={{
-						border: `0.5px solid ${T.border}`,
-						borderRadius: 8,
-						background: T.bg,
-						maxHeight: 132,
-						overflowY: "auto",
-					}}
-				>
+		<Section
+			title="Scheduled wakes"
+			actions={
+				<SmallButton onClick={refresh} disabled={loading}>
+					Refresh
+				</SmallButton>
+			}
+		>
+			<Card>
+				<ScrollList maxHeight={150}>
 					{output === undefined ? (
 						<EmptyState text="Loading…" compact />
 					) : output === null ? (
@@ -573,9 +653,9 @@ function PmsetScheduleSection() {
 					) : (
 						events.map((ev, i) => <PmsetRow key={`${ev.at}:${i}`} event={ev} first={i === 0} />)
 					)}
-				</div>
-			</Section>
-		</div>
+				</ScrollList>
+			</Card>
+		</Section>
 	);
 }
 
@@ -584,10 +664,10 @@ function PmsetRow({ event, first }: { event: PmsetEvent; first: boolean }) {
 		<div
 			style={{
 				display: "grid",
-				gridTemplateColumns: "84px 64px 48px 1fr",
+				gridTemplateColumns: "84px 64px 48px minmax(0, 1fr)",
 				alignItems: "baseline",
 				gap: 10,
-				padding: "6px 12px",
+				padding: "8px 12px",
 				borderTop: first ? "none" : `0.5px solid ${T.borderSoft}`,
 			}}
 		>

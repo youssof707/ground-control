@@ -34,6 +34,8 @@ const claude = {
 		sessionId: string,
 		options?: { keepBackgroundTasks?: boolean },
 	) => ipcRenderer.invoke("session:interrupt", sessionId, options),
+	stopScheduledRun: (sessionId: string) =>
+		ipcRenderer.invoke("session:stopScheduledRun", sessionId),
 	stopTask: (sessionId: string, taskId: string) =>
 		ipcRenderer.invoke("session:stopTask", { sessionId, taskId }),
 	listTasks: (sessionId: string) =>
@@ -154,6 +156,8 @@ const claude = {
 		ipcRenderer.invoke("schedules:setEnabled", { id, enabled }),
 	clearScheduleAlert: (id: string) =>
 		ipcRenderer.invoke("schedules:clearAlert", id),
+	clearScheduleStatus: (id: string) =>
+		ipcRenderer.invoke("schedules:clearStatus", id),
 	runScheduleNow: (id: string) => ipcRenderer.invoke("schedules:runNow", id),
 	listSkills: () => ipcRenderer.invoke("skills:list"),
 	openSkillsFolder: () => ipcRenderer.invoke("skills:openFolder"),

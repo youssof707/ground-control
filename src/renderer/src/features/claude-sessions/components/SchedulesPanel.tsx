@@ -3,6 +3,8 @@ import type { Schedule } from "@shared/schemas/schedules";
 import { T } from "../../../design/tokens";
 import { useSchedulesStore } from "../stores/useSchedulesStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
+import { useInterruptStore } from "../stores/useInterruptStore";
+import { stopScheduledRun } from "../lib/sessionControlActions";
 import { formatMessageTime } from "../lib/messageTime";
 import { formatScheduleKind } from "../lib/scheduleFormat";
 import { dismissScheduleAlert } from "../lib/scheduleAlerts";
@@ -97,10 +99,25 @@ function ScheduleRow({
 		}
 	};
 
-	const running =
-		starting ||
+	const stoppableSessionId =
 		lastSession?.status === "running" ||
-		lastSession?.status === "awaiting_permission";
+		lastSession?.status === "awaiting_permission"
+			? lastSession.id
+			: undefined;
+	const running = starting || stoppableSessionId !== undefined;
+	const stopping = useInterruptStore((s) =>
+		stoppableSessionId ? !!s.interrupting[stoppableSessionId] : false,
+	);
+
+	const stopRun = async () => {
+		if (!stoppableSessionId) return;
+		setError(null);
+		try {
+			await stopScheduledRun(stoppableSessionId);
+		} catch (err) {
+			setError(errorMessage(err));
+		}
+	};
 
 	const runNow = async () => {
 		setError(null);
@@ -119,6 +136,18 @@ function ScheduleRow({
 		try {
 			await window.claude.removeSchedule(schedule.id);
 			useSchedulesStore.getState().remove(schedule.id);
+		} catch (err) {
+			setError(errorMessage(err));
+		}
+	};
+
+	const clearStatus = async () => {
+		setError(null);
+		useSchedulesStore
+			.getState()
+			.upsert({ ...schedule, status: undefined, alert: undefined });
+		try {
+			await window.claude.clearScheduleStatus(schedule.id);
 		} catch (err) {
 			setError(errorMessage(err));
 		}
@@ -326,8 +355,12 @@ function ScheduleRow({
 				/>
 				<ScheduleMenu
 					running={running}
+					stopping={stopping}
 					onRunNow={() => void runNow()}
+					onStop={stoppableSessionId ? () => void stopRun() : undefined}
 					onEdit={onEdit}
+					hasStatus={!!schedule.status || !!schedule.alert}
+					onClearStatus={() => void clearStatus()}
 					onDelete={() => void remove()}
 				/>
 			</div>
@@ -337,13 +370,21 @@ function ScheduleRow({
 
 function ScheduleMenu({
 	running,
+	stopping,
 	onRunNow,
+	onStop,
 	onEdit,
+	hasStatus,
+	onClearStatus,
 	onDelete,
 }: {
 	running: boolean;
+	stopping: boolean;
 	onRunNow: () => void;
+	onStop?: () => void;
 	onEdit: () => void;
+	hasStatus: boolean;
+	onClearStatus: () => void;
 	onDelete: () => void;
 }) {
 	const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(
@@ -441,12 +482,27 @@ function ScheduleMenu({
 						boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
 					}}
 				>
-					<ScheduleMenuItem
-						label={running ? "Running…" : "Run now"}
-						disabled={running}
-						onClick={pick(onRunNow)}
-					/>
+					{onStop ? (
+						<ScheduleMenuItem
+							label={stopping ? "Stopping…" : "Stop"}
+							danger
+							disabled={stopping}
+							onClick={pick(onStop)}
+						/>
+					) : (
+						<ScheduleMenuItem
+							label={running ? "Starting…" : "Run now"}
+							disabled={running}
+							onClick={pick(onRunNow)}
+						/>
+					)}
 					<ScheduleMenuItem label="Edit" onClick={pick(onEdit)} />
+					{hasStatus ? (
+						<ScheduleMenuItem
+							label="Clear status"
+							onClick={pick(onClearStatus)}
+						/>
+					) : null}
 					<ScheduleMenuItem
 						label={confirmingDelete ? "Confirm delete" : "Delete"}
 						danger

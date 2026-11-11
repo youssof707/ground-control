@@ -61,6 +61,7 @@ declare global {
 				sessionId: string,
 				options?: { keepBackgroundTasks?: boolean },
 			) => Promise<void>;
+			stopScheduledRun: (sessionId: string) => Promise<void>;
 			stopTask: (sessionId: string, taskId: string) => Promise<void>;
 			listTasks: (sessionId: string) => Promise<LiveBackgroundTask[]>;
 			resumeSession: (sessionId: string) => Promise<void>;
@@ -173,6 +174,7 @@ declare global {
 			removeSchedule: (id: string) => Promise<void>;
 			setScheduleEnabled: (id: string, enabled: boolean) => Promise<Schedule>;
 			clearScheduleAlert: (id: string) => Promise<void>;
+			clearScheduleStatus: (id: string) => Promise<void>;
 			runScheduleNow: (id: string) => Promise<string>;
 			listSkills: () => Promise<Skill[]>;
 			openSkillsFolder: () => Promise<void>;

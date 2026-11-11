@@ -24,13 +24,28 @@ import { useQueuedMessagesStore } from "../stores/useQueuedMessagesStore";
  * flag, so the chip and the hotkey can't both fire a request for the same
  * session.
  */
-export async function stopSession(sessionId: string): Promise<void> {
+export function stopSession(sessionId: string): Promise<void> {
+	return guardedInterrupt(sessionId, () =>
+		window.claude.interruptSession(sessionId),
+	);
+}
+
+export function stopScheduledRun(sessionId: string): Promise<void> {
+	return guardedInterrupt(sessionId, () =>
+		window.claude.stopScheduledRun(sessionId),
+	);
+}
+
+async function guardedInterrupt(
+	sessionId: string,
+	interrupt: () => Promise<void>,
+): Promise<void> {
 	const { interrupting, begin, end } = useInterruptStore.getState();
 	if (interrupting[sessionId]) return;
 	begin(sessionId);
 	useQueuedMessagesStore.getState().hold(sessionId);
 	try {
-		await window.claude.interruptSession(sessionId);
+		await interrupt();
 	} finally {
 		end(sessionId);
 	}

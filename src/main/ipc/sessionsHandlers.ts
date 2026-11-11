@@ -290,6 +290,9 @@ export function registerSessionsHandlers(): SessionManager {
 			options?: { keepBackgroundTasks?: boolean },
 		) => manager.interrupt(sessionId, options),
 	);
+	ipcMain.handle("session:stopScheduledRun", (_e, sessionId: string) =>
+		manager.stopScheduledRun(sessionId),
+	);
 	ipcMain.handle(
 		"session:stopTask",
 		(_e, payload: { sessionId: string; taskId: string }) =>

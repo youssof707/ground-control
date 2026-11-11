@@ -262,6 +262,7 @@ interface RunningEntry {
 	pushTurn: (blocks: UserContentBlock[]) => void;
 	finish: () => void;
 	setIdle: () => Promise<void>;
+	settleScheduledRun: (outcome: ScheduledRunOutcome) => void;
 	queryRef: { current: Query | null };
 	// Sidequest sessions: live only in this map, never in the session store,
 	// and broadcast on `sidequest:*` channels. Every persistence call site in
@@ -1769,6 +1770,7 @@ export class SessionManager {
 			pushTurn: pushTurnWithStatus,
 			finish,
 			setIdle,
+			settleScheduledRun,
 			queryRef,
 			done,
 			ephemeral: cfg.ephemeral,
@@ -2680,6 +2682,11 @@ export class SessionManager {
 			15000,
 			"supportedModels",
 		);
+	}
+
+	async stopScheduledRun(sessionId: string): Promise<void> {
+		this.sessions.get(sessionId)?.settleScheduledRun("stopped");
+		await this.interrupt(sessionId);
 	}
 
 	/**

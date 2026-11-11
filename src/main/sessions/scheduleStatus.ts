@@ -3,7 +3,16 @@ import { broadcast } from "../windows";
 import type { ScheduleReport } from "./scheduleReportTool";
 import type { Schedule } from "../../shared/schemas/schedules";
 
-export type ScheduledRunOutcome = "ok" | "failed";
+export type ScheduledRunOutcome = "ok" | "failed" | "stopped";
+
+const SETTLED_STATUS: Record<
+	ScheduledRunOutcome,
+	{ color: "green" | "yellow"; line: string }
+> = {
+	ok: { color: "green", line: "nothing to report" },
+	failed: { color: "yellow", line: "run failed" },
+	stopped: { color: "yellow", line: "stopped" },
+};
 
 const push = () => broadcast("schedules:changed", schedulesStore.list());
 
@@ -25,10 +34,7 @@ export async function settle(
 	const current = schedulesStore.get(scheduleId);
 	if (!current || current.status?.sessionId === sessionId) return;
 	const updated = await schedulesStore.update(scheduleId, {
-		status:
-			outcome === "ok"
-				? { color: "green", line: "nothing to report", at: Date.now(), sessionId }
-				: { color: "yellow", line: "run failed", at: Date.now(), sessionId },
+		status: { ...SETTLED_STATUS[outcome], at: Date.now(), sessionId },
 	});
 	if (updated) push();
 }
@@ -37,5 +43,15 @@ export async function clearAlert(scheduleId: string): Promise<void> {
 	const current = schedulesStore.get(scheduleId);
 	if (!current?.alert) return;
 	await schedulesStore.update(scheduleId, { alert: undefined });
+	push();
+}
+
+export async function clearStatus(scheduleId: string): Promise<void> {
+	const current = schedulesStore.get(scheduleId);
+	if (!current?.status && !current?.alert) return;
+	await schedulesStore.update(scheduleId, {
+		status: undefined,
+		alert: undefined,
+	});
 	push();
 }
