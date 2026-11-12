@@ -13,7 +13,7 @@ import {
 	logActivity,
 	readActivityLog,
 } from "../activityLog";
-import { readPmsetSchedule } from "../sessions/wakeScheduler";
+import { getLastWakeError, readPmsetSchedule } from "../sessions/wakeScheduler";
 import type { KeepAwake } from "../sessions/KeepAwake";
 
 const execFileAsync = promisify(execFile);
@@ -91,6 +91,8 @@ export function registerDeveloperHandlers(
 	});
 
 	ipcMain.handle("activityLog:pmsetSched", () => readPmsetSchedule());
+
+	ipcMain.handle("activityLog:wakeError", () => getLastWakeError());
 
 	ipcMain.handle("activityLog:caffeinate", () =>
 		listCaffeinateProcesses(keepAwake, sessionTitle),

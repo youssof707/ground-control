@@ -191,6 +191,7 @@ declare global {
 			clearActivityLog: () => Promise<void>;
 			revealActivityLog: () => Promise<void>;
 			readPmsetSchedule: () => Promise<string | null>;
+			readWakeError: () => Promise<string | null>;
 			listCaffeinate: () => Promise<CaffeinateProcess[]>;
 			checkForUpdate: () => Promise<{
 				available: boolean;

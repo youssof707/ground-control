@@ -66,6 +66,10 @@ async function append(line: string): Promise<void> {
 	await appendFile(path, line, "utf8");
 }
 
+export function flushActivityLog(): Promise<void> {
+	return queue;
+}
+
 export function logActivity(source: ActivitySource, message: string): void {
 	const entry: ActivityEntry = { at: Date.now(), source, message: singleLine(message) };
 	console.log(`[${source}] ${entry.message}`);

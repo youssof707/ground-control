@@ -14,6 +14,7 @@ import { initialize as initializeWorktreesStore } from "./core/store/worktrees";
 import { initialize as initializeSessionGroupsStore } from "./core/store/session_groups";
 import { initialize as initializeShortcutsStore } from "./core/store/shortcuts";
 import { initialize as initializeSchedulesStore } from "./core/store/schedules";
+import { initialize as initializePendingResumesStore } from "./core/store/pending_resumes";
 import {
 	initialize as initializeAppSettingsStore,
 	get as getAppSettings,
@@ -24,6 +25,7 @@ import { registerSessionsHandlers } from "./ipc/sessionsHandlers";
 import { cleanupDuplicateInstalls } from "./updater";
 import type { SessionManager } from "./sessions/SessionManager";
 import { cancelAllWakes } from "./sessions/wakeScheduler";
+import { flushActivityLog } from "./activityLog";
 import * as windows from "./windows";
 import { attachContextMenu } from "./contextMenu";
 
@@ -35,6 +37,8 @@ let sessionManager: SessionManager | null = null;
 // needs to know "are we tearing down?" (the window `close` handler, re-entered
 // `before-quit`) reads this one flag. No async races.
 let isQuitting = false;
+
+const WAKE_CLEANUP_TIMEOUT_MS = 3_000;
 
 const preloadPath = join(__dirname, "../preload/index.mjs");
 
@@ -230,6 +234,7 @@ app.whenReady().then(async () => {
 		await initializeSessionGroupsStore(dataDir);
 		await initializeShortcutsStore(dataDir);
 		await initializeSchedulesStore(dataDir);
+		await initializePendingResumesStore(dataDir);
 	} catch (err) {
 		console.error(`[ccw] failed to initialize store at ${dataDir}:`, err);
 		app.exit(1);
@@ -354,6 +359,14 @@ app.on("will-quit", (event) => {
 	server = null;
 	void (async () => {
 		try {
+			await Promise.race([
+				cancelAllWakes(),
+				new Promise((resolve) => setTimeout(resolve, WAKE_CLEANUP_TIMEOUT_MS)),
+			]);
+		} catch (err) {
+			console.error("[ccw] error cancelling scheduled wakes:", err);
+		}
+		try {
 			await s.close();
 		} catch (err) {
 			console.error("[ccw] error closing fastify:", err);
@@ -374,11 +387,7 @@ app.on("will-quit", (event) => {
 		} catch (err) {
 			console.error("[ccw] error discarding sidequests:", err);
 		}
-		try {
-			await cancelAllWakes();
-		} catch (err) {
-			console.error("[ccw] error cancelling scheduled wakes:", err);
-		}
+		await flushActivityLog();
 		app.exit(0);
 	})();
 });

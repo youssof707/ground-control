@@ -171,6 +171,7 @@ const claude = {
 	clearActivityLog: () => ipcRenderer.invoke("activityLog:clear"),
 	revealActivityLog: () => ipcRenderer.invoke("activityLog:reveal"),
 	readPmsetSchedule: () => ipcRenderer.invoke("activityLog:pmsetSched"),
+	readWakeError: () => ipcRenderer.invoke("activityLog:wakeError"),
 	listCaffeinate: () => ipcRenderer.invoke("activityLog:caffeinate"),
 	checkForUpdate: () => ipcRenderer.invoke("updater:check"),
 	installUpdate: (downloadUrl: string) =>

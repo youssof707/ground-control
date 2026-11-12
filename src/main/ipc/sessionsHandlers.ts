@@ -17,7 +17,7 @@ import { ScheduleRunner } from "../sessions/ScheduleRunner";
 import * as scheduleStatus from "../sessions/scheduleStatus";
 import { directoryExists } from "../sessions/fsUtils";
 import * as rateLimitTracker from "../sessions/RateLimitTracker";
-import { requestAuthorization } from "../sessions/wakeScheduler";
+import { reconcileWakes, requestAuthorization } from "../sessions/wakeScheduler";
 import { NotificationManager } from "./notifications";
 import type {
 	SessionMode,
@@ -34,6 +34,7 @@ import * as sessionStore from "../core/store/claude_session";
 import * as worktreesStore from "../core/store/worktrees";
 import * as groupsStore from "../core/store/session_groups";
 import * as schedulesStore from "../core/store/schedules";
+import * as pendingResumesStore from "../core/store/pending_resumes";
 import { broadcast } from "../windows";
 import { registerReadHandlers } from "./readHandlers";
 import { registerSettingsHandlers } from "./settingsHandlers";
@@ -76,6 +77,9 @@ async function showFolderPicker(
 	return result.filePaths[0];
 }
 
+const WAKE_HOLD_WINDOW_MS = 2 * 60_000;
+const WAKE_HOLD_PADDING_MS = 60_000;
+
 export function registerSessionsHandlers(): SessionManager {
 	const notifications = new NotificationManager();
 	const syncScheduleAlertBadge = () =>
@@ -105,6 +109,7 @@ export function registerSessionsHandlers(): SessionManager {
 			sessionStore.getSession(runtimeId)?.status,
 		retry: (runtimeId) => manager.retryUsageLimit(runtimeId),
 		latestResetMs: () => rateLimitTracker.latestRejectedResetMs(),
+		store: pendingResumesStore,
 	});
 	powerMonitor.on("resume", resumer.reconcile);
 	app.on("will-quit", () => resumer.dispose());
@@ -203,6 +208,16 @@ export function registerSessionsHandlers(): SessionManager {
 	});
 	powerMonitor.on("resume", runner.reconcile);
 	app.on("will-quit", () => runner.dispose());
+	const reconcileAllWakes = () =>
+		void reconcileWakes(() => [...runner.wakeKeys(), ...resumer.wakeKeys()]);
+	powerMonitor.on("resume", () => {
+		const dueIns = [runner.nextDueIn(), resumer.nextDueIn()].filter(
+			(ms): ms is number => ms !== undefined,
+		);
+		const dueIn = Math.min(...dueIns);
+		if (dueIn <= WAKE_HOLD_WINDOW_MS) keepAwake.holdFor(dueIn + WAKE_HOLD_PADDING_MS);
+		reconcileAllWakes();
+	});
 
 	registerReadHandlers();
 	registerSettingsHandlers();
@@ -670,6 +685,8 @@ export function registerSessionsHandlers(): SessionManager {
 	);
 
 	runner.boot();
+	resumer.restore();
+	reconcileAllWakes();
 
 	return manager;
 }

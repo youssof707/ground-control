@@ -617,6 +617,14 @@ function CaffeinateRow({ process, first }: { process: CaffeinateProcess; first: 
 function PmsetScheduleSection() {
 	const [output, setOutput] = useState<string | null | undefined>(undefined);
 	const [loading, setLoading] = useState(false);
+	const [wakeError, setWakeError] = useState<string | null>(null);
+
+	useEffect(() => {
+		void window.claude.readWakeError().then(setWakeError);
+		return window.claude.on("wake:error", (payload) => {
+			setWakeError(typeof payload === "string" ? payload : null);
+		});
+	}, []);
 
 	const refresh = useCallback(() => {
 		setLoading(true);
@@ -640,6 +648,7 @@ function PmsetScheduleSection() {
 			}
 		>
 			<Card>
+				{wakeError ? <EmptyState text={`Last wake scheduling failed: ${wakeError}`} compact /> : null}
 				<ScrollList maxHeight={150}>
 					{output === undefined ? (
 						<EmptyState text="Loading…" compact />

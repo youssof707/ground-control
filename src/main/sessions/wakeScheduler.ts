@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
 import { userInfo } from "node:os";
 import { promisify } from "node:util";
+import { is } from "@electron-toolkit/utils";
 import { describeError, logActivity } from "../activityLog";
+import * as windows from "../windows";
 
 const execFileAsync = promisify(execFile);
 
@@ -9,12 +11,20 @@ const SUDO = "/usr/bin/sudo";
 const PMSET = "/usr/bin/pmset";
 const OSASCRIPT = "/usr/bin/osascript";
 const SUDOERS_PATH = "/etc/sudoers.d/ground-control";
+const OWNER = "ground-control";
+const PMSET_KEY_RE = /^(\d{2})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})$/;
+const SCHED_LINE_RE =
+	/^\s*\[\d+\]\s+(\S+)\s+at\s+(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})(?:\s+by\s+'([^']*)')?/;
 
 type AuthState = "unknown" | "ok" | "declined";
 
 let auth: AuthState = "unknown";
 let authInFlight: Promise<boolean> | null = null;
 const refs = new Map<string, number>();
+let shuttingDown = false;
+let lastWakeError: string | null = null;
+let reconcileChain: Promise<void> = Promise.resolve();
+const inFlight = new Set<Promise<string | null>>();
 
 function pad2(n: number): string {
 	return String(n).padStart(2, "0");
@@ -106,18 +116,118 @@ export function requestAuthorization(): Promise<boolean> {
 	return ensureAuthorized();
 }
 
-async function pmsetSchedule(args: string[]): Promise<void> {
-	const command = `pmset schedule ${args.join(" ")}`;
+export function getLastWakeError(): string | null {
+	return lastWakeError;
+}
+
+function setWakeError(error: string | null): void {
+	if (lastWakeError === error) return;
+	lastWakeError = error;
+	windows.broadcast("wake:error", error);
+}
+
+async function pmsetSchedule(args: string[]): Promise<boolean> {
+	const command = `pmset schedule ${args.join(" ")} ${OWNER}`;
 	try {
-		await execFileAsync(SUDO, ["-n", PMSET, "schedule", ...args]);
+		await execFileAsync(SUDO, ["-n", PMSET, "schedule", ...args, OWNER]);
 		logActivity("pmset", `${command}: ok`);
+		if (args[0] === "wake") setWakeError(null);
+		return true;
 	} catch (err) {
-		logActivity("pmset", `${command}: failed (${describeError(err)})`);
+		const message = `${command}: failed (${describeError(err)})`;
+		logActivity("pmset", message);
+		setWakeError(message);
+		return false;
 	}
 }
 
-export async function scheduleWake(atMs: number): Promise<string | null> {
-	if (atMs <= Date.now()) {
+export function parsePmsetKey(key: string): number {
+	const m = PMSET_KEY_RE.exec(key);
+	if (!m) return Number.NaN;
+	const [, month, day, year, h, min, s] = m;
+	return new Date(2000 + +year, +month - 1, +day, +h, +min, +s).getTime();
+}
+
+export function parseOwnedWakes(output: string, owner = OWNER): Map<string, number> {
+	const owned = new Map<string, number>();
+	for (const line of output.split("\n")) {
+		const m = SCHED_LINE_RE.exec(line);
+		if (!m || m[1] !== "wake" || m[8] !== owner) continue;
+		const [, , month, day, year, h, min, s] = m;
+		const key = formatPmsetDate(new Date(+year, +month - 1, +day, +h, +min, +s).getTime());
+		owned.set(key, (owned.get(key) ?? 0) + 1);
+	}
+	return owned;
+}
+
+export interface WakeDiff {
+	cancel: string[];
+	schedule: string[];
+}
+
+export function diffWakes(owned: Map<string, number>, wanted: Iterable<string>, now: number): WakeDiff {
+	const want = new Set(wanted);
+	const cancel: string[] = [];
+	for (const [key, count] of owned) {
+		const extra = count - (want.has(key) ? 1 : 0);
+		for (let i = 0; i < extra; i++) cancel.push(key);
+	}
+	const schedule = [...want].filter((key) => !owned.has(key) && parsePmsetKey(key) > now);
+	return { cancel, schedule };
+}
+
+function readOwnSchedule(): Promise<string | null> {
+	return execFileAsync(PMSET, ["-g", "sched"]).then(
+		({ stdout }) => stdout,
+		(err) => {
+			logActivity("pmset", `pmset -g sched failed: ${describeError(err)}`);
+			return null;
+		},
+	);
+}
+
+export function reconcileWakes(wanted: () => Iterable<string>): Promise<void> {
+	const run = reconcileChain.then(() => reconcileNow(wanted));
+	reconcileChain = run.catch((err) => logActivity("pmset", `wake reconcile failed: ${describeError(err)}`));
+	return run;
+}
+
+async function reconcileNow(wanted: () => Iterable<string>): Promise<void> {
+	if (process.platform !== "darwin") return;
+	if (is.dev) {
+		logActivity("pmset", "dev build: wake reconcile skipped");
+		return;
+	}
+	await Promise.all(inFlight);
+	const output = await readOwnSchedule();
+	if (output === null) return;
+	const { cancel, schedule } = diffWakes(parseOwnedWakes(output), shuttingDown ? [] : wanted(), Date.now());
+	if (cancel.length === 0 && schedule.length === 0) return;
+	if (auth !== "ok" && (shuttingDown || !(await ensureAuthorized()))) {
+		logActivity("pmset", `wake reconcile skipped: not authorized (${cancel.length} to cancel, ${schedule.length} to schedule)`);
+		return;
+	}
+	logActivity("pmset", `reconciling wakes: cancelling ${cancel.length}, scheduling ${schedule.length}`);
+	for (const key of cancel) await pmsetSchedule(["cancel", "wake", key]);
+	for (const key of schedule) await pmsetSchedule(["wake", key]);
+}
+
+function dropRef(key: string): void {
+	const count = refs.get(key) ?? 0;
+	if (count <= 1) refs.delete(key);
+	else refs.set(key, count - 1);
+}
+
+export function scheduleWake(atMs: number, now = Date.now()): Promise<string | null> {
+	const run = scheduleWakeNow(atMs, now);
+	inFlight.add(run);
+	void run.finally(() => inFlight.delete(run));
+	return run;
+}
+
+async function scheduleWakeNow(atMs: number, now: number): Promise<string | null> {
+	if (shuttingDown) return null;
+	if (atMs <= now) {
 		logActivity("pmset", `wake for ${new Date(atMs).toISOString()} skipped: already in the past`);
 		return null;
 	}
@@ -128,30 +238,55 @@ export async function scheduleWake(atMs: number): Promise<string | null> {
 		logActivity("pmset", `wake ${key} already scheduled, refs=${count + 1}`);
 		return key;
 	}
-	if (await ensureAuthorized()) await pmsetSchedule(["wake", key]);
-	else logActivity("pmset", `wake ${key} not scheduled: not authorized`);
+	if (is.dev) {
+		logActivity("pmset", `dev build: wake ${key} tracked without pmset`);
+		return key;
+	}
+	if (!(await ensureAuthorized())) {
+		logActivity("pmset", `wake ${key} not scheduled: not authorized`);
+		return key;
+	}
+	if (shuttingDown) return null;
+	const ok = await pmsetSchedule(["wake", key]);
+	if (shuttingDown) {
+		if (ok) await pmsetSchedule(["cancel", "wake", key]);
+		return null;
+	}
+	if (!ok) {
+		dropRef(key);
+		return null;
+	}
 	return key;
 }
 
-export async function cancelWake(key: string): Promise<void> {
+export async function cancelWake(key: string, now = Date.now()): Promise<void> {
 	const count = refs.get(key) ?? 0;
-	if (count <= 1) {
-		refs.delete(key);
-		if (count === 1 && auth === "ok") {
-			await pmsetSchedule(["cancel", "wake", key]);
-		} else if (count === 1) {
-			logActivity("pmset", `wake ${key} released without pmset cancel: not authorized`);
-		}
+	if (count > 1) {
+		refs.set(key, count - 1);
+		logActivity("pmset", `wake ${key} still needed, refs=${count - 1}`);
 		return;
 	}
-	refs.set(key, count - 1);
-	logActivity("pmset", `wake ${key} still needed, refs=${count - 1}`);
+	refs.delete(key);
+	if (count === 0) return;
+	if (parsePmsetKey(key) <= now) {
+		logActivity("pmset", `wake ${key} released: already passed`);
+		return;
+	}
+	if (is.dev) {
+		logActivity("pmset", `dev build: wake ${key} released without pmset`);
+		return;
+	}
+	if (auth !== "ok") {
+		logActivity("pmset", `wake ${key} released without pmset cancel: not authorized`);
+		return;
+	}
+	await pmsetSchedule(["cancel", "wake", key]);
 }
 
 export async function cancelAllWakes(): Promise<void> {
-	const keys = [...refs.keys()];
+	shuttingDown = true;
+	const count = refs.size;
 	refs.clear();
-	if (keys.length > 0) logActivity("pmset", `cancelling all ${keys.length} scheduled wakes`);
-	if (auth !== "ok") return;
-	await Promise.all(keys.map((key) => pmsetSchedule(["cancel", "wake", key])));
+	if (count > 0) logActivity("pmset", `cancelling all ${count} scheduled wakes`);
+	await reconcileWakes(() => []);
 }

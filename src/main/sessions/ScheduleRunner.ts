@@ -110,6 +110,22 @@ export class ScheduleRunner {
 		}
 	};
 
+	wakeKeys(): string[] {
+		const keys: string[] = [];
+		for (const entry of this.armed.values()) if (entry.wakeKey) keys.push(entry.wakeKey);
+		return keys;
+	}
+
+	nextDueIn(): number | undefined {
+		const now = this.now();
+		let soonest: number | undefined;
+		for (const entry of this.armed.values()) {
+			const dueIn = Math.max(entry.fireAt - now, 0);
+			if (soonest === undefined || dueIn < soonest) soonest = dueIn;
+		}
+		return soonest;
+	}
+
 	dispose(): void {
 		for (const entry of this.armed.values()) {
 			if (entry.timer) clearTimeout(entry.timer);
