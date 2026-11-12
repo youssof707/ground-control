@@ -18,6 +18,7 @@ import type { DictationHandle } from "../components/DictationButton";
  * a transcript against a stale draft after the owner re-renders.
  */
 const registry = new Map<string, { current: DictationHandle }>();
+const pendingStarts = new Set<string>();
 
 /**
  * Registers `box` under `scope`. Returns a disposer that removes it —
@@ -30,6 +31,9 @@ export function registerDictationHandle(
 	box: { current: DictationHandle },
 ): () => void {
 	registry.set(scope, box);
+	if (pendingStarts.delete(scope) && !box.current.isBusy()) {
+		box.current.toggle();
+	}
 	return () => {
 		if (registry.get(scope) === box) registry.delete(scope);
 	};
@@ -37,4 +41,13 @@ export function registerDictationHandle(
 
 export function getDictationHandle(scope: string): DictationHandle | null {
 	return registry.get(scope)?.current ?? null;
+}
+
+export function startDictationWhenReady(scope: string): void {
+	const handle = getDictationHandle(scope);
+	if (!handle) {
+		pendingStarts.add(scope);
+		return;
+	}
+	if (!handle.isBusy()) handle.toggle();
 }
