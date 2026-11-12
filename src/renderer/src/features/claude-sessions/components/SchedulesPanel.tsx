@@ -2,12 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import type { Schedule } from "@shared/schemas/schedules";
 import { T } from "../../../design/tokens";
 import { useSchedulesStore } from "../stores/useSchedulesStore";
-import { useSessionsStore } from "../stores/useSessionsStore";
 import { useScheduleControls } from "../hooks/useScheduleControls";
 import { formatMessageTime } from "../lib/messageTime";
 import { formatScheduleKind } from "../lib/scheduleFormat";
-import { dismissScheduleAlert } from "../lib/scheduleAlerts";
-import { CloseIcon, StatusDot, WarningIcon } from "./SchedulerWidget";
+import { StatusDot } from "./SchedulerWidget";
 import { Switch } from "../../../design/Switch";
 import { promptPreview } from "./ShortcutForm";
 
@@ -83,17 +81,8 @@ function ScheduleRow({
 		remove,
 		clearStatus,
 	} = useScheduleControls(schedule);
-	const alertSession = useSessionsStore((s) =>
-		schedule.alert?.sessionId ? s.sessions[schedule.alert.sessionId] : undefined,
-	);
-
-	const targetId = alertSession?.id ?? lastSession?.id;
-	const open = targetId
-		? () => {
-			if (schedule.alert) dismissScheduleAlert(schedule);
-			onOpenSession(targetId);
-		}
-		: undefined;
+	const targetId = lastSession?.id;
+	const open = targetId ? () => onOpenSession(targetId) : undefined;
 	const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 	const shownError = error ?? schedule.lastError;
 	const skippedRecently =
@@ -220,62 +209,6 @@ function ScheduleRow({
 							: ""}
 					</span>
 				) : null}
-				{schedule.alert ? (
-					<div
-						style={{
-							display: "flex",
-							alignItems: "flex-start",
-							gap: 6,
-							marginTop: 3,
-							padding: "5px 5px 5px 8px",
-							borderRadius: 5,
-							background: T.warnSoft,
-							boxShadow: `inset 0 0 0 0.5px ${T.warnBorder}`,
-							color: T.warn,
-							fontSize: 11.5,
-						}}
-					>
-						<span style={{ display: "inline-flex", paddingTop: 1, flexShrink: 0 }}>
-							<WarningIcon />
-						</span>
-						<span
-							style={{
-								flex: 1,
-								minWidth: 0,
-								color: T.text,
-								whiteSpace: "pre-wrap",
-								overflowWrap: "anywhere",
-							}}
-						>
-							{schedule.alert.message}
-						</span>
-						<button
-							type="button"
-							aria-label="Dismiss alert"
-							onClick={(e) => {
-								e.stopPropagation();
-								dismissScheduleAlert(schedule);
-							}}
-							onKeyDown={stop}
-							style={{
-								display: "flex",
-								alignItems: "center",
-								justifyContent: "center",
-								flexShrink: 0,
-								width: 16,
-								height: 16,
-								padding: 0,
-								borderRadius: 4,
-								background: "transparent",
-								border: "none",
-								color: T.warn,
-								cursor: "pointer",
-							}}
-						>
-							<CloseIcon />
-						</button>
-					</div>
-				) : null}
 			</div>
 			<div
 				onClick={stop}
@@ -293,7 +226,7 @@ function ScheduleRow({
 					onRunNow={() => void runNow()}
 					onStop={canStop ? () => void stopRun() : undefined}
 					onEdit={onEdit}
-					hasStatus={!!schedule.status || !!schedule.alert}
+					hasStatus={!!schedule.status}
 					onClearStatus={() => void clearStatus()}
 					onDelete={() => void remove()}
 				/>

@@ -158,8 +158,6 @@ const claude = {
 			id,
 			alwaysShowStatus,
 		}),
-	clearScheduleAlert: (id: string) =>
-		ipcRenderer.invoke("schedules:clearAlert", id),
 	clearScheduleStatus: (id: string) =>
 		ipcRenderer.invoke("schedules:clearStatus", id),
 	runScheduleNow: (id: string) => ipcRenderer.invoke("schedules:runNow", id),

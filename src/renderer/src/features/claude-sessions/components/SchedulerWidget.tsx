@@ -10,11 +10,7 @@ import { useReadStore } from "../stores/useReadStore";
 import { isScheduledSession } from "../lib/scheduledSessions";
 import { isSessionUnread } from "../lib/unread";
 import { formatShortAgo } from "../lib/messageTime";
-import {
-	dismissScheduleAlert,
-	scheduleSessionTarget,
-	sortedScheduleAlerts,
-} from "../lib/scheduleAlerts";
+import { scheduleSessionTarget } from "../lib/scheduleSessionTarget";
 import { scheduleLabel } from "./SchedulesPanel";
 
 const NOW_TICK_MS = 30_000;
@@ -83,8 +79,6 @@ export function SchedulerWidget({
 		return ids;
 	}, [order, sessions]);
 
-	const alerts = useMemo(() => sortedScheduleAlerts(schedules), [schedules]);
-
 	const activeScheduleId = activeSessionId
 		? sessions[activeSessionId]?.scheduleId
 		: undefined;
@@ -103,19 +97,13 @@ export function SchedulerWidget({
 		[schedules, unreadByScheduleId, activeScheduleId, runningScheduleIds],
 	);
 
-	const openSchedule = (schedule: Schedule, preferredSessionId?: string) => {
-		const target = scheduleSessionTarget(schedule, sessions, preferredSessionId);
+	const openSchedule = (schedule: Schedule) => {
+		const target = scheduleSessionTarget(schedule, sessions);
 		const unreadIds = unreadByScheduleId[schedule.id];
 		if (unreadIds?.length) useReadStore.getState().markAllRead(unreadIds);
 		if (target) navigate(`/sessions/${target}`);
 	};
 
-	const openAlert = (schedule: Schedule) => {
-		dismissScheduleAlert(schedule);
-		openSchedule(schedule, schedule.alert?.sessionId);
-	};
-
-	const hasBody = alerts.length > 0 || rows.length > 0;
 
 	return (
 		<div
@@ -185,29 +173,17 @@ export function SchedulerWidget({
 					</span>
 				</button>
 			</div>
-			{hasBody ? (
-				<>
-					{alerts.map((s) => (
-						<AlertRow
-							key={s.id}
-							schedule={s}
-							onOpen={() => openAlert(s)}
-							onDismiss={() => dismissScheduleAlert(s)}
-						/>
-					))}
-					{rows.map((s) => (
-						<StatusRow
-							key={s.id}
-							schedule={s}
-							now={now}
-							running={runningScheduleIds.has(s.id)}
-							unread={unreadByScheduleId[s.id]?.length ?? 0}
-							active={s.id === activeScheduleId}
-							onClick={() => openSchedule(s)}
-						/>
-					))}
-				</>
-			) : null}
+			{rows.map((s) => (
+				<StatusRow
+					key={s.id}
+					schedule={s}
+					now={now}
+					running={runningScheduleIds.has(s.id)}
+					unread={unreadByScheduleId[s.id]?.length ?? 0}
+					active={s.id === activeScheduleId}
+					onClick={() => openSchedule(s)}
+				/>
+			))}
 		</div>
 	);
 }
@@ -234,78 +210,6 @@ const ELLIPSIS = {
 	textOverflow: "ellipsis",
 	whiteSpace: "nowrap",
 } as const;
-
-function AlertRow({
-	schedule,
-	onOpen,
-	onDismiss,
-}: {
-	schedule: Schedule;
-	onOpen: () => void;
-	onDismiss: () => void;
-}) {
-	return (
-		<div
-			style={{
-				display: "flex",
-				alignItems: "center",
-				height: 28,
-				borderRadius: 5,
-				background: T.warnSoft,
-				boxShadow: `inset 0 0 0 0.5px ${T.warnBorder}`,
-			}}
-		>
-			<button
-				type="button"
-				className="sched-card-alert"
-				onClick={onOpen}
-				style={{
-					...ROW_STYLE,
-					flex: 1,
-					height: "100%",
-					paddingRight: 6,
-					background: "transparent",
-					color: T.warn,
-				}}
-			>
-				<IconSlot>
-					<WarningIcon />
-				</IconSlot>
-				<span
-					style={{ ...ELLIPSIS, fontWeight: 500, flexShrink: 0, maxWidth: "40%" }}
-				>
-					{scheduleLabel(schedule)}
-				</span>
-				<span style={{ ...ELLIPSIS, flex: 1, color: T.text }}>
-					{schedule.alert?.message}
-				</span>
-			</button>
-			<button
-				type="button"
-				className="sched-card-dismiss"
-				aria-label="Dismiss alert"
-				onClick={onDismiss}
-				style={{
-					display: "flex",
-					alignItems: "center",
-					justifyContent: "center",
-					flexShrink: 0,
-					width: 16,
-					height: 16,
-					marginRight: 5,
-					padding: 0,
-					borderRadius: 4,
-					background: "transparent",
-					border: "none",
-					color: T.warn,
-					cursor: "pointer",
-				}}
-			>
-				<CloseIcon />
-			</button>
-		</div>
-	);
-}
 
 function StatusRow({
 	schedule,
@@ -434,39 +338,6 @@ function ClockIcon() {
 				strokeWidth="1.2"
 				strokeLinecap="round"
 				strokeLinejoin="round"
-			/>
-		</svg>
-	);
-}
-
-export function WarningIcon() {
-	return (
-		<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-			<path
-				d="M6 1.5L11 10.5H1L6 1.5Z"
-				stroke="currentColor"
-				strokeWidth="1.2"
-				strokeLinejoin="round"
-			/>
-			<path
-				d="M6 5v2.5"
-				stroke="currentColor"
-				strokeWidth="1.2"
-				strokeLinecap="round"
-			/>
-			<circle cx="6" cy="9" r="0.6" fill="currentColor" />
-		</svg>
-	);
-}
-
-export function CloseIcon() {
-	return (
-		<svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden>
-			<path
-				d="M1.5 1.5l5 5M6.5 1.5l-5 5"
-				stroke="currentColor"
-				strokeWidth="1.3"
-				strokeLinecap="round"
 			/>
 		</svg>
 	);

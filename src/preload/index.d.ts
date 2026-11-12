@@ -177,7 +177,6 @@ declare global {
 				id: string,
 				alwaysShowStatus: boolean,
 			) => Promise<Schedule>;
-			clearScheduleAlert: (id: string) => Promise<void>;
 			clearScheduleStatus: (id: string) => Promise<void>;
 			runScheduleNow: (id: string) => Promise<string>;
 			listSkills: () => Promise<Skill[]>;
