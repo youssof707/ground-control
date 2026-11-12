@@ -1,5 +1,6 @@
 import type { PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import type { BabysitConfig } from "../../shared/claude-sessions/babysit";
+import type { SessionMessage } from "../../shared/schemas/claude_session";
 import { describeError, logActivity } from "../activityLog";
 import { decideWithConfig } from "./Babysitter";
 import { withTimeout, type SessionManager } from "./SessionManager";
@@ -7,6 +8,7 @@ import { withTimeout, type SessionManager } from "./SessionManager";
 const DELETE_HOOK_TIMEOUT_MS = 5 * 60_000;
 const TEARDOWN_TIMEOUT_MS = 10_000;
 const HOOK_DENY_MESSAGE = "Session is being deleted";
+const KEPT_TRANSCRIPTS = 20;
 
 type HookOutcome = "completed" | "timed-out" | "aborted";
 
@@ -19,6 +21,7 @@ interface RunningHook {
 
 export class DeleteHookRunner {
 	private hooks = new Map<string, RunningHook>();
+	private transcripts = new Map<string, SessionMessage[]>();
 
 	constructor(private manager: SessionManager) {}
 
@@ -38,6 +41,7 @@ export class DeleteHookRunner {
 			failure: Promise.resolve(null),
 		};
 		this.hooks.set(sessionId, hook);
+		this.keepTranscript(sessionId, this.manager.tapTranscript(sessionId));
 		hook.failure = this.run(sessionId, opts.prompt, abort.signal).finally(() => {
 			if (this.hooks.get(sessionId) === hook) this.hooks.delete(sessionId);
 		});
@@ -55,6 +59,21 @@ export class DeleteHookRunner {
 		if (!hook) return;
 		hook.abort.abort();
 		await hook.failure;
+	}
+
+	takeTranscript(sessionId: string): SessionMessage[] {
+		const transcript = this.transcripts.get(sessionId) ?? [];
+		this.transcripts.delete(sessionId);
+		return transcript;
+	}
+
+	private keepTranscript(sessionId: string, transcript: SessionMessage[]): void {
+		this.transcripts.delete(sessionId);
+		this.transcripts.set(sessionId, transcript);
+		for (const oldest of this.transcripts.keys()) {
+			if (this.transcripts.size <= KEPT_TRANSCRIPTS) break;
+			this.transcripts.delete(oldest);
+		}
 	}
 
 	async waitForWorktree(worktreeId: string): Promise<void> {
@@ -106,6 +125,7 @@ export class DeleteHookRunner {
 			).catch((err) =>
 				console.error("[ccw] delete hook teardown failed:", err),
 			);
+			this.manager.untapTranscript(sessionId);
 		}
 		return failure;
 	}

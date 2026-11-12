@@ -608,6 +608,7 @@ export function registerSessionsHandlers(): SessionManager {
 		async (e, snapshot: DeletedSessionSnapshot) => {
 			const { session, prunedGroup, worktreeDeleted } = snapshot;
 			await deleteHooks.abort(session.id);
+			const hookTranscript = deleteHooks.takeTranscript(session.id);
 
 			// Lift the runtime tombstone first, so the broadcasts below (and
 			// any future status the restored row reports) aren't dropped by
@@ -661,6 +662,7 @@ export function registerSessionsHandlers(): SessionManager {
 			// so restore reuses it rather than adding a near-identical twin.
 			const restored = await sessionStore.createSession({
 				...session,
+				messages: [...session.messages, ...hookTranscript],
 				status,
 				finishedAt: session.finishedAt ?? Date.now(),
 				groupId,
