@@ -34,6 +34,9 @@ body {
 ::-webkit-scrollbar-track {
 	background: transparent;
 }
+.queue-strip::-webkit-scrollbar {
+	display: none;
+}
 
 code {
 	font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
