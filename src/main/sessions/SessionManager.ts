@@ -593,6 +593,7 @@ export class SessionManager {
 	// In-flight `deleteSdkTranscript` calls, so `discardAllSidequests` can wait
 	// on deletions that `discardSidequest` otherwise fires and forgets.
 	private pendingTranscriptDeletes = new Set<Promise<void>>();
+	private transcriptTaps = new Map<string, SessionMessage[]>();
 
 	constructor(
 		private broker: PermissionBroker,
@@ -640,6 +641,21 @@ export class SessionManager {
 	 */
 	unmarkDeleted(id: string): void {
 		this.deletedIds.delete(id);
+	}
+
+	tapTranscript(id: string): SessionMessage[] {
+		const captured: SessionMessage[] = [];
+		this.transcriptTaps.set(id, captured);
+		return captured;
+	}
+
+	untapTranscript(id: string): void {
+		this.transcriptTaps.delete(id);
+	}
+
+	private persistMessage(id: string, message: SessionMessage): void {
+		this.transcriptTaps.get(id)?.push(message);
+		void sessionStore.appendMessage(id, message);
 	}
 
 	getSession(id: string): ClaudeSession | undefined {
@@ -2229,7 +2245,7 @@ export class SessionManager {
 					message: sessionMessage,
 				});
 				if (persist) {
-					void sessionStore.appendMessage(id, sessionMessage);
+					this.persistMessage(id, sessionMessage);
 				} else {
 					// A sidequest has no store row, so this map is main's only
 					// copy of the transcript — and promoteSidequest needs it to
@@ -2397,7 +2413,7 @@ export class SessionManager {
 			content: { type: "user", message: { role: "user", content: blocks } },
 			ts: Date.now(),
 		};
-		void sessionStore.appendMessage(sessionId, sessionMessage);
+		this.persistMessage(sessionId, sessionMessage);
 		if (opts.broadcast) {
 			this.send("session:message", { sessionId, message: sessionMessage });
 		}
@@ -2461,7 +2477,7 @@ export class SessionManager {
 		// show up until the next hydrate. Same object both ways, so the live
 		// row and the persisted row share an id and don't double up.
 		this.send("session:message", { sessionId, message });
-		void sessionStore.appendMessage(sessionId, message);
+		this.persistMessage(sessionId, message);
 	}
 
 	/**

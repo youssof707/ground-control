@@ -82,12 +82,6 @@ const WAKE_HOLD_PADDING_MS = 60_000;
 
 export function registerSessionsHandlers(): SessionManager {
 	const notifications = new NotificationManager();
-	const syncScheduleAlertBadge = () =>
-		notifications.setScheduleAlertCount(
-			schedulesStore.list().filter((s) => s.alert).length,
-		);
-	syncScheduleAlertBadge();
-	schedulesStore.onChange(syncScheduleAlertBadge);
 	let manager: SessionManager;
 	// Babysit mode: per-session rules for answering prompts while the user is
 	// away. In memory only — nothing here is ever written to disk.
@@ -157,9 +151,7 @@ export function registerSessionsHandlers(): SessionManager {
 		{
 			onReport: (report) => {
 				if (deleteHooks.isRunning(report.sessionId)) return;
-				void scheduleStatus.report(report).then((schedule) => {
-					if (report.alert && schedule) notifications.notifyScheduleAlert(schedule);
-				});
+				void scheduleStatus.report(report);
 			},
 			onSettled: (scheduleId, sessionId, outcome) => {
 				void scheduleStatus.settle(scheduleId, sessionId, outcome);
@@ -608,6 +600,7 @@ export function registerSessionsHandlers(): SessionManager {
 		async (e, snapshot: DeletedSessionSnapshot) => {
 			const { session, prunedGroup, worktreeDeleted } = snapshot;
 			await deleteHooks.abort(session.id);
+			const hookTranscript = deleteHooks.takeTranscript(session.id);
 
 			// Lift the runtime tombstone first, so the broadcasts below (and
 			// any future status the restored row reports) aren't dropped by
@@ -661,6 +654,7 @@ export function registerSessionsHandlers(): SessionManager {
 			// so restore reuses it rather than adding a near-identical twin.
 			const restored = await sessionStore.createSession({
 				...session,
+				messages: [...session.messages, ...hookTranscript],
 				status,
 				finishedAt: session.finishedAt ?? Date.now(),
 				groupId,

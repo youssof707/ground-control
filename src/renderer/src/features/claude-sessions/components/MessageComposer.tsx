@@ -633,14 +633,13 @@ export function MessageComposer({
 				) : null}
 				{queuedMessages.length > 0 ? (
 					<div
+						className="queue-strip"
 						style={{
 							display: "flex",
 							gap: 6,
 							marginBottom: 10,
 							overflowX: "auto",
-							// The global ::-webkit-scrollbar is 10px tall — chunky next
-							// to 22px chips, so this strip asks for the thin variant.
-							scrollbarWidth: "thin",
+							scrollbarWidth: "none",
 						}}
 					>
 						{queuedMessages.map((msg, i) => (

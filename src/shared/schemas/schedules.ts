@@ -51,13 +51,6 @@ export const ScheduleStatusSchema = z.object({
 });
 export type ScheduleStatus = z.infer<typeof ScheduleStatusSchema>;
 
-export const ScheduleAlertSchema = z.object({
-	message: z.string(),
-	at: z.number(),
-	sessionId: z.string(),
-});
-export type ScheduleAlert = z.infer<typeof ScheduleAlertSchema>;
-
 export const ScheduleSchema = z.object({
 	id: z.string(),
 	title: z.string().catch(""),
@@ -76,7 +69,6 @@ export const ScheduleSchema = z.object({
 	lastSkipReason: ScheduleSkipReasonSchema.optional().catch(undefined),
 	lastError: z.string().optional(),
 	status: ScheduleStatusSchema.optional().catch(undefined),
-	alert: ScheduleAlertSchema.optional().catch(undefined),
 });
 export type Schedule = z.infer<typeof ScheduleSchema>;
 

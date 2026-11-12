@@ -15,6 +15,11 @@ import { runBackgroundTask } from "../../background-tasks/stores/useBackgroundTa
 import { createSessionFromDraft } from "./promoteDraft";
 import { deleteSessionOnMain } from "./deleteSessionActions";
 import { sendTurn } from "./sendTurn";
+import { focusComposer } from "./composerActions";
+import {
+	getDictationHandle,
+	startDictationWhenReady,
+} from "./dictationRegistry";
 
 /**
  * Handoff: one click from a message's ⋯ menu replaces the current session
@@ -49,6 +54,19 @@ function handoffTitle(oldTitle: string): string {
 		200 - TITLE_SUFFIX.length,
 	);
 	return `${base.trimEnd()}${TITLE_SUFFIX}`;
+}
+
+function withSpokenText(
+	draft: ComposerDraft | undefined,
+	spoken: string,
+): ComposerDraft | undefined {
+	const text = spoken.trim();
+	if (!text) return draft;
+	const existing = (draft?.text ?? "").replace(/\s+$/, "");
+	return {
+		text: existing ? `${existing} ${text}` : text,
+		images: draft?.images ?? [],
+	};
 }
 
 function carryComposerState(
@@ -102,6 +120,13 @@ export function runHandoff(input: {
 	const carriedDraft = useDraftStore.getState().draftsBySession[oldId];
 	const carriedQueue =
 		useQueuedMessagesStore.getState().queuesBySession[oldId] ?? [];
+	let takeError: unknown = null;
+	const take = getDictationHandle(oldId)
+		?.stopForHandoff()
+		?.catch((err: unknown) => {
+			takeError = err;
+			return "";
+		});
 
 	// Same local cleanup a sidebar delete does, plus the two stores it
 	// doesn't touch but that would otherwise leak a keyed entry for a session
@@ -138,8 +163,19 @@ export function runHandoff(input: {
 			// Resolves on `session:started`, which main fires only after the
 			// successor record is persisted — so from here on the source can
 			// be deleted without racing the group prune.
-			const newId = await createSessionFromDraft(draft);
-			carryComposerState(newId, carriedDraft, carriedQueue);
+			const [newId, spoken] = await Promise.all([
+				createSessionFromDraft(draft),
+				take ?? Promise.resolve(""),
+			]);
+			carryComposerState(
+				newId,
+				withSpokenText(carriedDraft, spoken),
+				carriedQueue,
+			);
+			if (take && follow) {
+				focusComposer();
+				startDictationWhenReady(newId);
+			}
 			navigate(`/sessions/${newId}`);
 			// Send and delete are independent; neither waits on the other.
 			// `allSettled` so the undo entry still lands when the delete
@@ -165,6 +201,7 @@ export function runHandoff(input: {
 			for (const r of [deleted, sent]) {
 				if (r.status === "rejected") throw r.reason;
 			}
+			if (takeError) throw takeError;
 		},
 	});
 }

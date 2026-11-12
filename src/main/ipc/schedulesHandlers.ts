@@ -12,7 +12,7 @@ import {
 } from "../../shared/schemas/schedules";
 import type { ScheduleRunner } from "../sessions/ScheduleRunner";
 import { requestAuthorization } from "../sessions/wakeScheduler";
-import { clearAlert, clearStatus } from "../sessions/scheduleStatus";
+import { clearStatus } from "../sessions/scheduleStatus";
 import { directoryExists } from "../sessions/fsUtils";
 
 function assertFuture(kind: ScheduleKind, now: number): void {
@@ -150,10 +150,6 @@ export function registerSchedulesHandlers(runner: ScheduleRunner): void {
 		const session = await runner.runNow(id);
 		return session.id;
 	});
-
-	ipcMain.handle("schedules:clearAlert", (_e, id: string) =>
-		clearAlert(id),
-	);
 
 	ipcMain.handle("schedules:clearStatus", (_e, id: string) =>
 		clearStatus(id),

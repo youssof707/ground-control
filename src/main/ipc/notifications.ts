@@ -1,12 +1,10 @@
 import { Notification, app } from "electron";
 import type { PermissionRequest } from "../../shared/claude-sessions/types";
-import type { Schedule } from "../../shared/schemas/schedules";
 import * as windows from "../windows";
 
 export class NotificationManager {
 	private warnedNoSupport = false;
 	private pendingCount = 0;
-	private scheduleAlertCount = 0;
 
 	private canNotify(): boolean {
 		if (Notification.isSupported()) return true;
@@ -18,38 +16,6 @@ export class NotificationManager {
 			this.warnedNoSupport = true;
 		}
 		return false;
-	}
-
-	notifyScheduleAlert(schedule: Schedule) {
-		const alert = schedule.alert;
-		if (!alert || !this.canNotify()) return;
-		const n = new Notification({
-			title: schedule.title.trim() || "Scheduled job",
-			body: alert.message,
-			silent: false,
-		});
-		n.on("click", () => {
-			const win = windows.showAndFocusAny();
-			if (!win) return;
-			win.webContents.send("notification:clicked", {
-				type: "scheduleAlert",
-				scheduleId: schedule.id,
-				sessionId: alert.sessionId,
-			});
-		});
-		n.on("failed", (_e, error) => {
-			console.error("[ccw] notification failed:", error);
-		});
-		try {
-			n.show();
-		} catch (err) {
-			console.error("[ccw] notification show() threw:", err);
-		}
-	}
-
-	setScheduleAlertCount(count: number) {
-		this.scheduleAlertCount = count;
-		this.applyBadge();
 	}
 
 	notifyPermissionRequest(req: PermissionRequest, sessionTitle?: string) {
@@ -107,7 +73,7 @@ export class NotificationManager {
 		// Dock badge only reflects items waiting for user attention
 		// (pending permission requests). Unread assistant messages are
 		// surfaced in-app via AppNav, not on the dock.
-		const total = this.pendingCount + this.scheduleAlertCount;
+		const total = this.pendingCount;
 		app.dock?.setBadge(total > 0 ? String(total) : "");
 	}
 }

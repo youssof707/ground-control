@@ -5,12 +5,6 @@ import {
 	useSidequestsStore,
 } from "../stores/useSidequestsStore";
 import { useRightPanelStore } from "../stores/useRightPanelStore";
-import { useSchedulesStore } from "../stores/useSchedulesStore";
-import { useSessionsStore } from "../stores/useSessionsStore";
-import {
-	dismissScheduleAlert,
-	scheduleSessionTarget,
-} from "../lib/scheduleAlerts";
 
 interface PermissionClickIntent {
 	type: "permission";
@@ -18,13 +12,7 @@ interface PermissionClickIntent {
 	sessionId: string;
 }
 
-interface ScheduleAlertClickIntent {
-	type: "scheduleAlert";
-	scheduleId: string;
-	sessionId: string;
-}
-
-type NotificationClickIntent = PermissionClickIntent | ScheduleAlertClickIntent;
+type NotificationClickIntent = PermissionClickIntent;
 
 export function useNotificationRouter() {
 	const navigate = useNavigate();
@@ -33,18 +21,6 @@ export function useNotificationRouter() {
 		if (!window.claude) return;
 		return window.claude.on("notification:clicked", (payload) => {
 			const intent = payload as NotificationClickIntent;
-			if (intent.type === "scheduleAlert") {
-				const schedule = useSchedulesStore.getState().byId[intent.scheduleId];
-				if (!schedule) return;
-				const target = scheduleSessionTarget(
-					schedule,
-					useSessionsStore.getState().sessions,
-					intent.sessionId,
-				);
-				if (schedule.alert) dismissScheduleAlert(schedule);
-				if (target) navigate(`/sessions/${target}`);
-				return;
-			}
 			if (intent.type !== "permission") return;
 			// A sidequest has no route of its own — navigate to its parent
 			// session and open the panel where its permission card lives.

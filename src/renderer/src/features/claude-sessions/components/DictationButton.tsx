@@ -59,6 +59,7 @@ export interface DictationHandle {
 	/** True whenever this instance isn't idle — lets a caller route a global
 	 * shortcut to whichever instance already has a take in flight. */
 	isBusy: () => boolean;
+	stopForHandoff: () => Promise<string> | null;
 }
 
 interface Props {
@@ -240,8 +241,7 @@ export function DictationButton({
 		setStateSafe("idle");
 	};
 
-	const stopAndTranscribe = async (): Promise<void> => {
-		if (!audioCtxRef.current) return;
+	const finishTake = async (): Promise<string> => {
 		setStateSafe("transcribing");
 		try {
 			// Grab the captured samples BEFORE cleanup clears the chunk list.
@@ -250,10 +250,7 @@ export function DictationButton({
 			cleanupCapture();
 
 			const total = chunks.reduce((n, c) => n + c.length, 0);
-			if (total < SAMPLE_RATE * MIN_SECONDS) {
-				setStateSafe("idle");
-				return;
-			}
+			if (total < SAMPLE_RATE * MIN_SECONDS) return "";
 			const pcm = new Float32Array(total);
 			let offset = 0;
 			for (const c of chunks) {
@@ -261,12 +258,19 @@ export function DictationButton({
 				offset += c.length;
 			}
 
-			const text = await window.claude.transcribeDictation(pcm);
-			if (text) onInsert(text);
-			setStateSafe("idle");
-		} catch (err) {
+			return await window.claude.transcribeDictation(pcm);
+		} finally {
 			cleanupCapture();
 			setStateSafe("idle");
+		}
+	};
+
+	const stopAndTranscribe = async (): Promise<void> => {
+		if (!audioCtxRef.current) return;
+		try {
+			const text = await finishTake();
+			if (text) onInsert(text);
+		} catch (err) {
 			onError(err instanceof Error ? err.message : String(err));
 		}
 	};
@@ -312,6 +316,15 @@ export function DictationButton({
 		},
 		toggle,
 		isBusy: () => stateRef.current !== "idle",
+		stopForHandoff: () => {
+			const s = stateRef.current;
+			if (s === "starting" || s === "downloading") {
+				cancelRecording();
+				return Promise.resolve("");
+			}
+			if (s !== "recording" || !audioCtxRef.current) return null;
+			return finishTake();
+		},
 	};
 	const handleRef = useRef<DictationHandle>(impl);
 	handleRef.current = impl;

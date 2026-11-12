@@ -87,9 +87,7 @@ export function useScheduleControls(schedule: Schedule) {
 
 	const clearStatus = () =>
 		attempt(async () => {
-			useSchedulesStore
-				.getState()
-				.upsert({ ...schedule, status: undefined, alert: undefined });
+			useSchedulesStore.getState().upsert({ ...schedule, status: undefined });
 			await window.claude.clearScheduleStatus(schedule.id);
 		});
 
