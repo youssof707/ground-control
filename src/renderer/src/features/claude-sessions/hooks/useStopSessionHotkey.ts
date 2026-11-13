@@ -4,6 +4,7 @@ import { stopSession, stopSidequest } from "../lib/sessionControlActions";
 import { isDraftId } from "../stores/useDraftSessionsStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { useSidequestsStore } from "../stores/useSidequestsStore";
+import { useTerminalsStore } from "../stores/useTerminalsStore";
 
 function isFocusInSidequestPanel(): boolean {
 	const focused = document.activeElement as HTMLElement | null;
@@ -33,6 +34,7 @@ export function useStopSessionHotkey(): void {
 		const onKeyDown = (e: KeyboardEvent) => {
 			if (!e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
 			if (e.key.toLowerCase() !== "c") return;
+			if (useTerminalsStore.getState().openGroupId) return;
 
 			const sessionId = activeSessionIdRef.current;
 			if (!sessionId) return;

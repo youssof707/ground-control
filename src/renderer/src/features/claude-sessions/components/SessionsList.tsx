@@ -1009,7 +1009,7 @@ export function SessionsList({
 					flex: 1,
 					overflowY: "auto",
 					minHeight: 0,
-					paddingBottom: 56,
+					paddingBottom: "var(--sidebar-footer-h, 56px)",
 				}}
 			>
 				{visibleOrder.length === 0 && !draft ? (

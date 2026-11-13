@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { T } from "../../../design/tokens";
 import { RateLimitMeter } from "./RateLimitMeter";
+import { TerminalsCard } from "./TerminalsCard";
 
 /**
  * Pinned to the bottom of the sessions sidebar pane (its parent supplies
@@ -28,8 +29,26 @@ export function SidebarFooter() {
 		};
 	}, []);
 
+	const footerRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		const footer = footerRef.current;
+		const pane = footer?.parentElement;
+		if (!footer || !pane) return;
+		const publishHeight = () =>
+			pane.style.setProperty("--sidebar-footer-h", `${footer.offsetHeight}px`);
+		const observer = new ResizeObserver(publishHeight);
+		observer.observe(footer);
+		publishHeight();
+		return () => {
+			observer.disconnect();
+			pane.style.removeProperty("--sidebar-footer-h");
+		};
+	}, []);
+
 	return (
 		<div
+			ref={footerRef}
 			style={{
 				position: "absolute",
 				left: 0,
@@ -44,6 +63,7 @@ export function SidebarFooter() {
 				userSelect: "none",
 			}}
 		>
+			<TerminalsCard />
 			<RateLimitMeter />
 			<span
 				onDoubleClick={() => {

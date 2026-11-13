@@ -4,6 +4,7 @@ asar: true
 asarUnpack:
   - "node_modules/@anthropic-ai/**"
   - "node_modules/@kutalia/whisper-node-addon/**"
+  - "node_modules/node-pty/**"
 directories:
   buildResources: build
 files:

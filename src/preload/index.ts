@@ -187,6 +187,19 @@ const claude = {
 	mcpAuthenticate: (cwd: string, name: string) =>
 		ipcRenderer.invoke("mcp:authenticate", { cwd, name }),
 	mcpRelease: (cwd: string) => ipcRenderer.invoke("mcp:release", { cwd }),
+	listTerminals: () => ipcRenderer.invoke("terminals:list"),
+	createTerminal: (cwd?: string, splitFrom?: string) =>
+		ipcRenderer.invoke("terminals:create", cwd, splitFrom),
+	terminalSnapshot: (id: string) => ipcRenderer.invoke("terminals:snapshot", id),
+	killTerminal: (id: string) => ipcRenderer.invoke("terminals:kill", id),
+	killTerminalGroup: (groupId: string) =>
+		ipcRenderer.invoke("terminals:killGroup", groupId),
+	renameTerminalGroup: (groupId: string, name: string) =>
+		ipcRenderer.invoke("terminals:renameGroup", groupId, name),
+	writeTerminal: (id: string, data: string) =>
+		ipcRenderer.send("terminals:write", id, data),
+	resizeTerminal: (id: string, cols: number, rows: number) =>
+		ipcRenderer.send("terminals:resize", id, cols, rows),
 	on: (channel: string, fn: (payload: unknown) => void) => {
 		const listener = (_e: IpcRendererEvent, payload: unknown) => fn(payload);
 		ipcRenderer.on(channel, listener);

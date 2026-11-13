@@ -41,6 +41,10 @@ import type {
 import type { Skill } from "../shared/schemas/skills";
 import type { McpAuthStart, McpServerView } from "../shared/schemas/mcp";
 import type {
+	TerminalInfo,
+	TerminalSnapshot,
+} from "../shared/schemas/terminals";
+import type {
 	ModelInfo,
 	SDKRateLimitInfo,
 } from "@anthropic-ai/claude-agent-sdk";
@@ -213,6 +217,17 @@ declare global {
 			mcpToggle: (cwd: string, name: string, enabled: boolean) => Promise<void>;
 			mcpAuthenticate: (cwd: string, name: string) => Promise<McpAuthStart>;
 			mcpRelease: (cwd: string) => Promise<void>;
+			listTerminals: () => Promise<TerminalInfo[]>;
+			createTerminal: (
+				cwd?: string,
+				splitFrom?: string,
+			) => Promise<TerminalInfo | null>;
+			terminalSnapshot: (id: string) => Promise<TerminalSnapshot | null>;
+			killTerminal: (id: string) => Promise<void>;
+			killTerminalGroup: (groupId: string) => Promise<void>;
+			renameTerminalGroup: (groupId: string, name: string) => Promise<void>;
+			writeTerminal: (id: string, data: string) => void;
+			resizeTerminal: (id: string, cols: number, rows: number) => void;
 			on: (channel: string, fn: (payload: unknown) => void) => () => void;
 		};
 	}

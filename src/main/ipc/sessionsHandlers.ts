@@ -50,6 +50,7 @@ import { registerSchedulesHandlers } from "./schedulesHandlers";
 import { registerSkillsHandlers } from "./skillsHandlers";
 import { registerUpdaterHandlers } from "./updaterHandlers";
 import { registerDictationHandlers } from "./dictationHandlers";
+import { registerTerminalsHandlers } from "./terminalsHandlers";
 import { registerImageHandlers } from "./imageHandlers";
 import { registerMcpHandlers } from "./mcpHandlers";
 import { registerDeveloperHandlers } from "./developerHandlers";
@@ -224,6 +225,7 @@ export function registerSessionsHandlers(): SessionManager {
 	registerSkillsHandlers();
 	registerUpdaterHandlers();
 	registerDictationHandlers();
+	registerTerminalsHandlers();
 	registerImageHandlers();
 	registerMcpHandlers(manager);
 	registerDeveloperHandlers(keepAwake, (runtimeId) => {

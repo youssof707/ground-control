@@ -22,7 +22,7 @@
 		"landing": "npm --prefix site run dev",
 		"landing:build": "npm --prefix site run build",
 		"landing:typecheck": "npm --prefix site run typecheck",
-		"postinstall": "node scripts/fix-whisper-rpath.mjs"
+		"postinstall": "node scripts/fix-whisper-rpath.mjs && node scripts/fix-node-pty-helper.mjs"
 	},
 	"dependencies": {
 		"@anthropic-ai/claude-agent-sdk": "^0.2.138",
@@ -30,10 +30,13 @@
 		"@electron-toolkit/utils": "^4.0.0",
 		"@fastify/cors": "^11.2.0",
 		"@kutalia/whisper-node-addon": "^1.1.0",
+		"@xterm/addon-fit": "^0.11.0",
+		"@xterm/xterm": "^6.0.0",
 		"diff": "^9.0.0",
 		"fastify": "^5.8.5",
 		"gitdiff-parser": "^0.3.1",
 		"highlight.js": "^11.11.1",
+		"node-pty": "^1.1.0",
 		"p-queue": "^9.2.0",
 		"react-markdown": "^10.1.0",
 		"react-router-dom": "^7.15.0",
