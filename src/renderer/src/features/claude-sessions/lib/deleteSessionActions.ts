@@ -29,7 +29,6 @@ export async function deleteSessionWithUndo(
 	usePermissionsStore.getState().removeBySessionId(sessionId);
 	if (snapshot) {
 		pushUndo({
-			kind: "delete",
 			sessionId,
 			title,
 			snapshot,

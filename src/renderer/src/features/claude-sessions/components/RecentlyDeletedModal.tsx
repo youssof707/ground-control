@@ -5,21 +5,6 @@ import { useBackdropDismiss } from "../../../components/useBackdropDismiss";
 import { useUndoStore } from "../stores/useUndoStore";
 import { restoreEntry } from "../lib/undoActions";
 
-/**
- * The durable half of undo, opened from "Recently deleted (n)" in the
- * sidebar's view-options menu.
- *
- * The toast is gone in eight seconds and Shift+Cmd+T is invisible, so without
- * this nothing on screen would ever suggest a deleted session is still
- * recoverable. This is the surface for "I noticed twenty minutes later."
- *
- * The footer line is not decoration — it's what makes the list honest. The
- * buffer is in-memory only, so a list that looked durable but silently emptied
- * on relaunch would be a worse promise than having no list at all.
- *
- * Restores route through the same `restoreEntry` the toast and hotkey use, so
- * there's exactly one restore path in the app.
- */
 export function RecentlyDeletedModal({
 	open,
 	onClose,

@@ -123,8 +123,6 @@ export function SessionsList({
 	const groups = useSessionGroupsStore((s) => s.groups);
 	const schedulerOpen = useSchedulerModalStore((s) => s.isOpen);
 	// Read-only settings modal, opened from the view-options dropdown.
-	// "Recently deleted" list, also opened from the view-options dropdown —
-	// the durable surface for undo once the toast has expired.
 	const [recentlyDeletedOpen, setRecentlyDeletedOpen] = useState(false);
 	const [worktreesOpen, setWorktreesOpen] = useState(false);
 	const undoEntries = useUndoStore((s) => s.entries);
@@ -586,18 +584,6 @@ export function SessionsList({
 		? worktrees[pendingDeleteWorktreeId]
 		: undefined;
 
-	/**
-	 * Entry point for the ⋯ menu's Delete item.
-	 *
-	 * Delete is undoable now, so the blanket "are you sure?" is gone — the undo
-	 * toast is a better net than a dialog people click through on reflex.
-	 *
-	 * The modal survives in one case, and it isn't about the session: when this
-	 * is the LAST session on a worktree, deleting it offers to destroy that
-	 * checkout too. `worktreeRemove` shells out to git and then does a recursive
-	 * `fs.rm`, which no in-memory buffer can undo — so that choice still gets
-	 * asked about.
-	 */
 	const startDelete = (sessionId: string) => {
 		if (lastOnWorktreeId(sessionId)) {
 			setPendingDeleteId(sessionId);
@@ -2670,10 +2656,6 @@ function ViewOptionsButton({
 						boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
 					}}
 				>
-					{/* The undo toast is gone in 8s and Shift+Cmd+T is invisible,
-					    so without this nothing on screen would ever suggest a
-					    deleted session is still recoverable. Hidden entirely at
-					    zero, so it only appears when it has something to offer. */}
 					{recentlyDeletedCount > 0 ? (
 						<MenuItem
 							active={false}
