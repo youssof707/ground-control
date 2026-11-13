@@ -24,6 +24,18 @@ window.
 - The name belongs to the group and defaults to the folder name. Click it in the modal
   header to rename (Enter or blur saves, Escape cancels, an empty name restores the folder
   name). Names are not persisted.
+- **Save Config** in the modal header asks for a config name (prefilled with the group
+  name), then saves the group's directory and the last command entered in each terminal
+  (in pane order). Saving again with the same name and directory overwrites it. Configs persist in `terminal_configs.json` in
+  the data dir.
+- **Load Config** lists only the saved configs whose directory matches the directory the
+  open group was spawned in, each as its name plus its terminal count. Picking one kills every terminal in the open
+  group, without confirmation, and replaces them with the config's terminals, each running its command
+  once its shell has started (output quiet for 300ms, or 5s at most). Terminals saved
+  without a command start idle. The hover `×` on a config deletes it (second click).
+- The last command is read from a headless xterm screen (`@xterm/headless`) the moment
+  Enter is pressed at the shell prompt, so edits and history recall are captured as
+  shown. Input sent while a foreground command is running is not recorded.
 - The latest output line skips the shell prompt. The prompt is learned from the
   unfinished line on screen at the first keystroke after each Enter, and completed lines
   starting with it (the echoed command) are ignored. An unfinished line (e.g. a progress

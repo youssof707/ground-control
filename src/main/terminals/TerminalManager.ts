@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { basename } from "node:path";
+import xtermHeadless from "@xterm/headless";
 import { spawn, type IPty } from "node-pty";
 import {
 	MAX_TERMINAL_GROUP_SIZE,
+	type TerminalConfig,
 	type TerminalDataEvent,
 	type TerminalInfo,
 	type TerminalSnapshot,
@@ -17,6 +19,9 @@ const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
 const FOREGROUND_POLL_MS = 1000;
 const MAX_NAME_CHARS = 80;
+const SCREEN_SCROLLBACK = 200;
+const STARTUP_QUIET_MS = 300;
+const STARTUP_MAX_WAIT_MS = 5000;
 
 interface TerminalEntry {
 	pty: IPty;
@@ -25,6 +30,18 @@ interface TerminalEntry {
 	buffer: string;
 	seq: number;
 	lastLine: LastLineTracker;
+	screen: HeadlessTerminal;
+	lastCommand: string;
+	startup: { command: string; quiet: NodeJS.Timeout | null; deadline: NodeJS.Timeout } | null;
+}
+
+const { Terminal: HeadlessTerminal } = xtermHeadless;
+type HeadlessTerminal = InstanceType<typeof HeadlessTerminal>;
+
+export interface TerminalGroupConfig {
+	name: string;
+	cwd: string;
+	commands: string[];
 }
 
 export interface TerminalEvents {
@@ -50,15 +67,58 @@ export class TerminalManager {
 		splitFrom?: string,
 	): Promise<TerminalInfo | null> {
 		const group = splitFrom ? this.groupOf(splitFrom) : [];
-		if (splitFrom && (group.length === 0 || group.length >= MAX_TERMINAL_GROUP_SIZE)) {
+		if (
+			splitFrom &&
+			(group.length === 0 || group.length >= MAX_TERMINAL_GROUP_SIZE)
+		) {
 			return null;
 		}
 		const source = group[0]?.info;
-		const preferredCwd = source?.cwd ?? requestedCwd;
-		const cwd =
-			preferredCwd && (await directoryExists(preferredCwd))
-				? preferredCwd
-				: homedir();
+		const cwd = await resolveCwd(source?.cwd ?? requestedCwd);
+		const entry = this.spawnEntry(
+			cwd,
+			source?.groupId ?? randomUUID(),
+			source?.name,
+		);
+		this.emitChanged();
+		return entry.info;
+	}
+
+	describeGroup(groupId: string): TerminalGroupConfig | null {
+		const group = this.groupEntries(groupId);
+		const first = group[0];
+		if (!first) return null;
+		return {
+			name: first.info.name ?? (basename(first.info.cwd) || "/"),
+			cwd: first.info.cwd,
+			commands: group.map((entry) => entry.lastCommand),
+		};
+	}
+
+	async replaceGroup(
+		groupId: string | null,
+		config: TerminalConfig,
+	): Promise<string> {
+		const cwd = await resolveCwd(config.cwd);
+		const targetId = groupId ?? randomUUID();
+		for (const entry of this.groupEntries(targetId)) {
+			this.entries.delete(entry.info.id);
+			this.disposeEntry(entry);
+		}
+		const commands = config.commands.slice(0, MAX_TERMINAL_GROUP_SIZE);
+		for (const command of commands.length > 0 ? commands : [""]) {
+			const entry = this.spawnEntry(cwd, targetId, config.name);
+			if (command.trim()) this.runAfterStartup(entry, command.trim());
+		}
+		this.emitChanged();
+		return targetId;
+	}
+
+	private spawnEntry(
+		cwd: string,
+		groupId: string,
+		name: string | undefined,
+	): TerminalEntry {
 		const shell = process.env.SHELL ?? "/bin/zsh";
 		const pty = spawn(shell, ["-l"], {
 			name: "xterm-256color",
@@ -72,8 +132,8 @@ export class TerminalManager {
 			shellName: basename(shell),
 			info: {
 				id: randomUUID(),
-				groupId: source?.groupId ?? randomUUID(),
-				name: source?.name,
+				groupId,
+				name,
 				cwd,
 				status: "idle",
 				lastLine: "",
@@ -83,6 +143,14 @@ export class TerminalManager {
 			buffer: "",
 			seq: 0,
 			lastLine: new LastLineTracker(),
+			screen: new HeadlessTerminal({
+				cols: DEFAULT_COLS,
+				rows: DEFAULT_ROWS,
+				scrollback: SCREEN_SCROLLBACK,
+				allowProposedApi: true,
+			}),
+			lastCommand: "",
+			startup: null,
 		};
 		this.entries.set(entry.info.id, entry);
 		pty.onData((data) => this.handleData(entry, data));
@@ -90,8 +158,55 @@ export class TerminalManager {
 			this.handleExit(entry, exitCode, signal),
 		);
 		this.ensureForegroundPolling();
-		this.emitChanged();
-		return entry.info;
+		return entry;
+	}
+
+	private runAfterStartup(entry: TerminalEntry, command: string): void {
+		const fire = () => this.flushStartup(entry);
+		entry.startup = {
+			command,
+			quiet: null,
+			deadline: setTimeout(fire, STARTUP_MAX_WAIT_MS),
+		};
+	}
+
+	private bumpStartup(entry: TerminalEntry): void {
+		const startup = entry.startup;
+		if (!startup) return;
+		if (startup.quiet) clearTimeout(startup.quiet);
+		startup.quiet = setTimeout(
+			() => this.flushStartup(entry),
+			STARTUP_QUIET_MS,
+		);
+	}
+
+	private flushStartup(entry: TerminalEntry): void {
+		const startup = entry.startup;
+		if (!startup) return;
+		this.clearStartup(entry);
+		this.write(entry.info.id, `${startup.command}\r`);
+	}
+
+	private clearStartup(entry: TerminalEntry): void {
+		const startup = entry.startup;
+		if (!startup) return;
+		if (startup.quiet) clearTimeout(startup.quiet);
+		clearTimeout(startup.deadline);
+		entry.startup = null;
+	}
+
+	private recordCommand(entry: TerminalEntry, data: string): void {
+		const enter = data.indexOf("\r");
+		if (enter === -1 || entry.info.status !== "idle") return;
+		const prompt = entry.lastLine.promptText;
+		if (!prompt) return;
+		const line = cursorLine(entry.screen);
+		if (!line.startsWith(prompt)) return;
+		const typed = Array.from(data.slice(0, enter))
+			.filter((char) => char.charCodeAt(0) >= 32)
+			.join("");
+		const command = (line.slice(prompt.length) + typed).trim();
+		if (command) entry.lastCommand = command;
 	}
 
 	snapshot(id: string): TerminalSnapshot | null {
@@ -103,6 +218,7 @@ export class TerminalManager {
 		const entry = this.entries.get(id);
 		if (!entry || !isAlive(entry)) return;
 		entry.lastLine.input(data);
+		this.recordCommand(entry, data);
 		entry.pty.write(data);
 	}
 
@@ -119,14 +235,17 @@ export class TerminalManager {
 		for (const entry of [...this.entries.values()]) {
 			if (entry.info.groupId !== groupId) continue;
 			this.entries.delete(entry.info.id);
-			this.killPty(entry);
+			this.disposeEntry(entry);
 		}
 		this.emitChanged();
 	}
 
 	private groupOf(id: string): TerminalEntry[] {
 		const groupId = this.entries.get(id)?.info.groupId;
-		if (!groupId) return [];
+		return groupId ? this.groupEntries(groupId) : [];
+	}
+
+	private groupEntries(groupId: string): TerminalEntry[] {
 		return [...this.entries.values()]
 			.filter((entry) => entry.info.groupId === groupId)
 			.sort((a, b) => a.info.createdAt - b.info.createdAt);
@@ -139,6 +258,7 @@ export class TerminalManager {
 		if (cols < 2 || rows < 1) return;
 		try {
 			entry.pty.resize(cols, rows);
+			entry.screen.resize(cols, rows);
 		} catch {
 			return;
 		}
@@ -148,7 +268,7 @@ export class TerminalManager {
 		const entry = this.entries.get(id);
 		if (!entry) return;
 		this.entries.delete(id);
-		this.killPty(entry);
+		this.disposeEntry(entry);
 		this.emitChanged();
 	}
 
@@ -156,8 +276,14 @@ export class TerminalManager {
 		if (this.changedTimer) clearTimeout(this.changedTimer);
 		this.changedTimer = null;
 		this.stopForegroundPolling();
-		for (const entry of this.entries.values()) this.killPty(entry);
+		for (const entry of this.entries.values()) this.disposeEntry(entry);
 		this.entries.clear();
+	}
+
+	private disposeEntry(entry: TerminalEntry): void {
+		this.clearStartup(entry);
+		this.killPty(entry);
+		entry.screen.dispose();
 	}
 
 	private killPty(entry: TerminalEntry): void {
@@ -178,6 +304,8 @@ export class TerminalManager {
 	private handleData(entry: TerminalEntry, data: string): void {
 		if (this.entries.get(entry.info.id) !== entry) return;
 		this.append(entry, data);
+		entry.screen.write(data);
+		this.bumpStartup(entry);
 		if (!entry.lastLine.push(data)) return;
 		this.syncLastLine(entry);
 		this.scheduleChanged();
@@ -197,8 +325,10 @@ export class TerminalManager {
 		signal: number | undefined,
 	): void {
 		if (this.entries.get(entry.info.id) !== entry) return;
+		this.clearStartup(entry);
 		if (exitCode === 0 && !signal) {
 			this.entries.delete(entry.info.id);
+			entry.screen.dispose();
 			this.emitChanged();
 			return;
 		}
@@ -267,4 +397,20 @@ function foregroundStatus(entry: TerminalEntry): "idle" | "running" {
 	} catch {
 		return entry.info.status === "running" ? "running" : "idle";
 	}
+}
+
+async function resolveCwd(requested: string | undefined): Promise<string> {
+	return requested && (await directoryExists(requested)) ? requested : homedir();
+}
+
+function cursorLine(screen: HeadlessTerminal): string {
+	const buffer = screen.buffer.active;
+	const end = buffer.baseY + buffer.cursorY;
+	let start = end;
+	while (start > 0 && buffer.getLine(start)?.isWrapped) start -= 1;
+	let text = "";
+	for (let row = start; row <= end; row += 1) {
+		text += buffer.getLine(row)?.translateToString(row === end) ?? "";
+	}
+	return text;
 }

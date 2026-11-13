@@ -29,6 +29,8 @@ interface State {
 	kill: (id: string) => Promise<void>;
 	killGroup: (groupId: string) => Promise<void>;
 	renameGroup: (groupId: string, name: string) => Promise<void>;
+	saveConfig: (groupId: string, name: string) => Promise<boolean>;
+	loadConfig: (configId: string, groupId: string) => Promise<void>;
 }
 
 function withTerminal(
@@ -82,6 +84,17 @@ export const useTerminalsStore = create<State>((set, get) => ({
 	},
 	renameGroup: async (groupId, name) => {
 		await window.claude.renameTerminalGroup(groupId, name);
+	},
+	saveConfig: async (groupId, name) =>
+		(await window.claude.saveTerminalConfig(groupId, name)) !== null,
+	loadConfig: async (configId, groupId) => {
+		const loadedGroupId = await window.claude.loadTerminalConfig(
+			configId,
+			groupId,
+		);
+		if (!loadedGroupId) return;
+		set({ openGroupId: loadedGroupId, focusId: null });
+		await get().refresh();
 	},
 }));
 

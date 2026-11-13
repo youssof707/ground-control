@@ -1,4 +1,10 @@
 import { app, ipcMain } from "electron";
+import {
+	deleteTerminalConfig,
+	getTerminalConfig,
+	listTerminalConfigs,
+	saveTerminalConfig,
+} from "../core/store/terminal_configs";
 import { TerminalManager } from "../terminals/TerminalManager";
 import { broadcast } from "../windows";
 
@@ -25,6 +31,30 @@ export function registerTerminalsHandlers(): void {
 	ipcMain.handle("terminals:renameGroup", (_e, groupId: string, name: unknown) => {
 		if (typeof name === "string") manager.renameGroup(groupId, name);
 	});
+	ipcMain.handle("terminals:listConfigs", () => listTerminalConfigs());
+	ipcMain.handle(
+		"terminals:saveConfig",
+		async (_e, groupId: string, name: unknown) => {
+			const config = manager.describeGroup(groupId);
+			if (!config) return null;
+			const chosen = typeof name === "string" ? name.trim().slice(0, 80) : "";
+			return saveTerminalConfig({ ...config, name: chosen || config.name });
+		},
+	);
+	ipcMain.handle(
+		"terminals:loadConfig",
+		async (_e, configId: string, groupId: unknown) => {
+			const config = await getTerminalConfig(configId);
+			if (!config) return null;
+			return manager.replaceGroup(
+				typeof groupId === "string" ? groupId : null,
+				config,
+			);
+		},
+	);
+	ipcMain.handle("terminals:deleteConfig", (_e, configId: string) =>
+		deleteTerminalConfig(configId),
+	);
 	ipcMain.on("terminals:write", (_e, id: string, data: string) => {
 		if (typeof data === "string") manager.write(id, data);
 	});

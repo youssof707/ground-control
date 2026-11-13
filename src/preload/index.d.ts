@@ -41,6 +41,7 @@ import type {
 import type { Skill } from "../shared/schemas/skills";
 import type { McpAuthStart, McpServerView } from "../shared/schemas/mcp";
 import type {
+	TerminalConfig,
 	TerminalInfo,
 	TerminalSnapshot,
 } from "../shared/schemas/terminals";
@@ -226,6 +227,16 @@ declare global {
 			killTerminal: (id: string) => Promise<void>;
 			killTerminalGroup: (groupId: string) => Promise<void>;
 			renameTerminalGroup: (groupId: string, name: string) => Promise<void>;
+			listTerminalConfigs: () => Promise<TerminalConfig[]>;
+			saveTerminalConfig: (
+				groupId: string,
+				name: string,
+			) => Promise<TerminalConfig | null>;
+			loadTerminalConfig: (
+				configId: string,
+				groupId?: string,
+			) => Promise<string | null>;
+			deleteTerminalConfig: (configId: string) => Promise<void>;
 			writeTerminal: (id: string, data: string) => void;
 			resizeTerminal: (id: string, cols: number, rows: number) => void;
 			on: (channel: string, fn: (payload: unknown) => void) => () => void;

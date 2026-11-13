@@ -196,6 +196,13 @@ const claude = {
 		ipcRenderer.invoke("terminals:killGroup", groupId),
 	renameTerminalGroup: (groupId: string, name: string) =>
 		ipcRenderer.invoke("terminals:renameGroup", groupId, name),
+	listTerminalConfigs: () => ipcRenderer.invoke("terminals:listConfigs"),
+	saveTerminalConfig: (groupId: string, name: string) =>
+		ipcRenderer.invoke("terminals:saveConfig", groupId, name),
+	loadTerminalConfig: (configId: string, groupId?: string) =>
+		ipcRenderer.invoke("terminals:loadConfig", configId, groupId),
+	deleteTerminalConfig: (configId: string) =>
+		ipcRenderer.invoke("terminals:deleteConfig", configId),
 	writeTerminal: (id: string, data: string) =>
 		ipcRenderer.send("terminals:write", id, data),
 	resizeTerminal: (id: string, cols: number, rows: number) =>

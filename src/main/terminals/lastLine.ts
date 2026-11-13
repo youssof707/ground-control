@@ -44,6 +44,10 @@ export class LastLineTracker {
 		return this.current;
 	}
 
+	get promptText(): string {
+		return this.prompt;
+	}
+
 	push(chunk: string): boolean {
 		const segments = (this.pending + stripControl(chunk)).split("\n");
 		this.pending = (segments.pop() ?? "").slice(-MAX_PENDING_CHARS);

@@ -20,6 +20,7 @@ import {
 } from "../stores/useTerminalsStore";
 import { useInlineConfirm } from "../hooks/useInlineConfirm";
 import { StatusDot } from "./SchedulerWidget";
+import { LoadConfigButton, SaveConfigButton } from "./TerminalConfigButtons";
 
 const TERMINAL_BACKGROUND = "#1c1916";
 
@@ -126,6 +127,8 @@ export function TerminalModal({ group }: { group: TerminalGroup }) {
 					>
 						<bdi>{terminals[0]?.cwd}</bdi>
 					</span>
+					<SaveConfigButton group={group} />
+					<LoadConfigButton group={group} />
 					<button
 						type="button"
 						className="btn btn-ghost"

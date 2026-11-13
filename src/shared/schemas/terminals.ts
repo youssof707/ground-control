@@ -29,3 +29,18 @@ export interface TerminalDataEvent {
 	data: string;
 	seq: number;
 }
+
+export const TerminalConfigSchema = z.object({
+	id: z.string(),
+	name: z.string(),
+	cwd: z.string(),
+	commands: z.array(z.string()),
+	savedAt: z.number(),
+});
+
+export const TerminalConfigsFileSchema = z.object({
+	items: z.array(TerminalConfigSchema),
+});
+
+export type TerminalConfig = z.infer<typeof TerminalConfigSchema>;
+export type TerminalConfigsFile = z.infer<typeof TerminalConfigsFileSchema>;
