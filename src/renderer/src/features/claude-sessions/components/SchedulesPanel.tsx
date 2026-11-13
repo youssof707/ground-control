@@ -10,7 +10,7 @@ import { Switch } from "../../../design/Switch";
 import { promptPreview } from "./ShortcutForm";
 
 export function scheduleLabel(s: Schedule): string {
-	return s.title.trim() || promptPreview(s.prompt) || "Untitled schedule";
+	return s.title.trim() || promptPreview(s.prompt) || "Untitled task";
 }
 
 export function SchedulesPanel({
@@ -38,7 +38,7 @@ export function SchedulesPanel({
 					color: T.textMute,
 				}}
 			>
-				No schedules yet.
+				No tasks yet.
 			</div>
 		);
 	}
@@ -216,7 +216,7 @@ function ScheduleRow({
 				style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}
 			>
 				<Switch
-					label={schedule.enabled ? "Turn schedule off" : "Turn schedule on"}
+					label={schedule.enabled ? "Turn task off" : "Turn task on"}
 					checked={schedule.enabled}
 					onChange={(next) => void setEnabled(next)}
 				/>
@@ -305,7 +305,7 @@ function ScheduleMenu({
 				onClick={toggle}
 				aria-haspopup="menu"
 				aria-expanded={anchor !== null}
-				aria-label="Schedule actions"
+				aria-label="Task actions"
 				style={{
 					display: "inline-flex",
 					alignItems: "center",

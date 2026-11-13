@@ -157,10 +157,10 @@ function SchedulerDialog({
 
 	const title =
 		view.kind === "list"
-			? "Scheduler"
+			? "Tasks"
 			: view.kind === "create"
-				? "New schedule"
-				: "Edit schedule";
+				? "New task"
+				: "Edit task";
 
 	return (
 		<>
@@ -238,7 +238,7 @@ function SchedulerDialog({
 									onClick={openCreate}
 									style={{ marginRight: "auto" }}
 								>
-									New schedule
+									New task
 								</button>
 								<button className="btn" onClick={onClose}>
 									Done
@@ -270,7 +270,7 @@ function SchedulerDialog({
 			<ModelPickerModal
 				open={modelPickerOpen}
 				effectiveModel={draft.model}
-				subtitle="Used for every run of this schedule."
+				subtitle="Used for every run of this task."
 				focusComposerAfterSelect={false}
 				onSelect={(model) => setDraft((d) => ({ ...d, model }))}
 				onClose={() => setModelPickerOpen(false)}

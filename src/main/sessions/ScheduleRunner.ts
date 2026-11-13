@@ -79,12 +79,12 @@ export class ScheduleRunner {
 
 	async runNow(id: string): Promise<ClaudeSession> {
 		const s = this.deps.get(id);
-		if (!s) throw new Error("Schedule not found");
+		if (!s) throw new Error("Task not found");
 		if (
 			this.firing.has(id) ||
 			(s.lastSessionId && this.deps.isSessionBusy(s.lastSessionId))
 		) {
-			throw new Error("This schedule is already running");
+			throw new Error("This task is already running");
 		}
 		this.firing.add(id);
 		logActivity("schedule", `${this.label(id)} run on demand`);

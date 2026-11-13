@@ -1,5 +1,7 @@
 # Schedules
 
+The UI calls these "Tasks" (sidebar widget, modal, shortcut label). Code, IPC and storage keep the `schedule` name.
+
 Each schedule owns exactly one session. Every run deletes the schedule's previous
 session (`ScheduleRunner.prune`), and there is no option to keep past runs. Replying
 to a scheduled session never detaches it from its schedule.

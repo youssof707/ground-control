@@ -263,7 +263,7 @@ export function ScheduleFormFields({
 				<span style={fieldLabelStyle}>When</span>
 				<div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
 					<Segmented<ScheduleDraft["kind"]>
-						label="Schedule type"
+						label="Repeat"
 						value={value.kind}
 						options={KIND_OPTIONS}
 						onChange={(kind) => onChange({ ...value, kind })}
@@ -340,7 +340,7 @@ export function ScheduleFormFields({
 						disabled={disabled}
 					/>
 					<span style={{ fontSize: 11, color: T.textFaint }}>
-						When off, the sidebar only shows this schedule while it's unread
+						When off, the sidebar only shows this task while it's unread
 						or open.
 					</span>
 				</div>

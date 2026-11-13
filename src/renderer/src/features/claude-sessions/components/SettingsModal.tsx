@@ -35,7 +35,7 @@ const SHORTCUTS: { keys: string[]; label: string }[] = [
 	{ keys: ["⌘", "P"], label: "Toggle plan mode (in the composer)" },
 	{ keys: ["⌘", "D"], label: "Start / stop voice dictation" },
 	{ keys: ["⌘", "⇧", "B"], label: "Open the babysitter" },
-	{ keys: ["⌘", "⇧", "S"], label: "Open the scheduler" },
+	{ keys: ["⌘", "⇧", "S"], label: "Open tasks" },
 	{ keys: ["⌘", "M"], label: "Open the model picker" },
 	{ keys: ["⌘", "⇧", "T"], label: "Restore the most recently deleted session" },
 	{ keys: ["⌘", "⌫"], label: "Delete the open session" },

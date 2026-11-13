@@ -68,7 +68,7 @@ export function registerSchedulesHandlers(runner: ScheduleRunner): void {
 	ipcMain.handle("schedules:update", async (_e, raw: UpdateScheduleInput) => {
 		const input = UpdateScheduleInputSchema.parse(raw);
 		const current = schedulesStore.get(input.id);
-		if (!current) throw new Error("Schedule not found");
+		if (!current) throw new Error("Task not found");
 		const prompt = input.prompt.trim();
 		if (!prompt) throw new Error("Prompt is required");
 		if (!(await directoryExists(input.cwd))) {
@@ -97,7 +97,7 @@ export function registerSchedulesHandlers(runner: ScheduleRunner): void {
 			nextFireAt,
 			lastError: undefined,
 		});
-		if (!updated) throw new Error("Schedule not found");
+		if (!updated) throw new Error("Task not found");
 		runner.upsert(updated);
 		push();
 		return updated;
@@ -107,12 +107,12 @@ export function registerSchedulesHandlers(runner: ScheduleRunner): void {
 		"schedules:setEnabled",
 		async (_e, { id, enabled }: { id: string; enabled: boolean }) => {
 			const current = schedulesStore.get(id);
-			if (!current) throw new Error("Schedule not found");
+			if (!current) throw new Error("Task not found");
 			const now = Date.now();
 			let patch: Parameters<typeof schedulesStore.update>[1];
 			if (enabled) {
 				if (current.kind.type === "once" && current.kind.at <= now) {
-					throw new Error("This time has passed. Edit the schedule first.");
+					throw new Error("This time has passed. Edit the task first.");
 				}
 				patch = {
 					enabled: true,
@@ -123,7 +123,7 @@ export function registerSchedulesHandlers(runner: ScheduleRunner): void {
 				patch = { enabled: false, nextFireAt: undefined };
 			}
 			const updated = await schedulesStore.update(id, patch);
-			if (!updated) throw new Error("Schedule not found");
+			if (!updated) throw new Error("Task not found");
 			runner.upsert(updated);
 			push();
 			return updated;
@@ -139,7 +139,7 @@ export function registerSchedulesHandlers(runner: ScheduleRunner): void {
 			const updated = await schedulesStore.update(id, {
 				alwaysShowStatus: alwaysShowStatus === true,
 			});
-			if (!updated) throw new Error("Schedule not found");
+			if (!updated) throw new Error("Task not found");
 			runner.upsert(updated);
 			push();
 			return updated;

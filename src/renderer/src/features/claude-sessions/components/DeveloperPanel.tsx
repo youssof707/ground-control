@@ -654,7 +654,7 @@ function PmsetScheduleSection() {
 						<EmptyState text="Loading…" compact />
 					) : output === null ? (
 						<EmptyState
-							text="pmset access not granted yet. It's requested the first time auto-resume or a schedule needs a wake."
+							text="pmset access not granted yet. It's requested the first time auto-resume or a task needs a wake."
 							compact
 						/>
 					) : events.length === 0 ? (

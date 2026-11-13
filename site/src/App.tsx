@@ -10,10 +10,12 @@ import { BabysitMock } from "./mocks/BabysitMock";
 import { GroupsMock } from "./mocks/GroupsMock";
 import { InboxMock } from "./mocks/InboxMock";
 import { ModelMock } from "./mocks/ModelMock";
+import { ScheduledTasksMock } from "./mocks/ScheduledTasksMock";
 import { SidequestMock } from "./mocks/SidequestMock";
 import { SkillsMock } from "./mocks/SkillsMock";
 import { StatusesMock } from "./mocks/StatusesMock";
 import { TasksMock } from "./mocks/TasksMock";
+import { TerminalsMock } from "./mocks/TerminalsMock";
 import { TokensMock } from "./mocks/TokensMock";
 import { WorktreesMock } from "./mocks/WorktreesMock";
 
@@ -100,7 +102,7 @@ export function App() {
 					</FeaturePanel>
 
 					<FeaturePanel
-						id="tasks"
+						id="background-tasks"
 						title="Background tasks"
 						flip
 						lead="Background work, listed."
@@ -109,6 +111,32 @@ export function App() {
 						canvas={{ width: 640, height: 460 }}
 					>
 						<TasksMock />
+					</FeaturePanel>
+
+					<FeaturePanel
+						id="tasks"
+						title="Tasks"
+						lead="Run Claude on a timer."
+						body="Give it a prompt, a folder, and when to run. Each run reports back with a green, yellow, or red status and one line."
+						bullets={["Daily, every N minutes or hours, or once.", "Wakes the Mac to run on time."]}
+						hint={<Shortcut keys="⌘⇧S" label="Open tasks" />}
+						glow={[glows.ok, glows.warn, glows.accent]}
+						canvas={{ width: 700, height: 540 }}
+					>
+						<ScheduledTasksMock />
+					</FeaturePanel>
+
+					<FeaturePanel
+						id="terminals"
+						title="Terminals"
+						flip
+						lead="Dev servers without another window."
+						body="Real login shells in the sidebar, opened in the session's folder. Each row shows its latest output line and whether something is running."
+						bullets={["Split up to four panes in one group.", "Save a group's commands as a config and load it back later."]}
+						glow={[glows.ok, glows.info, glows.neutral]}
+						canvas={{ width: 760, height: 540 }}
+					>
+						<TerminalsMock />
 					</FeaturePanel>
 
 					<FeaturePanel

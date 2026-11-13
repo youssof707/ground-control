@@ -148,7 +148,7 @@ export function SchedulerWidget({
 					<IconSlot>
 						<ClockIcon />
 					</IconSlot>
-					<span style={{ color: T.text, flexShrink: 0 }}>Schedules</span>
+					<span style={{ color: T.text, flexShrink: 0 }}>Tasks</span>
 					{counts.armed > 0 ? (
 						<span
 							style={{

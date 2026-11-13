@@ -40,6 +40,22 @@ Website: https://ground-control-eosin.vercel.app
 
 **Background work, listed.** Shell commands, agents, and workflows that are still running, with how long they've been going. Stop any of them from the list.
 
+## Tasks
+
+**Run Claude on a timer.** Give it a prompt, a folder, and when to run. Each run reports back with a green, yellow, or red status and one line.
+
+- Daily, every N minutes or hours, or once.
+- Wakes the Mac to run on time.
+
+`⌘⇧S` opens tasks.
+
+## Terminals
+
+**Dev servers without another window.** Real login shells in the sidebar, opened in the session's folder. Each row shows its latest output line and whether something is running.
+
+- Split up to four panes in one group.
+- Save a group's commands as a config and load it back later.
+
 ## Worktrees
 
 **One session, one checkout.** Give a session its own git worktree and branch so parallel sessions don't edit the same files.
