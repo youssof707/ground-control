@@ -62,9 +62,6 @@ export default function MainApp() {
 	// outside a composer, insert mode when a composer is focused. Mounted
 	// once, here.
 	useCommandPaletteHotkey();
-	// Global ⌘⇧M — opens the model picker for the active session. Picking a
-	// model while a turn is running interrupts it, switches, and resumes
-	// automatically (see useModelPickerHotkey.ts / modelSwitchActions.ts).
 	useModelPickerHotkey();
 	useStopSessionHotkey();
 	// Global ⌘N — opens a new session draft, pre-attached to the worktree

@@ -13,7 +13,7 @@ Source of truth for app shortcuts. Update when one is added, changed, or removed
 - `Cmd+Shift+B` — Babysitter modal for the active session
 - `Cmd+Enter` — save in the Babysitter modal
 - `Cmd+Shift+S` — Scheduler modal
-- `Cmd+Shift+M` — model picker (if the composer has text, the pick applies to the next message; while Claude is asking a question or waiting on plan approval, it applies once you respond)
+- `Cmd+M` — model picker (if the composer has text, the pick applies to the next message; while Claude is asking a question or waiting on plan approval, it applies once you respond)
 - Letter keys in the model picker — pick the model with that badge letter
 - `Cmd+Shift+T` — restore the last deleted / handed-off session
 - `Cmd+Shift+H` — hand off the active session using its last assistant message

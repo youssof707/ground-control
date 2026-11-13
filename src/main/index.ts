@@ -168,7 +168,12 @@ function buildMenu(): Electron.Menu {
 		},
 		{ role: "editMenu" },
 		viewMenu,
-		{ role: "windowMenu" },
+		{
+			role: "windowMenu",
+			submenu: isMac
+				? [{ role: "zoom" }, { type: "separator" }, { role: "front" }]
+				: [{ role: "close" }],
+		},
 	];
 	return Menu.buildFromTemplate(template);
 }

@@ -152,7 +152,7 @@ export function App() {
 						flip
 						lead="Switch models mid-session."
 						body="Changing model while Claude is working stops the turn, switches, and continues on its own."
-						hint={<Shortcut keys="⌘⇧M" label="Open the model picker" />}
+						hint={<Shortcut keys="⌘M" label="Open the model picker" />}
 						glow={[glows.accent, glows.info, glows.babysit]}
 						canvas={{ width: 560, height: 500 }}
 					>

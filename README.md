@@ -59,7 +59,7 @@ Website: https://ground-control-eosin.vercel.app
 
 **Switch models mid-session.** Changing model while Claude is working stops the turn, switches, and continues on its own.
 
-`⌘⇧M` opens the model picker.
+`⌘M` opens the model picker.
 
 ## Skills and shortcuts
 
