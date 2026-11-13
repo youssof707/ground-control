@@ -3,17 +3,6 @@ import { useSessionGroupsStore } from "../stores/useSessionGroupsStore";
 import { useUndoStore, type UndoEntry } from "../stores/useUndoStore";
 import { runBackgroundTask } from "../../background-tasks/stores/useBackgroundTasksStore";
 
-/**
- * Imperative "undo a destroyed session" operations, store-only (no hooks) so
- * they can run from a plain click handler, a global keydown listener, or a
- * modal row — exactly like lib/handoffActions.ts.
- *
- * There is deliberately ONE restore path. The toast button, Shift+Cmd+T, and
- * the "Recently deleted" list all funnel through `restoreEntry`, so the button
- * and the key can never drift into meaning different things — which is the
- * whole reason this reads as an undo stack rather than a dialog.
- */
-
 /** How long the restored sidebar row stays washed in accent. */
 const FLASH_MS = 1200;
 
@@ -40,18 +29,6 @@ function flashRow(sessionId: string): void {
 	}, FLASH_MS);
 }
 
-/**
- * Put back one buffered entry.
- *
- * Runs through `runBackgroundTask` rather than being awaited, for the same
- * reason `runHandoff` does: the caller may be a toast that is about to
- * unmount, or a keydown handler with nowhere to show an error. A failure must
- * not disappear — it surfaces in the background-task indicator, and crucially
- * the entry STAYS in the buffer so the user can simply press undo again.
- *
- * Every local store write lives in `onSuccess`, so a failed restore leaves the
- * renderer exactly as it was rather than showing a row that main doesn't have.
- */
 export function restoreEntry(entry: UndoEntry, navigate: NavigateFn): void {
 	const snapshot = entry.snapshot;
 

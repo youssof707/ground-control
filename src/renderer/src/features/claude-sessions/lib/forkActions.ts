@@ -60,7 +60,6 @@ export function runForkAndDelete(input: {
 			const snapshot = await deleteSessionOnMain(oldId, title);
 			if (snapshot) {
 				pushUndo({
-					kind: "fork",
 					sessionId: oldId,
 					title,
 					snapshot,
