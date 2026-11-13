@@ -121,12 +121,16 @@ export function ModelPickerModal({
 	);
 
 	const pick = (value: string | undefined) => {
+		const apply = isRunning && onSwitchAndResume ? onSwitchAndResume : onSelect;
+		const logFailure = (err: unknown) =>
+			console.error("[ccw] model pick failed:", err);
+		try {
+			void Promise.resolve(apply(value)).catch(logFailure);
+		} catch (err) {
+			logFailure(err);
+		}
 		onClose();
 		if (focusComposerAfterSelect) focusComposer();
-		const apply = isRunning && onSwitchAndResume ? onSwitchAndResume : onSelect;
-		void Promise.resolve()
-			.then(() => apply(value))
-			.catch((err) => console.error("[ccw] model pick failed:", err));
 	};
 
 	const pickRef = useRef(pick);
