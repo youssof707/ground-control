@@ -430,33 +430,6 @@ input::placeholder {
 	}
 }
 
-/* ─── Undo toast ─────────────────────────────────────────────────────────── */
-
-/* The toast's own lifetime, expressed as opacity on the card itself. This
-   replaced a draining hairline along the bottom edge: a countdown bar reads as
-   a loading bar, which is far too much attention for a notice whose whole job
-   is to be ignorable. The card now holds full strength long enough to be read,
-   then dissolves — the fade IS the deadline indicator, no extra chrome.
-
-   The hold is in the keyframe stops (62% of 8000ms ≈ 5s solid, then a ~3s
-   ramp to nothing), not in the easing, so the element keeps `linear` timing
-   and the ramp stays even.
-
-   Duration and play/pause are applied inline by the component — the component
-   owns the timing, the stylesheet owns the motion. Pausing is done by setting
-   `animation-name: none` rather than
-   `animation-play-state: paused`, so a hovered toast returns to full opacity
-   instead of freezing half-faded. */
-@keyframes undo-toast-life {
-	0%,
-	62% {
-		opacity: 1;
-	}
-	100% {
-		opacity: 0;
-	}
-}
-
 /* One-shot wash on a sidebar row that was just restored by undo. Answers
    "where did it land?" — the row returns to its original recency slot, which
    in a long sidebar is easily off-screen or lost among neighbours.

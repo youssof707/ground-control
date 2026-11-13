@@ -13,7 +13,6 @@ import { useUpdater } from "./features/updater/hooks/useUpdater";
 import { UpdateModal } from "./features/updater/components/UpdateModal";
 import { BackgroundTasksIndicator } from "./features/background-tasks/components/BackgroundTasksIndicator";
 import { AmbientStack } from "./components/AmbientStack";
-import { UndoToast } from "./features/claude-sessions/components/UndoToast";
 import { SessionsList } from "./features/claude-sessions/components/SessionsList";
 import { SessionChat } from "./features/claude-sessions/components/SessionChat";
 import { InboxSidebar } from "./features/claude-sessions/components/InboxSidebar";
@@ -103,12 +102,7 @@ export default function MainApp() {
 			<MainBody />
 			<UpdateModal />
 			<CommandPaletteModal />
-			{/* One ambient bottom-left column, above the sidebar footer and
-			    ordered by urgency: the undo prompt sits above the
-			    background-task chip. Both self-hide, so the corner is empty in
-			    the common case. */}
 			<AmbientStack>
-				<UndoToast />
 				<BackgroundTasksIndicator />
 			</AmbientStack>
 		</div>

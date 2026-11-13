@@ -185,13 +185,8 @@ export function runHandoff(input: {
 				deleteSessionOnMain(oldId, title),
 				sendTurn(newId, [{ type: "text", text: buildHandoffPrompt(text) }]),
 			]);
-			// `kind: "handoff"` gives the toast its own wording: the user is
-			// looking at a brand-new session, where a bare "Deleted …" would
-			// read as an error. No worktree cascade (the successor shares the
-			// checkout), so a restore keeps the worktree binding.
 			if (deleted.status === "fulfilled" && deleted.value) {
 				pushUndo({
-					kind: "handoff",
 					sessionId: oldId,
 					title,
 					snapshot: deleted.value,
