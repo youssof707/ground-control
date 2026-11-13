@@ -584,15 +584,6 @@ export function SessionsList({
 		? worktrees[pendingDeleteWorktreeId]
 		: undefined;
 
-	/**
-	 * Entry point for the ⋯ menu's Delete item.
-	 *
-	 * The modal survives in one case, and it isn't about the session: when this
-	 * is the LAST session on a worktree, deleting it offers to destroy that
-	 * checkout too. `worktreeRemove` shells out to git and then does a recursive
-	 * `fs.rm`, which no in-memory buffer can undo — so that choice still gets
-	 * asked about.
-	 */
 	const startDelete = (sessionId: string) => {
 		if (lastOnWorktreeId(sessionId)) {
 			setPendingDeleteId(sessionId);
