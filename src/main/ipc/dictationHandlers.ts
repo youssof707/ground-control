@@ -1,9 +1,15 @@
-import { app, ipcMain, net, systemPreferences } from "electron";
+import {
+	app,
+	ipcMain,
+	net,
+	systemPreferences,
+	utilityProcess,
+	type UtilityProcess,
+} from "electron";
 import { createWriteStream, promises as fs } from "node:fs";
-import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { promisify } from "node:util";
 import { broadcast } from "../windows";
+import type { WhisperRequest, WhisperResponse } from "../dictation/whisperWorker";
 
 /**
  * On-device voice dictation via whisper.cpp (@kutalia/whisper-node-addon).
@@ -24,34 +30,59 @@ const MODEL_URL =
 const MODEL_BYTES = 147_951_465;
 /** "ggml" magic in little-endian as the first 4 bytes of the model file. */
 const GGML_MAGIC = 0x67676d6c;
+const SAMPLE_RATE = 16_000;
 
 type ModelState = "ready" | "absent" | "downloading";
 
-/** Rows are [startTimestamp, endTimestamp, text]. */
-interface WhisperResult {
-	transcription: Array<[string, string, string]>;
+let downloading = false;
+let transcribeChain: Promise<unknown> = Promise.resolve();
+let worker: UtilityProcess | null = null;
+let nextRequestId = 0;
+interface PendingRequest {
+	child: UtilityProcess;
+	resolve: (text: string) => void;
+	reject: (err: Error) => void;
 }
 
-type WhisperFn = (params: Record<string, unknown>) => Promise<WhisperResult>;
+const pending = new Map<number, PendingRequest>();
 
-const nodeRequire = createRequire(import.meta.url);
-let whisperFn: WhisperFn | null = null;
-let downloading = false;
-/** Serialize transcriptions — the native addon is not re-entrant. */
-let transcribeChain: Promise<unknown> = Promise.resolve();
-
-function getWhisper(): WhisperFn {
-	if (!whisperFn) {
-		const pkgDir = dirname(
-			nodeRequire.resolve("@kutalia/whisper-node-addon/package.json"),
-		);
-		const addonPath = join(pkgDir, "dist", `mac-${process.arch}`, "whisper.node");
-		const { whisper } = nodeRequire(addonPath) as {
-			whisper: (params: unknown, cb: (err: unknown, res: WhisperResult) => void) => void;
-		};
-		whisperFn = promisify(whisper) as unknown as WhisperFn;
+function failPending(child: UtilityProcess, err: Error): void {
+	for (const [id, p] of pending) {
+		if (p.child !== child) continue;
+		pending.delete(id);
+		p.reject(err);
 	}
-	return whisperFn;
+}
+
+function getWorker(): UtilityProcess {
+	if (worker) return worker;
+	const child = utilityProcess.fork(join(__dirname, "whisperWorker.js"), [], {
+		serviceName: "Ground Control Dictation",
+	});
+	child.on("message", (msg: WhisperResponse) => {
+		const p = pending.get(msg.id);
+		if (!p) return;
+		pending.delete(msg.id);
+		if ("error" in msg) p.reject(new Error(msg.error));
+		else p.resolve(msg.text);
+	});
+	child.on("exit", () => {
+		if (worker === child) worker = null;
+		failPending(child, new Error("Dictation worker stopped unexpectedly"));
+	});
+	worker = child;
+	return child;
+}
+
+function killWorker(): void {
+	const child = worker;
+	worker = null;
+	child?.kill();
+}
+
+function timeoutMs(pcm: Float32Array): number {
+	const seconds = pcm.length / SAMPLE_RATE;
+	return Math.max(30_000, seconds * 2_000 + 15_000);
 }
 
 function modelPath(): string {
@@ -136,34 +167,34 @@ async function downloadModel(): Promise<void> {
 	}
 }
 
-async function transcribe(pcm: Float32Array): Promise<string> {
-	const result = await getWhisper()({
-		pcmf32: pcm,
-		model: modelPath(),
-		language: "en",
-		use_gpu: true,
-		flash_attn: false,
-		no_prints: true,
-		comma_in_time: false,
-		translate: false,
-		no_timestamps: false,
-		audio_ctx: 0,
-		max_len: 0,
+function transcribe(pcm: Float32Array): Promise<string> {
+	const id = ++nextRequestId;
+	return new Promise<string>((resolvePromise, rejectPromise) => {
+		const timer = setTimeout(() => {
+			if (!pending.delete(id)) return;
+			killWorker();
+			rejectPromise(new Error("Transcription timed out"));
+		}, timeoutMs(pcm));
+		const child = getWorker();
+		pending.set(id, {
+			child,
+			resolve: (text) => {
+				clearTimeout(timer);
+				resolvePromise(text);
+			},
+			reject: (err) => {
+				clearTimeout(timer);
+				rejectPromise(err);
+			},
+		});
+		const request: WhisperRequest = { id, pcm, model: modelPath() };
+		child.postMessage(request);
 	});
-	return (
-		result.transcription
-			.map((row) => row[2] ?? "")
-			.join("")
-			// whisper.cpp labels silence/noise "[BLANK_AUDIO]" (case and
-			// separator vary by build). It's a marker, not speech — strip it so
-			// a quiet take inserts nothing instead of a bracketed token.
-			.replace(/\[\s*blank[\s_-]*audio\s*\]/gi, "")
-			.replace(/\s{2,}/g, " ")
-			.trim()
-	);
 }
 
 export function registerDictationHandlers(): void {
+	app.on("will-quit", killWorker);
+
 	ipcMain.handle("dictation:modelStatus", async (): Promise<{ state: ModelState }> => ({
 		state: await modelState(),
 	}));

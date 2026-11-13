@@ -8,7 +8,10 @@ export default defineConfig({
 		plugins: [externalizeDepsPlugin()],
 		build: {
 			rollupOptions: {
-				input: { index: resolve(__dirname, "src/main/index.ts") },
+				input: {
+					index: resolve(__dirname, "src/main/index.ts"),
+					whisperWorker: resolve(__dirname, "src/main/dictation/whisperWorker.ts"),
+				},
 			},
 		},
 	},
