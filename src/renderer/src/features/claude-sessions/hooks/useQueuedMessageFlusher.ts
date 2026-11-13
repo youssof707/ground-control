@@ -10,6 +10,7 @@ import { isSidequestId, useSidequestsStore } from "../stores/useSidequestsStore"
 import { sendTurn } from "../lib/sendTurn";
 import { sendToSidequest } from "../lib/sidequestActions";
 import { applyModelForMessage } from "../lib/modelSwitchActions";
+import { useModelPickerStore } from "../stores/useModelPickerStore";
 import { handoffReplyText } from "../lib/handoffCommand";
 import { runHandoff } from "../lib/handoffActions";
 
@@ -39,6 +40,8 @@ import { runHandoff } from "../lib/handoffActions";
  * `heldSessions` check here keeps the queue parked until a fresh turn starts
  * and clears the latch.
  */
+const FLUSH_GRACE_MS = 1500;
+
 export function useQueuedMessageFlusher() {
 	const navigate = useNavigate();
 	const navigateRef = useRef(navigate);
@@ -155,6 +158,58 @@ export function useQueuedMessageFlusher() {
 				});
 		};
 
+		const graceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+		const waitingOnPicker = new Set<string>();
+
+		const cancelPendingFlush = (id: string) => {
+			const timer = graceTimers.get(id);
+			if (timer !== undefined) clearTimeout(timer);
+			graceTimers.delete(id);
+			waitingOnPicker.delete(id);
+		};
+
+		const isIdle = (id: string): boolean => {
+			if (!isSidequestId(id)) {
+				return useSessionsStore.getState().sessions[id]?.status === "idle";
+			}
+			return Object.values(useSidequestsStore.getState().byParent).some(
+				(sq) => sq.sidequestId === id && sq.status === "idle",
+			);
+		};
+
+		const pickerBusyFor = (id: string): boolean => {
+			const { openForSessionId, switching } = useModelPickerStore.getState();
+			return openForSessionId === id || !!switching[id];
+		};
+
+		const flushIfStillIdle = (id: string) => {
+			if (!isIdle(id)) return;
+			if (pickerBusyFor(id)) {
+				waitingOnPicker.add(id);
+				return;
+			}
+			tryFlush(id);
+		};
+
+		const scheduleFlush = (id: string) => {
+			cancelPendingFlush(id);
+			graceTimers.set(
+				id,
+				setTimeout(() => {
+					graceTimers.delete(id);
+					flushIfStillIdle(id);
+				}, FLUSH_GRACE_MS),
+			);
+		};
+
+		const unsubscribePicker = useModelPickerStore.subscribe(() => {
+			for (const id of [...waitingOnPicker]) {
+				if (pickerBusyFor(id)) continue;
+				waitingOnPicker.delete(id);
+				flushIfStillIdle(id);
+			}
+		});
+
 		const unsubscribeSessions = useSessionsStore.subscribe((state, prevState) => {
 			for (const id of state.order) {
 				const prevStatus = prevState.sessions[id]?.status;
@@ -164,11 +219,13 @@ export function useQueuedMessageFlusher() {
 					// A new turn started (manual send, resume, or a flushed
 					// message) — any interrupt latch from a previous turn no
 					// longer applies.
+					cancelPendingFlush(id);
 					release(id);
 				} else if (nextStatus === "usage_limit") {
+					cancelPendingFlush(id);
 					hold(id);
 				} else if (prevStatus === "running" && nextStatus === "idle") {
-					if (!tryHandoff(id)) tryFlush(id);
+					if (!tryHandoff(id)) scheduleFlush(id);
 				}
 			}
 			// A session dropped out of the store entirely (deleted) —
@@ -206,11 +263,13 @@ export function useQueuedMessageFlusher() {
 				if (!before || before.sidequestId !== next.sidequestId) continue;
 				if (before.status === next.status) continue;
 				if (next.status === "running") {
+					cancelPendingFlush(next.sidequestId);
 					release(next.sidequestId);
 				} else if (next.status === "usage_limit") {
+					cancelPendingFlush(next.sidequestId);
 					hold(next.sidequestId);
 				} else if (before.status === "running" && next.status === "idle") {
-					tryFlush(next.sidequestId);
+					scheduleFlush(next.sidequestId);
 				}
 			}
 			// Sweep: a parent's sidequest vanished entirely (sidequest:discarded
@@ -231,6 +290,10 @@ export function useQueuedMessageFlusher() {
 		return () => {
 			unsubscribeSessions();
 			unsubscribeSidequests();
+			unsubscribePicker();
+			for (const timer of graceTimers.values()) clearTimeout(timer);
+			graceTimers.clear();
+			waitingOnPicker.clear();
 		};
 	}, []);
 }
