@@ -85,6 +85,28 @@ const SAMPLE_RATE = 16_000;
 const MAX_RECORD_MS = 5 * 60_000;
 /** Whisper rejects sub-second clips; treat them as accidental clicks. */
 const MIN_SECONDS = 0.5;
+const START_TIMEOUT_MS = 10_000;
+const START_TIMEOUT_MESSAGE = "Microphone did not start. Try again.";
+
+function withTimeout<T>(
+	promise: Promise<T>,
+	ms: number,
+	message: string,
+): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(() => reject(new Error(message)), ms);
+		promise.then(
+			(value) => {
+				clearTimeout(timer);
+				resolve(value);
+			},
+			(err: unknown) => {
+				clearTimeout(timer);
+				reject(err instanceof Error ? err : new Error(String(err)));
+			},
+		);
+	});
+}
 
 export function DictationButton({
 	disabled,
@@ -189,23 +211,34 @@ export function DictationButton({
 			if (modelState !== "ready") await ensureModel();
 			if (abandoned()) return;
 
-			const stream = await navigator.mediaDevices.getUserMedia({
-				audio: { channelCount: 1 },
-			});
-			// Adopt the stream before the abandon check so cleanupCapture can
-			// stop the tracks we just opened.
-			streamRef.current = stream;
-			if (abandoned()) {
-				cleanupCapture();
-				return;
-			}
-			chunksRef.current = [];
-
 			// Capture raw PCM at whisper's 16 kHz directly — Chromium resamples
 			// the mic stream to the context rate for us. The processor's output
 			// stays silent (we never write to it), so no feedback loop.
 			const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
 			audioCtxRef.current = ctx;
+			if (ctx.state === "suspended") {
+				await withTimeout(ctx.resume(), START_TIMEOUT_MS, START_TIMEOUT_MESSAGE);
+				if (abandoned()) return;
+			}
+
+			const opening = navigator.mediaDevices.getUserMedia({
+				audio: { channelCount: 1 },
+			});
+			void opening.then(
+				(late) => {
+					if (abandoned()) late.getTracks().forEach((t) => t.stop());
+				},
+				() => undefined,
+			);
+			const stream = await withTimeout(
+				opening,
+				START_TIMEOUT_MS,
+				START_TIMEOUT_MESSAGE,
+			);
+			if (abandoned()) return;
+			streamRef.current = stream;
+			chunksRef.current = [];
+
 			const source = ctx.createMediaStreamSource(stream);
 			const processor = ctx.createScriptProcessor(4096, 1, 1);
 			processor.onaudioprocess = (e) => {
@@ -222,10 +255,11 @@ export function DictationButton({
 				void stopAndTranscribe();
 			}, MAX_RECORD_MS);
 		} catch (err) {
-			cleanupCapture();
 			// A cancelled start can still reject (e.g. getUserMedia losing the
 			// track we just stopped). That's expected, not worth an error block.
 			if (abandoned()) return;
+			runIdRef.current++;
+			cleanupCapture();
 			setStateSafe("idle");
 			onError(err instanceof Error ? err.message : String(err));
 		}
