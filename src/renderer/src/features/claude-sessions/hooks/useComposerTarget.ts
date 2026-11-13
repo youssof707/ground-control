@@ -35,13 +35,6 @@ export interface ComposerTarget {
 	branch?: string;
 	lastUserMessageBranch?: string;
 	placeholder: string;
-	/** Whether the composer should stamp `data-composer-session-id` — the
-	 * handle the global Cmd+K / Cmd+P / Cmd+Shift+M hotkeys use to find "the"
-	 * composer via `closest()`. False for sidequests: those hotkeys resolve
-	 * ids through `useSessionsStore`/`useDraftSessionsStore` only, so a
-	 * stamped sidequest id would mint a phantom sidebar row (`upsertSession`
-	 * lazy-creates) or steal focus into the wrong composer. See
-	 * `usePlanModeHotkey`'s "deliberately excluded" comment. */
 	stampComposerAttr: boolean;
 	/** Bumped to (re-)focus this composer with the caret at the end — a
 	 * separate counter per kind (`useDraftStore.composerFocusNonce` for

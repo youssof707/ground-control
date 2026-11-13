@@ -86,11 +86,6 @@ export function SessionTokenBar({
 		const u = target.usage ?? estimateUsageFromTranscript(target.messages);
 		return usageTotal(u) > 0 ? u : null;
 	}, [target.usage, target.messages]);
-	// Lifted to a store rather than local state so the global Cmd+Shift+M
-	// hotkey can open this same modal instance from outside this component's
-	// subtree — see useModelPickerStore.ts. Shared by both the main chat's
-	// bar and the sidequest panel's; only one `openForSessionId` can match a
-	// given target's id at a time, so only one modal ever renders.
 	const pickerOpen = useModelPickerStore(
 		(s) => s.openForSessionId === target.id,
 	);

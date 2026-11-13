@@ -36,7 +36,7 @@ const SHORTCUTS: { keys: string[]; label: string }[] = [
 	{ keys: ["⌘", "D"], label: "Start / stop voice dictation" },
 	{ keys: ["⌘", "⇧", "B"], label: "Open the babysitter" },
 	{ keys: ["⌘", "⇧", "S"], label: "Open the scheduler" },
-	{ keys: ["⌘", "⇧", "M"], label: "Open the model picker" },
+	{ keys: ["⌘", "M"], label: "Open the model picker" },
 	{ keys: ["⌘", "⇧", "T"], label: "Restore the most recently deleted session" },
 	{ keys: ["⌘", "⌫"], label: "Delete the open session" },
 ];

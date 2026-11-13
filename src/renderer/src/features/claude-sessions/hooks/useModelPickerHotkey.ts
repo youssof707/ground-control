@@ -15,7 +15,7 @@ export function useModelPickerHotkey(): void {
 
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
-			if (!e.metaKey || e.ctrlKey || e.altKey || !e.shiftKey) return;
+			if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
 			if (e.key.toLowerCase() !== "m") return;
 
 			const sessionId = activeSessionIdRef.current;
