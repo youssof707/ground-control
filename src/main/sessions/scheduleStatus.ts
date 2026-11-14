@@ -15,8 +15,15 @@ const SETTLED_STATUS: Record<
 
 const push = () => broadcast("schedules:changed", schedulesStore.list());
 
+const alwaysShowPatch = (scheduleId: string, nextColor: ScheduleReport["color"]) =>
+	nextColor !== "green" &&
+	schedulesStore.get(scheduleId)?.status?.color === "green"
+		? { alwaysShowStatus: true }
+		: {};
+
 export async function report(r: ScheduleReport): Promise<void> {
 	const updated = await schedulesStore.update(r.scheduleId, {
+		...alwaysShowPatch(r.scheduleId, r.color),
 		status: { color: r.color, line: r.line, at: Date.now(), sessionId: r.sessionId },
 	});
 	if (updated) push();
@@ -29,8 +36,10 @@ export async function settle(
 ): Promise<void> {
 	const current = schedulesStore.get(scheduleId);
 	if (!current || current.status?.sessionId === sessionId) return;
+	const settled = SETTLED_STATUS[outcome];
 	const updated = await schedulesStore.update(scheduleId, {
-		status: { ...SETTLED_STATUS[outcome], at: Date.now(), sessionId },
+		...alwaysShowPatch(scheduleId, settled.color),
+		status: { ...settled, at: Date.now(), sessionId },
 	});
 	if (updated) push();
 }

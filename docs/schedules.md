@@ -23,6 +23,9 @@ status yet), so opening it from the widget (which marks it read) never makes the
 once you navigate away it falls back to the normal rule, so a read always-show-off row hides.
 A schedule with a running session always has a row, and its status dot becomes a spinner
 while it runs. The widget is always expanded (it has no collapse).
+Whenever a new status replaces a green one with yellow or red (a report or a settled run,
+in `scheduleStatus.ts`), `alwaysShowStatus` is turned on automatically so the regression
+stays visible; it is never turned off automatically.
 
 A scheduled session's header replaces the worktree row with `ScheduleHeaderStrip`:
 cadence, next run (omitted when off or none), last run, skip reason or error, plus labeled Always show
