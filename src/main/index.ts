@@ -15,6 +15,7 @@ import { initialize as initializeSessionGroupsStore } from "./core/store/session
 import { initialize as initializeShortcutsStore } from "./core/store/shortcuts";
 import { initialize as initializeSchedulesStore } from "./core/store/schedules";
 import { initialize as initializePendingResumesStore } from "./core/store/pending_resumes";
+import { initialize as initializeWindowStateStore } from "./core/store/window_state";
 import {
 	initialize as initializeAppSettingsStore,
 	get as getAppSettings,
@@ -28,6 +29,7 @@ import { cancelAllWakes } from "./sessions/wakeScheduler";
 import { flushActivityLog } from "./activityLog";
 import * as windows from "./windows";
 import { attachContextMenu } from "./contextMenu";
+import { initialBounds, trackWindowBounds } from "./windowBounds";
 
 let server: FastifyInstance | null = null;
 let sessionManager: SessionManager | null = null;
@@ -50,9 +52,9 @@ function createWindow(): BrowserWindow {
 		windows.showAndFocusAny();
 		return existing;
 	}
+	const initial = initialBounds();
 	const win = new BrowserWindow({
-		width: 1200,
-		height: 800,
+		...initial.bounds,
 		show: false,
 		title: "Ground Control",
 		webPreferences: {
@@ -62,7 +64,12 @@ function createWindow(): BrowserWindow {
 		},
 	});
 
-	win.on("ready-to-show", () => win.show());
+	win.on("ready-to-show", () => {
+		if (initial.isMaximized) win.maximize();
+		win.show();
+		if (initial.isFullScreen) win.setFullScreen(true);
+	});
+	trackWindowBounds(win);
 
 	// Hard rule: NO external URL is ever allowed to render inside this
 	// Electron app. Every http(s)/mailto/etc. URL is shoved out to the OS
@@ -240,6 +247,7 @@ app.whenReady().then(async () => {
 		await initializeShortcutsStore(dataDir);
 		await initializeSchedulesStore(dataDir);
 		await initializePendingResumesStore(dataDir);
+		await initializeWindowStateStore(dataDir);
 	} catch (err) {
 		console.error(`[ccw] failed to initialize store at ${dataDir}:`, err);
 		app.exit(1);
