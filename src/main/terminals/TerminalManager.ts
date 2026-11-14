@@ -5,6 +5,7 @@ import xtermHeadless from "@xterm/headless";
 import { spawn, type IPty } from "node-pty";
 import {
 	MAX_TERMINAL_GROUP_SIZE,
+	type SavedTerminalGroup,
 	type TerminalConfig,
 	type TerminalDataEvent,
 	type TerminalInfo,
@@ -111,6 +112,33 @@ export class TerminalManager {
 		}
 		this.emitChanged();
 		return targetId;
+	}
+
+	describeAll(): SavedTerminalGroup[] {
+		const groupIds = [...new Set(this.list().map((info) => info.groupId))];
+		return groupIds.map((groupId) => {
+			const group = this.groupEntries(groupId);
+			return {
+				name: group[0]?.info.name,
+				cwd: group[0]?.info.cwd ?? homedir(),
+				commands: group.map((entry) => entry.info.lastCommand ?? ""),
+			};
+		});
+	}
+
+	async restore(groups: SavedTerminalGroup[]): Promise<void> {
+		for (const group of groups) {
+			const cwd = await resolveCwd(group.cwd);
+			const groupId = randomUUID();
+			const commands = group.commands.slice(0, MAX_TERMINAL_GROUP_SIZE);
+			for (const command of commands.length > 0 ? commands : [""]) {
+				const entry = this.spawnEntry(cwd, groupId, group.name);
+				if (command.trim()) {
+					entry.info = { ...entry.info, lastCommand: command.trim() };
+				}
+			}
+		}
+		if (groups.length > 0) this.emitChanged();
 	}
 
 	private spawnEntry(

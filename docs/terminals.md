@@ -24,7 +24,7 @@ window.
   pane's scrollback (last 256k characters).
 - The name belongs to the group and defaults to the folder name. Click it in the modal
   header to rename (Enter or blur saves, Escape cancels, an empty name restores the folder
-  name). Names are not persisted.
+  name). Names survive a restart (see below).
 - **Save Config** in the modal header asks for a config name (prefilled with the group
   name), then saves the group's directory and the last command entered in each terminal
   (in pane order). Saving again with the same name and directory overwrites it. Configs persist in `terminal_configs.json` in
@@ -55,8 +55,13 @@ window.
   Ctrl+C to every running terminal in the group, with no confirmation. Start re-runs each
   idle terminal's last command (commands launched by Load Config count). Crashed terminals
   are skipped by both. Both hide while the `Delete?` confirm is showing.
-- Terminals are ephemeral. Nothing is persisted, and every shell is killed when the app
-  quits, without a quit confirmation.
+- Quitting kills every shell, without a quit confirmation, but first writes each group's
+  name, directory and per-terminal last command to `saved_terminals.json` in the data dir.
+  On the next launch every saved group comes back as fresh idle shells in the same
+  directory (home if it no longer exists), with the same name and pane count, and each
+  terminal's last command remembered but not run. **Start** on the row revives them.
+  Scrollback and crashed status are not kept. If the app quits before the restore has
+  finished, the file is left untouched.
 
 Code: `src/main/terminals/TerminalManager.ts` owns the PTYs (`node-pty`) and broadcasts
 `terminals:data` and `terminals:changed`. `src/main/ipc/terminalsHandlers.ts` exposes

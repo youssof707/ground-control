@@ -5,6 +5,10 @@ import {
 	listTerminalConfigs,
 	saveTerminalConfig,
 } from "../core/store/terminal_configs";
+import {
+	loadSavedTerminals,
+	saveTerminalsSync,
+} from "../core/store/saved_terminals";
 import { TerminalManager } from "../terminals/TerminalManager";
 import { broadcast } from "../windows";
 
@@ -70,5 +74,24 @@ export function registerTerminalsHandlers(): void {
 		manager.resize(id, cols, rows),
 	);
 
-	app.on("will-quit", () => manager.disposeAll());
+	let restored = false;
+	void loadSavedTerminals()
+		.then((groups) => manager.restore(groups))
+		.catch((err: unknown) => {
+			console.error("[terminals] restore failed:", err);
+		})
+		.finally(() => {
+			restored = true;
+		});
+
+	app.on("will-quit", () => {
+		if (restored) {
+			try {
+				saveTerminalsSync(manager.describeAll());
+			} catch (err) {
+				console.error("[terminals] save failed:", err);
+			}
+		}
+		manager.disposeAll();
+	});
 }
