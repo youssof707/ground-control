@@ -45,3 +45,16 @@ export const TerminalConfigsFileSchema = z.object({
 
 export type TerminalConfig = z.infer<typeof TerminalConfigSchema>;
 export type TerminalConfigsFile = z.infer<typeof TerminalConfigsFileSchema>;
+
+export const SavedTerminalGroupSchema = z.object({
+	name: z.string().optional(),
+	cwd: z.string(),
+	commands: z.array(z.string()),
+});
+
+export const SavedTerminalsFileSchema = z.object({
+	groups: z.array(SavedTerminalGroupSchema),
+});
+
+export type SavedTerminalGroup = z.infer<typeof SavedTerminalGroupSchema>;
+export type SavedTerminalsFile = z.infer<typeof SavedTerminalsFileSchema>;
