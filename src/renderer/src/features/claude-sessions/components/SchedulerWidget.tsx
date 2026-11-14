@@ -17,7 +17,7 @@ const NOW_TICK_MS = 30_000;
 
 type DotColor = ScheduleStatusColor | "gray";
 
-const DOT: Record<DotColor, { fill: string; soft: string }> = {
+export const DOT: Record<DotColor, { fill: string; soft: string }> = {
 	green: { fill: T.ok, soft: T.okSoft },
 	yellow: { fill: T.warn, soft: T.warnSoft },
 	red: { fill: T.danger, soft: T.dangerSoft },

@@ -13,6 +13,7 @@ export const TerminalInfoSchema = z.object({
 	lastLine: z.string(),
 	lastLineAt: z.number(),
 	exitCode: z.number().optional(),
+	lastCommand: z.string().optional(),
 	createdAt: z.number(),
 });
 

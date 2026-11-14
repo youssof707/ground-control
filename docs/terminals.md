@@ -14,8 +14,9 @@ window.
   group in the group's directory, up to 4. Panes lay out in a grid: 2 side by side, the 3rd
   splits the left pane top/bottom, the 4th splits the right one. The new pane takes focus,
   and Split always splits the focused pane's group.
-- Hovering a pane in a split group shows a `×` that deletes just that pane (second click
-  needed while alive). Typing `exit` in a pane removes it too. Delete in the header and the
+- Every pane has an always-visible floating card in its top-right corner: the terminal's
+  status dot, Start / Stop (see below) for just that terminal, and a `×` that deletes just
+  that pane (second click needed while alive). Typing `exit` in a pane removes it too. Delete in the header and the
   row `×` delete the whole group.
 - A row shows the group's dot, name, terminal count (when more than 1), and the most
   recent output line from any of its terminals. The dot is red if any terminal crashed,
@@ -49,6 +50,11 @@ window.
 - The `×` on a row, or Delete in the modal, kills the group's shells and removes the row.
   If any shell is alive it needs a second click (`Delete?` / `Confirm delete`), which reverts after 3s
   or when the pointer leaves the row. Removing an all-crashed group is a single click.
+- Hovering a row also shows **Stop** (square) while any terminal in the group is running,
+  and **Start** (play) while any is idle at its prompt with a last command. Stop sends
+  Ctrl+C to every running terminal in the group, with no confirmation. Start re-runs each
+  idle terminal's last command (commands launched by Load Config count). Crashed terminals
+  are skipped by both. Both hide while the `Delete?` confirm is showing.
 - Terminals are ephemeral. Nothing is persisted, and every shell is killed when the app
   quits, without a quit confirmation.
 

@@ -28,6 +28,14 @@ export function registerTerminalsHandlers(): void {
 	ipcMain.handle("terminals:killGroup", (_e, groupId: string) =>
 		manager.killGroup(groupId),
 	);
+	ipcMain.handle("terminals:stop", (_e, id: string) => manager.stop(id));
+	ipcMain.handle("terminals:rerun", (_e, id: string) => manager.rerun(id));
+	ipcMain.handle("terminals:stopGroup", (_e, groupId: string) =>
+		manager.stopGroup(groupId),
+	);
+	ipcMain.handle("terminals:rerunGroup", (_e, groupId: string) =>
+		manager.rerunGroup(groupId),
+	);
 	ipcMain.handle("terminals:renameGroup", (_e, groupId: string, name: unknown) => {
 		if (typeof name === "string") manager.renameGroup(groupId, name);
 	});

@@ -19,7 +19,7 @@ import {
 	useTerminalsStore,
 } from "../stores/useTerminalsStore";
 import { useInlineConfirm } from "../hooks/useInlineConfirm";
-import { StatusDot } from "./SchedulerWidget";
+import { DOT, StatusDot } from "./SchedulerWidget";
 import { LoadConfigButton, SaveConfigButton } from "./TerminalConfigButtons";
 
 const TERMINAL_BACKGROUND = "#1c1916";
@@ -46,6 +46,16 @@ const THEME = {
 	brightMagenta: "#d4a0ec",
 	brightCyan: "#72cede",
 	brightWhite: "#edebe7",
+} as const;
+
+const PANE_BUTTON = {
+	height: 22,
+	minWidth: 22,
+	padding: 0,
+	fontSize: 11,
+	display: "inline-flex",
+	alignItems: "center",
+	justifyContent: "center",
 } as const;
 
 const GRID_AREAS: Record<number, string> = {
@@ -209,8 +219,6 @@ function TerminalPane({
 	const { id } = terminal;
 	const containerRef = useRef<HTMLDivElement>(null);
 	const termRef = useRef<Terminal | null>(null);
-	const [hovered, setHovered] = useState(false);
-
 	useEffect(() => {
 		const container = containerRef.current;
 		if (!container) return;
@@ -287,16 +295,13 @@ function TerminalPane({
 		() => void useTerminalsStore.getState().kill(id),
 		terminal.status !== "crashed",
 	);
-	const showKill = split && (hovered || kill.confirming);
+	const canStop = terminal.status === "running";
+	const canStart = terminal.status === "idle" && Boolean(terminal.lastCommand);
 
 	return (
 		<div
 			onFocusCapture={() => useTerminalsStore.getState().setFocus(id)}
-			onMouseEnter={() => setHovered(true)}
-			onMouseLeave={() => {
-				setHovered(false);
-				kill.reset();
-			}}
+			onMouseLeave={kill.reset}
 			style={{
 				gridArea: area,
 				position: "relative",
@@ -309,31 +314,65 @@ function TerminalPane({
 			}}
 		>
 			<div ref={containerRef} style={{ width: "100%", height: "100%" }} />
-			{showKill ? (
+			<div
+				style={{
+					position: "absolute",
+					top: 6,
+					right: 6,
+					zIndex: 5,
+					display: "flex",
+					alignItems: "center",
+					gap: 2,
+					padding: "2px 2px 2px 8px",
+					background: T.surface,
+					border: `0.5px solid ${DOT[TERMINAL_DOT[terminal.status]].fill}`,
+					borderRadius: 7,
+				}}
+			>
+				<span
+					style={{
+						display: "inline-flex",
+						alignItems: "center",
+						marginRight: 4,
+					}}
+				>
+					<StatusDot color={TERMINAL_DOT[terminal.status]} />
+				</span>
+				{!kill.confirming && canStart ? (
+					<button
+						type="button"
+						className="btn btn-ghost"
+						aria-label="Start pane"
+						onClick={() => void useTerminalsStore.getState().rerun(id)}
+						style={PANE_BUTTON}
+					>
+						<PlayIcon />
+					</button>
+				) : null}
+				{!kill.confirming && canStop ? (
+					<button
+						type="button"
+						className="btn btn-ghost"
+						aria-label="Stop pane"
+						onClick={() => void useTerminalsStore.getState().stop(id)}
+						style={PANE_BUTTON}
+					>
+						<StopIcon />
+					</button>
+				) : null}
 				<button
 					type="button"
 					className={kill.confirming ? "btn btn-destructive" : "btn btn-ghost"}
-					aria-label={
-						kill.confirming ? "Confirm delete pane" : "Delete pane"
-					}
+					aria-label={kill.confirming ? "Confirm delete pane" : "Delete pane"}
 					onClick={kill.click}
 					style={{
-						position: "absolute",
-						top: 6,
-						right: 6,
-						zIndex: 5,
-						height: 22,
-						minWidth: 22,
+						...PANE_BUTTON,
 						padding: kill.confirming ? "0 8px" : 0,
-						fontSize: 11,
-						display: "inline-flex",
-						alignItems: "center",
-						justifyContent: "center",
 					}}
 				>
 					{kill.confirming ? "Delete?" : <CloseIcon />}
 				</button>
-			) : null}
+			</div>
 		</div>
 	);
 }
@@ -418,6 +457,28 @@ export function CloseIcon() {
 				strokeWidth="1.4"
 				strokeLinecap="round"
 			/>
+		</svg>
+	);
+}
+
+export function PlayIcon() {
+	return (
+		<svg width="11" height="11" viewBox="0 0 14 14" fill="none" aria-hidden>
+			<path
+				d="M4.5 3.2v7.6L10.8 7z"
+				fill="currentColor"
+				stroke="currentColor"
+				strokeWidth="1"
+				strokeLinejoin="round"
+			/>
+		</svg>
+	);
+}
+
+export function StopIcon() {
+	return (
+		<svg width="11" height="11" viewBox="0 0 14 14" fill="none" aria-hidden>
+			<rect x="3.5" y="3.5" width="7" height="7" rx="1.2" fill="currentColor" />
 		</svg>
 	);
 }

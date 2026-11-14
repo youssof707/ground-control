@@ -16,7 +16,12 @@ import {
 import { useWorktreesStore } from "../stores/useWorktreesStore";
 import { useInlineConfirm } from "../hooks/useInlineConfirm";
 import { StatusDot } from "./SchedulerWidget";
-import { CloseIcon, TerminalModal } from "./TerminalModal";
+import {
+	CloseIcon,
+	PlayIcon,
+	StopIcon,
+	TerminalModal,
+} from "./TerminalModal";
 
 const MAX_VISIBLE_ROWS = 5;
 const ROW_HEIGHT = 28;
@@ -35,6 +40,18 @@ const BARE_BUTTON = {
 	background: "transparent",
 	cursor: "pointer",
 	font: "inherit",
+} as const;
+
+const ROW_ICON_BUTTON = {
+	...BARE_BUTTON,
+	display: "inline-flex",
+	alignItems: "center",
+	justifyContent: "center",
+	width: 22,
+	height: 22,
+	borderRadius: 4,
+	color: T.textMute,
+	flexShrink: 0,
 } as const;
 
 function resolveTerminalCwd(
@@ -193,6 +210,10 @@ function TerminalRow({
 	const [hovered, setHovered] = useState(false);
 	const label = groupLabel(group);
 	const count = group.terminals.length;
+	const canStop = group.terminals.some((t) => t.status === "running");
+	const canStart = group.terminals.some(
+		(t) => t.status === "idle" && Boolean(t.lastCommand),
+	);
 	const kill = useInlineConfirm(
 		() => void useTerminalsStore.getState().killGroup(group.id),
 		group.terminals.some((t) => t.status !== "crashed"),
@@ -266,6 +287,28 @@ function TerminalRow({
 				) : null}
 				<span style={{ ...ELLIPSIS, flex: 1 }}>{groupLastLine(group)}</span>
 			</button>
+			{!kill.confirming && canStart ? (
+				<button
+					type="button"
+					className="terminal-row-control"
+					aria-label={`Start terminal ${label}`}
+					onClick={() => void useTerminalsStore.getState().rerunGroup(group.id)}
+					style={{ ...ROW_ICON_BUTTON, opacity: hovered ? 1 : 0 }}
+				>
+					<PlayIcon />
+				</button>
+			) : null}
+			{!kill.confirming && canStop ? (
+				<button
+					type="button"
+					className="terminal-row-control"
+					aria-label={`Stop terminal ${label}`}
+					onClick={() => void useTerminalsStore.getState().stopGroup(group.id)}
+					style={{ ...ROW_ICON_BUTTON, opacity: hovered ? 1 : 0 }}
+				>
+					<StopIcon />
+				</button>
+			) : null}
 			{kill.confirming ? (
 				<button
 					type="button"
@@ -292,19 +335,12 @@ function TerminalRow({
 			) : (
 				<button
 					type="button"
+					className="terminal-row-control"
 					aria-label={`Delete terminal ${label}`}
 					onClick={kill.click}
 					style={{
-						...BARE_BUTTON,
-						display: "inline-flex",
-						alignItems: "center",
-						justifyContent: "center",
-						width: 22,
-						height: 22,
+						...ROW_ICON_BUTTON,
 						marginRight: 3,
-						borderRadius: 4,
-						color: T.textMute,
-						flexShrink: 0,
 						opacity: hovered ? 1 : 0,
 					}}
 				>

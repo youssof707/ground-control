@@ -194,6 +194,12 @@ const claude = {
 	killTerminal: (id: string) => ipcRenderer.invoke("terminals:kill", id),
 	killTerminalGroup: (groupId: string) =>
 		ipcRenderer.invoke("terminals:killGroup", groupId),
+	stopTerminal: (id: string) => ipcRenderer.invoke("terminals:stop", id),
+	rerunTerminal: (id: string) => ipcRenderer.invoke("terminals:rerun", id),
+	stopTerminalGroup: (groupId: string) =>
+		ipcRenderer.invoke("terminals:stopGroup", groupId),
+	rerunTerminalGroup: (groupId: string) =>
+		ipcRenderer.invoke("terminals:rerunGroup", groupId),
 	renameTerminalGroup: (groupId: string, name: string) =>
 		ipcRenderer.invoke("terminals:renameGroup", groupId, name),
 	listTerminalConfigs: () => ipcRenderer.invoke("terminals:listConfigs"),

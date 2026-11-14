@@ -31,7 +31,6 @@ interface TerminalEntry {
 	seq: number;
 	lastLine: LastLineTracker;
 	screen: HeadlessTerminal;
-	lastCommand: string;
 	startup: { command: string; quiet: NodeJS.Timeout | null; deadline: NodeJS.Timeout } | null;
 }
 
@@ -91,7 +90,7 @@ export class TerminalManager {
 		return {
 			name: first.info.name ?? (basename(first.info.cwd) || "/"),
 			cwd: first.info.cwd,
-			commands: group.map((entry) => entry.lastCommand),
+			commands: group.map((entry) => entry.info.lastCommand ?? ""),
 		};
 	}
 
@@ -149,7 +148,6 @@ export class TerminalManager {
 				scrollback: SCREEN_SCROLLBACK,
 				allowProposedApi: true,
 			}),
-			lastCommand: "",
 			startup: null,
 		};
 		this.entries.set(entry.info.id, entry);
@@ -184,6 +182,7 @@ export class TerminalManager {
 		const startup = entry.startup;
 		if (!startup) return;
 		this.clearStartup(entry);
+		this.setLastCommand(entry, startup.command);
 		this.write(entry.info.id, `${startup.command}\r`);
 	}
 
@@ -206,7 +205,13 @@ export class TerminalManager {
 			.filter((char) => char.charCodeAt(0) >= 32)
 			.join("");
 		const command = (line.slice(prompt.length) + typed).trim();
-		if (command) entry.lastCommand = command;
+		if (command) this.setLastCommand(entry, command);
+	}
+
+	private setLastCommand(entry: TerminalEntry, command: string): void {
+		if (entry.info.lastCommand === command) return;
+		entry.info = { ...entry.info, lastCommand: command };
+		this.scheduleChanged();
 	}
 
 	snapshot(id: string): TerminalSnapshot | null {
@@ -238,6 +243,35 @@ export class TerminalManager {
 			this.disposeEntry(entry);
 		}
 		this.emitChanged();
+	}
+
+	stop(id: string): void {
+		const entry = this.entries.get(id);
+		if (entry) this.stopEntry(entry);
+	}
+
+	rerun(id: string): void {
+		const entry = this.entries.get(id);
+		if (entry) this.rerunEntry(entry);
+	}
+
+	stopGroup(groupId: string): void {
+		for (const entry of this.groupEntries(groupId)) this.stopEntry(entry);
+	}
+
+	rerunGroup(groupId: string): void {
+		for (const entry of this.groupEntries(groupId)) this.rerunEntry(entry);
+	}
+
+	private stopEntry(entry: TerminalEntry): void {
+		if (!isAlive(entry) || entry.info.status !== "running") return;
+		entry.pty.write("\x03");
+	}
+
+	private rerunEntry(entry: TerminalEntry): void {
+		const command = entry.info.lastCommand;
+		if (!command || !isAlive(entry) || entry.info.status !== "idle") return;
+		this.write(entry.info.id, `${command}\r`);
 	}
 
 	private groupOf(id: string): TerminalEntry[] {

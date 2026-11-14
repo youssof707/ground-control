@@ -226,6 +226,10 @@ declare global {
 			terminalSnapshot: (id: string) => Promise<TerminalSnapshot | null>;
 			killTerminal: (id: string) => Promise<void>;
 			killTerminalGroup: (groupId: string) => Promise<void>;
+			stopTerminal: (id: string) => Promise<void>;
+			rerunTerminal: (id: string) => Promise<void>;
+			stopTerminalGroup: (groupId: string) => Promise<void>;
+			rerunTerminalGroup: (groupId: string) => Promise<void>;
 			renameTerminalGroup: (groupId: string, name: string) => Promise<void>;
 			listTerminalConfigs: () => Promise<TerminalConfig[]>;
 			saveTerminalConfig: (

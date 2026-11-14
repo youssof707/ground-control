@@ -636,6 +636,10 @@ input[type="number"]::-webkit-outer-spin-button {
 	background: oklch(0.245 0.008 60) !important;
 }
 
+.terminal-row-control:hover {
+	color: oklch(0.94 0.005 80) !important;
+}
+
 .sched-card-header:hover {
 	background: oklch(0.245 0.008 60);
 }
