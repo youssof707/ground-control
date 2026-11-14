@@ -130,6 +130,8 @@ const claude = {
 	createWorktree: (input: CreateWorktreeInput) =>
 		ipcRenderer.invoke("worktrees:create", input),
 	deleteWorktree: (id: string) => ipcRenderer.invoke("worktrees:delete", id),
+	getSourceControlSnapshot: (cwd: string) =>
+		ipcRenderer.invoke("scm:snapshot", { cwd }),
 	listGroups: () => ipcRenderer.invoke("groups:list"),
 	createGroup: (input: CreateSessionGroupInput) =>
 		ipcRenderer.invoke("groups:create", input),
