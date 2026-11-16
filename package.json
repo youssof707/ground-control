@@ -61,6 +61,7 @@
 		"electron-builder": "^26.0.0",
 		"electron-vite": "^5.0.0",
 		"eslint": "^10.3.0",
+		"monaco-editor": "0.57.0",
 		"react": "^19.0.0",
 		"react-dom": "^19.0.0",
 		"typescript": "^6.0.0",

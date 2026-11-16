@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useMatch } from "react-router-dom";
 import { useDeleteSessionRequestStore } from "../stores/useDeleteSessionRequestStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
+import { isSourceControlModalOpen } from "../../source-control/useSourceControlStore";
 
 function isEditableFocused(): boolean {
 	const el = document.activeElement as HTMLElement | null;
@@ -19,6 +20,7 @@ export function useDeleteSessionHotkey(): void {
 
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
+			if (isSourceControlModalOpen()) return;
 			if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
 			if (e.key !== "Backspace") return;
 			if (e.repeat) return;

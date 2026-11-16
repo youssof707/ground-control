@@ -3,6 +3,7 @@ import { useMatch } from "react-router-dom";
 import { useModelPickerStore } from "../stores/useModelPickerStore";
 import { useSidequestsStore } from "../stores/useSidequestsStore";
 import { refreshModelOptions } from "../lib/modelOptionsCache";
+import { isSourceControlModalOpen } from "../../source-control/useSourceControlStore";
 
 export function useModelPickerHotkey(): void {
 	const match = useMatch("/sessions/:id/*");
@@ -15,6 +16,7 @@ export function useModelPickerHotkey(): void {
 
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
+			if (isSourceControlModalOpen()) return;
 			if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
 			if (e.key.toLowerCase() !== "m") return;
 

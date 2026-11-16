@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUndoStore } from "../stores/useUndoStore";
 import { undoMostRecent } from "../lib/undoActions";
+import { isSourceControlModalOpen } from "../../source-control/useSourceControlStore";
 
 export function useUndoHotkey(): void {
 	const navigate = useNavigate();
@@ -10,6 +11,7 @@ export function useUndoHotkey(): void {
 
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
+			if (isSourceControlModalOpen()) return;
 			if (!e.metaKey || e.ctrlKey || e.altKey || !e.shiftKey) return;
 			if (e.key.toLowerCase() !== "t") return;
 			if (useUndoStore.getState().entries.length === 0) return;

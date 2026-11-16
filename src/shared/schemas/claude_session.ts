@@ -137,6 +137,7 @@ export const ClaudeSessionSchema = z.object({
 	finishedAt: z.number().optional(),
 	error: z.string().optional(),
 	branch: z.string().optional(),
+	activeCheckout: z.string().optional(),
 	/** Branch tracked by the staleness chip. Compared with `branch` (the
 	 * live value) to decide whether the chip should render in a "stale" /
 	 * red state. Set in two places:

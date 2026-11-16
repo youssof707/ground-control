@@ -18,7 +18,9 @@ import { SessionChat } from "./features/claude-sessions/components/SessionChat";
 import { InboxSidebar } from "./features/claude-sessions/components/InboxSidebar";
 import { SidequestSidebarShell } from "./features/claude-sessions/components/sidequest/SidequestSidebarShell";
 import { AppNav } from "./features/claude-sessions/components/AppNav";
-import { SourceControlHost } from "./features/source-control/SourceControlHost";
+import { SourceControlModalHost } from "./features/source-control/SourceControlModal";
+import { BranchModalHost } from "./features/source-control/BranchModal";
+import { useSourceControlRefresh } from "./features/source-control/useSourceControlRefresh";
 import { SidebarFooter } from "./features/claude-sessions/components/SidebarFooter";
 import { useSettingsStore } from "./features/claude-sessions/stores/useSettingsStore";
 import {
@@ -115,6 +117,7 @@ function MainBody() {
 	const activeSessionId = sessionMatch?.params.id;
 
 	const rightPanel = useActiveRightPanel(activeSessionId);
+	useSourceControlRefresh(activeSessionId);
 	const setInboxOpen = useRightPanelStore((s) => s.setInboxOpen);
 	const setSessionPanel = useRightPanelStore((s) => s.setSessionPanel);
 
@@ -135,7 +138,8 @@ function MainBody() {
 					onClose={() => setSessionPanel(activeSessionId, null)}
 				/>
 			) : null}
-			<SourceControlHost sessionId={activeSessionId} />
+			<SourceControlModalHost />
+			<BranchModalHost />
 		</div>
 	);
 }

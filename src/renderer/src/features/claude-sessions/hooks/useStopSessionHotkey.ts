@@ -5,6 +5,7 @@ import { isDraftId } from "../stores/useDraftSessionsStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { useSidequestsStore } from "../stores/useSidequestsStore";
 import { useTerminalsStore } from "../stores/useTerminalsStore";
+import { isSourceControlModalOpen } from "../../source-control/useSourceControlStore";
 
 function isFocusInSidequestPanel(): boolean {
 	const focused = document.activeElement as HTMLElement | null;
@@ -32,6 +33,7 @@ export function useStopSessionHotkey(): void {
 
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
+			if (isSourceControlModalOpen()) return;
 			if (!e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
 			if (e.key.toLowerCase() !== "c") return;
 			if (useTerminalsStore.getState().openGroupId) return;

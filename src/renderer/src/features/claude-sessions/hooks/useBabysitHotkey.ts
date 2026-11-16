@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useMatch } from "react-router-dom";
 import { useBabysitStore } from "../stores/useBabysitStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
+import { isSourceControlModalOpen } from "../../source-control/useSourceControlStore";
 
 /**
  * Global Cmd+Shift+B — opens the Babysitter modal for the active session,
@@ -30,6 +31,7 @@ export function useBabysitHotkey(): void {
 
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
+			if (isSourceControlModalOpen()) return;
 			if (!e.metaKey || e.ctrlKey || e.altKey || !e.shiftKey) return;
 			if (e.key.toLowerCase() !== "b") return;
 

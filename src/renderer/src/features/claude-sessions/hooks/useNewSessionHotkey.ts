@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { startNewSessionDraft } from "../lib/sessionStartActions";
 import { useSettingsStore } from "../stores/useSettingsStore";
+import { isSourceControlModalOpen } from "../../source-control/useSourceControlStore";
 
 export function useNewSessionHotkey(): void {
 	const navigate = useNavigate();
@@ -10,6 +11,7 @@ export function useNewSessionHotkey(): void {
 
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
+			if (isSourceControlModalOpen()) return;
 			if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
 			if (e.key.toLowerCase() !== "n") return;
 

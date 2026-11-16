@@ -41,7 +41,7 @@ import { registerSettingsHandlers } from "./settingsHandlers";
 import { registerAppInfoHandlers } from "./appInfoHandlers";
 import { registerRateLimitHandlers } from "./rateLimitHandlers";
 import { registerWorktreesHandlers } from "./worktreesHandlers";
-import { registerSourceControlHandlers } from "../sourceControl/handlers";
+import { registerSourceControlHost } from "../sourceControl/host";
 import {
 	registerGroupsHandlers,
 	pruneGroupIfEmpty,
@@ -220,7 +220,7 @@ export function registerSessionsHandlers(): SessionManager {
 	registerWorktreesHandlers({
 		waitForDeleteHooks: (worktreeId) => deleteHooks.waitForWorktree(worktreeId),
 	});
-	registerSourceControlHandlers();
+	registerSourceControlHost();
 	registerGroupsHandlers();
 	registerShortcutsHandlers();
 	registerSchedulesHandlers(runner);

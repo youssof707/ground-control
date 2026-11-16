@@ -24,7 +24,6 @@ import type {
 	LocalBranch,
 	Worktree,
 } from "../shared/schemas/worktrees";
-import type { ScmSnapshot } from "../shared/schemas/source_control";
 import type {
 	CreateSessionGroupInput,
 	SessionGroup,
@@ -159,7 +158,7 @@ declare global {
 			listBranches: (baseDir: string) => Promise<LocalBranch[]>;
 			createWorktree: (input: CreateWorktreeInput) => Promise<Worktree>;
 			deleteWorktree: (id: string) => Promise<void>;
-			getSourceControlSnapshot: (cwd: string) => Promise<ScmSnapshot>;
+			connectSourceControl: () => void;
 			listGroups: () => Promise<SessionGroup[]>;
 			createGroup: (input: CreateSessionGroupInput) => Promise<SessionGroup>;
 			setSessionGroup: (

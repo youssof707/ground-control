@@ -13,7 +13,6 @@ import {
 } from "../stores/useRightPanelStore";
 import { T } from "../../../design/tokens";
 import { isScheduledSession } from "../lib/scheduledSessions";
-import { SourceControlToggle } from "../../source-control/SourceControlToggle";
 
 export function AppNav() {
 	const queue = usePermissionsStore((s) => s.queue);
@@ -179,7 +178,6 @@ export function AppNav() {
 					onClick={toggleSidequest}
 				/>
 			) : null}
-			{inSession ? <SourceControlToggle /> : null}
 			<InboxToggle
 				active={rightPanel === "inbox"}
 				badge={inboxBadge}

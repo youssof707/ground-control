@@ -189,11 +189,14 @@ import {
 	isSubagentProse,
 } from "../../shared/claude-sessions/transcript";
 import {
+	findTranscriptFile,
 	transcriptCanResumeAt,
 	waitForResumableUuid,
 	type TranscriptChainCache,
 } from "./transcriptIndex";
 import { spawnClaudeProcess } from "./spawnClaudeProcess";
+import { lastBashWriteDir } from "./bashWrites";
+import { editTarget, gitToplevel, lastWorkDirInTranscript } from "./workingCheckout";
 import {
 	assistantStreamModel,
 	identityMatches,
@@ -258,6 +261,15 @@ function resolveEffectiveCwd(session: {
 		`[ccw] session cwd does not exist: ${preferred || "(empty)"} — falling back to ${homedir()}`,
 	);
 	return homedir();
+}
+
+function resolveWorkingCheckout(session: {
+	cwd: string;
+	worktreeId?: string;
+	activeCheckout?: string;
+}): string {
+	if (session.activeCheckout && existsSync(session.activeCheckout)) return session.activeCheckout;
+	return resolveEffectiveCwd(session);
 }
 
 interface RunningEntry {
@@ -1900,6 +1912,60 @@ export class SessionManager {
 				...(session.scheduleId
 					? this.scheduledRunOptions(session, session.scheduleId)
 					: {}),
+				...(persist
+					? {
+						hooks: {
+							PreToolUse: [
+								{
+									hooks: [
+										async (input) => {
+											if (input.hook_event_name === "PreToolUse" && input.tool_name === "Bash") {
+												this.bashStarts.set(input.tool_use_id, Date.now());
+											}
+											return {};
+										},
+									],
+								},
+							],
+							PostToolUse: [
+								{
+									hooks: [
+										async (input) => {
+											if (input.hook_event_name === "PostToolUse") {
+												const dir = editTarget(input.tool_name, input.tool_input, input.cwd);
+												if (dir) this.noteWorkDir(id, dir);
+												else this.noteBashWrites(id, input.tool_use_id, input.tool_name, input.tool_input, input.cwd);
+											}
+											return {};
+										},
+									],
+								},
+							],
+							PostToolUseFailure: [
+								{
+									hooks: [
+										async (input) => {
+											if (input.hook_event_name === "PostToolUseFailure") {
+												this.noteBashWrites(id, input.tool_use_id, input.tool_name, input.tool_input, input.cwd);
+											}
+											return {};
+										},
+									],
+								},
+							],
+							CwdChanged: [
+								{
+									hooks: [
+										async (input) => {
+											if (input.hook_event_name === "CwdChanged") this.noteWorkDir(id, input.new_cwd);
+											return {};
+										},
+									],
+								},
+							],
+						},
+					}
+					: {}),
 			};
 
 			const q = query({ prompt: userStream(), options });
@@ -2503,7 +2569,7 @@ export class SessionManager {
 		if (entry?.ephemeral) return;
 		const source = entry?.session ?? sessionStore.getSession(sessionId);
 		if (!source) return;
-		const cwd = resolveEffectiveCwd(source);
+		const cwd = resolveWorkingCheckout(source);
 		if (!cwd) return;
 		void (async () => {
 			try {
@@ -2527,6 +2593,73 @@ export class SessionManager {
 		})();
 	}
 
+	private workDirChains = new Map<string, Promise<void>>();
+	private backfilled = new Set<string>();
+	private bashStarts = new Map<string, number>();
+
+	private noteBashWrites(
+		sessionId: string,
+		toolUseId: string,
+		toolName: string,
+		toolInput: unknown,
+		cwd: string,
+	): void {
+		const since = this.bashStarts.get(toolUseId);
+		this.bashStarts.delete(toolUseId);
+		if (toolName !== "Bash" || since === undefined) return;
+		const command = (toolInput as { command?: unknown } | null)?.command;
+		if (typeof command !== "string" || !command) return;
+		this.noteWorkDir(sessionId, () => lastBashWriteDir(command, cwd, since));
+	}
+
+	private noteWorkDir(sessionId: string, dir: string | (() => Promise<string | null>)): void {
+		const previous = this.workDirChains.get(sessionId) ?? Promise.resolve();
+		const next = previous
+			.then(async () => {
+				const target = typeof dir === "string" ? dir : await dir();
+				if (!target) return;
+				const top = await gitToplevel(target);
+				if (top) await this.setWorkingCheckout(sessionId, top);
+			})
+			.catch((err) => console.error("[ccw] noteWorkDir failed:", err));
+		this.workDirChains.set(sessionId, next);
+		void next.finally(() => {
+			if (this.workDirChains.get(sessionId) === next) this.workDirChains.delete(sessionId);
+		});
+	}
+
+	private async backfillWorkingCheckout(sessionId: string, sdkSessionId: string | undefined): Promise<void> {
+		if (!sdkSessionId || this.backfilled.has(sessionId)) return;
+		this.backfilled.add(sessionId);
+		try {
+			const file = await findTranscriptFile(sdkSessionId);
+			if (!file) return;
+			const dir = await lastWorkDirInTranscript(file);
+			if (!dir) return;
+			const top = await gitToplevel(dir);
+			const current = this.sessions.get(sessionId)?.session ?? sessionStore.getSession(sessionId);
+			if (top && !current?.activeCheckout) await this.setWorkingCheckout(sessionId, top);
+		} catch (err) {
+			console.error("[ccw] backfillWorkingCheckout failed:", err);
+		}
+	}
+
+	private async setWorkingCheckout(sessionId: string, checkout: string): Promise<void> {
+		const entry = this.sessions.get(sessionId);
+		if (entry?.ephemeral) return;
+		const source = entry?.session ?? sessionStore.getSession(sessionId);
+		if (!source || source.activeCheckout === checkout) return;
+		const branch = await getCurrentBranch(checkout);
+		if (entry) {
+			entry.session.activeCheckout = checkout;
+			entry.session.branch = branch;
+			entry.session.lastUserMessageBranch = branch;
+		}
+		const patch = { activeCheckout: checkout, branch, lastUserMessageBranch: branch };
+		await sessionStore.updateSession(sessionId, patch);
+		this.send("session:patch", { sessionId, ...patch });
+	}
+
 	finish(sessionId: string) {
 		this.sessions.get(sessionId)?.finish();
 	}
@@ -2545,7 +2678,12 @@ export class SessionManager {
 		const entry = this.sessions.get(sessionId);
 		const source = entry?.session ?? sessionStore.getSession(sessionId);
 		if (!source) return;
-		const cwd = resolveEffectiveCwd(source);
+		if (!source.activeCheckout && !entry?.ephemeral) {
+			await this.backfillWorkingCheckout(sessionId, source.sdkSessionId);
+			const filled = this.sessions.get(sessionId)?.session ?? sessionStore.getSession(sessionId);
+			if (filled?.activeCheckout) return;
+		}
+		const cwd = resolveWorkingCheckout(source);
 		if (!cwd) return;
 		const previous =
 			entry?.session.branch ?? sessionStore.getSession(sessionId)?.branch;
@@ -2575,7 +2713,7 @@ export class SessionManager {
 		const entry = this.sessions.get(sessionId);
 		const source = entry?.session ?? sessionStore.getSession(sessionId);
 		if (!source) throw new Error(`No session ${sessionId}`);
-		const cwd = resolveEffectiveCwd(source);
+		const cwd = resolveWorkingCheckout(source);
 		if (!cwd) throw new Error(`No session ${sessionId}`);
 		await switchBranch(cwd, branch);
 		await this.refreshBranch(sessionId);
@@ -2591,7 +2729,7 @@ export class SessionManager {
 		const entry = this.sessions.get(sessionId);
 		const source = entry?.session ?? sessionStore.getSession(sessionId);
 		if (!source) return false;
-		const cwd = resolveEffectiveCwd(source);
+		const cwd = resolveWorkingCheckout(source);
 		if (!cwd) return false;
 		return hasUncommittedChanges(cwd);
 	}

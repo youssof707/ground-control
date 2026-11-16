@@ -32,6 +32,10 @@ import { ConfirmModal } from "../../../components/ConfirmModal";
 import { T } from "../../../design/tokens";
 import { BranchChipWithDelta, StatusPill } from "../../../design/Atoms";
 import { WorktreeChip } from "../../../design/WorktreeChip";
+import { SourceControlWidget } from "../../source-control/SourceControlWidget";
+import { useSessionCheckout } from "../../source-control/useSessionCheckout";
+import { useSourceControlStore } from "../../source-control/useSourceControlStore";
+import { BRANCH_PREFETCH_MAX_AGE_MS, refreshBranches } from "../../source-control/branchCache";
 
 export function SessionChat({ sessionId }: { sessionId: string }) {
 	// Draft sessions (UI-only, not yet persisted) live at /sessions/draft-<id>
@@ -48,6 +52,11 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 	const attachedWorktree = useWorktreesStore((s) =>
 		session?.worktreeId ? s.worktrees[session.worktreeId] : undefined,
 	);
+	const scmCheckout = useSessionCheckout(sessionId);
+	const worktreeName = useSourceControlStore((s) =>
+		scmCheckout ? s.byCheckout[scmCheckout]?.summary?.worktreeName ?? null : null,
+	);
+	const openBranches = useSourceControlStore((s) => s.openBranches);
 	const schedule = useSchedulesStore((s) =>
 		session?.scheduleId ? s.byId[session.scheduleId] : undefined,
 	);
@@ -398,7 +407,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					) : (
 						<div style={{ flex: 1 }} />
 					)}
-
 				</div>
 
 				{/* Row 2: status chips */}
@@ -443,7 +451,19 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 						branch={session.branch}
 						lastUserMessageBranch={session.lastUserMessageBranch}
 						sessionId={sessionId}
+						worktree={worktreeName}
+						onOpen={
+							scmCheckout
+								? () => openBranches({ checkout: scmCheckout, sessionId })
+								: undefined
+						}
+						onPrefetch={
+							scmCheckout
+								? () => void refreshBranches(scmCheckout, BRANCH_PREFETCH_MAX_AGE_MS)
+								: undefined
+						}
 					/>
+					<SourceControlWidget checkout={scmCheckout} />
 				</div>
 			</div>
 

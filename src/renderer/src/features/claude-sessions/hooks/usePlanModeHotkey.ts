@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { applySessionMode } from "../lib/composerActions";
 import { isDraftId, useDraftSessionsStore } from "../stores/useDraftSessionsStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
+import { isSourceControlModalOpen } from "../../source-control/useSourceControlStore";
 
 /**
  * Cmd+P — toggles the focused composer between Plan and Auto-edit, so the
@@ -40,6 +41,7 @@ import { useSessionsStore } from "../stores/useSessionsStore";
 export function usePlanModeHotkey(): void {
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
+			if (isSourceControlModalOpen()) return;
 			if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
 			if (e.key.toLowerCase() !== "p") return;
 

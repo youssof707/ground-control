@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import { useSchedulerModalStore } from "../stores/useSchedulerModalStore";
+import { isSourceControlModalOpen } from "../../source-control/useSourceControlStore";
 
 export function useSchedulerHotkey() {
 	useEffect(() => {
 		const handler = (e: KeyboardEvent) => {
+			if (isSourceControlModalOpen()) return;
 			if (!e.metaKey || e.ctrlKey || e.altKey || !e.shiftKey) return;
 			if (e.key.toLowerCase() !== "s") return;
 			e.preventDefault();

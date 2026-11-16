@@ -14,6 +14,7 @@ import {
 	recreateSidequest,
 } from "../lib/sidequestActions";
 import { selectionStartElement, selectionText } from "../lib/selection";
+import { isSourceControlModalOpen } from "../../source-control/useSourceControlStore";
 
 /**
  * Global Cmd+S — the sidequest hotkey. Mounted once, in `MainApp`.
@@ -45,6 +46,7 @@ export function useSidequestHotkey(): void {
 
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
+			if (isSourceControlModalOpen()) return;
 			if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
 			if (e.key.toLowerCase() !== "s") return;
 

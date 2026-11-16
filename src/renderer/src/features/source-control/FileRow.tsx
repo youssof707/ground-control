@@ -1,16 +1,7 @@
-import type { ScmFile, ScmFileStatus } from "@shared/schemas/source_control";
-import { T } from "../../design/tokens";
+import { memo, type MouseEvent } from "react";
+import type { ScmFileStatus } from "@shared/schemas/source_control";
 
-const STATUS_COLOR: Record<ScmFileStatus, string> = {
-	M: T.warn,
-	A: T.ok,
-	U: T.ok,
-	D: T.danger,
-	R: T.info,
-	C: T.danger,
-};
-
-const STATUS_LABEL: Record<ScmFileStatus, string> = {
+export const STATUS_LABEL: Record<ScmFileStatus, string> = {
 	M: "Modified",
 	A: "Added",
 	U: "Untracked",
@@ -19,70 +10,86 @@ const STATUS_LABEL: Record<ScmFileStatus, string> = {
 	C: "Conflict",
 };
 
-function splitPath(path: string): { name: string; dir: string } {
+export interface RowPointer {
+	toggle: boolean;
+	range: boolean;
+}
+
+export function splitPath(path: string): { name: string; dir: string } {
 	const trimmed = path.endsWith("/") ? path.slice(0, -1) : path;
 	const slash = trimmed.lastIndexOf("/");
 	if (slash === -1) return { name: trimmed, dir: "" };
 	return { name: trimmed.slice(slash + 1), dir: trimmed.slice(0, slash) };
 }
 
-export function FileRow({ file }: { file: ScmFile }) {
-	const { name, dir } = splitPath(file.path);
-	const color = STATUS_COLOR[file.status];
+export function rowId(index: number): string {
+	return `scm-row-${index}`;
+}
+
+export const FileRow = memo(function FileRow({
+	index,
+	path,
+	status,
+	staged,
+	top,
+	height,
+	selected,
+	focused,
+	viewed,
+	onPointer,
+	onContext,
+	onViewed,
+}: {
+	index: number;
+	path: string;
+	status: ScmFileStatus;
+	staged: boolean;
+	top: number;
+	height: number;
+	selected: boolean;
+	focused: boolean;
+	viewed: boolean;
+	onPointer: (index: number, pointer: RowPointer) => void;
+	onContext: (index: number, x: number, y: number) => void;
+	onViewed: (index: number) => void;
+}) {
+	const { name, dir } = splitPath(path);
 
 	return (
 		<div
-			role="listitem"
-			style={{
-				display: "flex",
-				alignItems: "baseline",
-				gap: 8,
-				height: 24,
-				lineHeight: "24px",
-				padding: "0 12px 0 30px",
-				fontSize: 12.5,
+			id={rowId(index)}
+			role="option"
+			aria-selected={selected}
+			aria-label={`${path}, ${STATUS_LABEL[status]}${staged ? ", staged" : ""}`}
+			className="scm-row"
+			data-focused={focused || undefined}
+			data-viewed={viewed || undefined}
+			onMouseDown={(e: MouseEvent<HTMLDivElement>) => {
+				if (e.button !== 0) return;
+				onPointer(index, { toggle: e.metaKey || e.ctrlKey, range: e.shiftKey });
 			}}
+			onContextMenu={(e: MouseEvent<HTMLDivElement>) => {
+				e.preventDefault();
+				onContext(index, e.clientX, e.clientY);
+			}}
+			style={{ top, height }}
 		>
-			<span
-				style={{
-					color: file.status === "M" ? T.text : color,
-					textDecoration: file.status === "D" ? "line-through" : "none",
-					whiteSpace: "nowrap",
-					overflow: "hidden",
-					textOverflow: "ellipsis",
-					flexShrink: 1,
-					minWidth: 40,
-				}}
-			>
-				{name}
+			<span className={status === "D" ? "scm-row-name scm-row-deleted" : "scm-row-name"}>{name}</span>
+			<span className="scm-row-dir">
+				<bdi>{dir}</bdi>
 			</span>
-			<span
-				style={{
-					color: T.textFaint,
-					fontSize: 11.5,
-					whiteSpace: "nowrap",
-					overflow: "hidden",
-					textOverflow: "ellipsis",
-					flex: 1,
-					minWidth: 0,
+			<input
+				type="checkbox"
+				className="scm-row-viewed"
+				aria-label="Viewed"
+				tabIndex={-1}
+				checked={viewed}
+				onMouseDown={(e) => {
+					e.stopPropagation();
+					e.preventDefault();
 				}}
-			>
-				{dir}
-			</span>
-			<span
-				aria-label={STATUS_LABEL[file.status]}
-				style={{
-					color,
-					fontFamily: T.mono,
-					fontSize: 11,
-					fontWeight: 600,
-					flexShrink: 0,
-					width: 10,
-					textAlign: "center",
-				}}
-			>
-				{file.status}
-			</span>
+				onChange={() => onViewed(index)}
+			/>
 		</div>
 	);
-}
+});

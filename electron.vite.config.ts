@@ -11,6 +11,7 @@ export default defineConfig({
 				input: {
 					index: resolve(__dirname, "src/main/index.ts"),
 					whisperWorker: resolve(__dirname, "src/main/dictation/whisperWorker.ts"),
+					scmWorker: resolve(__dirname, "src/main/sourceControl/scmWorker.ts"),
 				},
 			},
 		},

@@ -1,103 +1,125 @@
 import { create } from "zustand";
+import type { ScmFailure, ScmSummary } from "@shared/schemas/source_control";
 import {
-	ScmSnapshotSchema,
-	type ScmFailureReason,
-	type ScmSnapshotOk,
-} from "@shared/schemas/source_control";
+	call,
+	cancel,
+	getConnection,
+	onConnectionChange,
+	type ScmConnection,
+} from "./scmClient";
+import { RefreshScheduler } from "./scmScheduler";
 
-export const SCM_MIN_WIDTH = 240;
-export const SCM_MAX_WIDTH = 640;
-const SCM_DEFAULT_WIDTH = 300;
-const OPEN_KEY = "gc.sourceControl.open";
-const WIDTH_KEY = "gc.sourceControl.width";
-
-export interface ScmRootState {
-	snapshot?: ScmSnapshotOk;
+export interface ScmEntry {
+	summary?: ScmSummary;
 	loading: boolean;
-	error?: ScmFailureReason;
+	startedAt?: number;
+	error?: ScmFailure;
 }
 
 interface State {
-	open: boolean;
-	width: number;
-	byRoot: Record<string, ScmRootState>;
-	collapsed: Record<string, true>;
-	setOpen: (open: boolean) => void;
-	setWidth: (width: number) => void;
-	toggleCollapsed: (checkoutPath: string) => void;
-	refresh: (cwd: string) => Promise<void>;
+	connection: ScmConnection;
+	byCheckout: Record<string, ScmEntry>;
+	modalCheckout: string | null;
+	openModal: (checkout: string) => void;
+	closeModal: () => void;
+	branchModal: BranchModalTarget | null;
+	openBranches: (target: BranchModalTarget) => void;
+	closeBranches: () => void;
+	viewed: Record<string, ReadonlySet<string>>;
+	toggleViewed: (checkout: string, key: string) => void;
 }
 
-function readStored(key: string): string | null {
+export interface BranchModalTarget {
+	checkout: string;
+	sessionId: string;
+}
+
+const HARD_FAILURES: ReadonlySet<ScmFailure> = new Set([
+	"not-a-repo",
+	"missing-cwd",
+	"git-missing",
+]);
+
+export function isHardFailure(error: ScmFailure | undefined): boolean {
+	return error !== undefined && HARD_FAILURES.has(error);
+}
+
+for (const key of ["gc.sourceControl.open", "gc.sourceControl.width"]) {
 	try {
-		return window.localStorage.getItem(key);
+		window.localStorage.removeItem(key);
 	} catch {
-		return null;
+		break;
 	}
 }
 
-function writeStored(key: string, value: string): void {
-	try {
-		window.localStorage.setItem(key, value);
-	} catch {
-		return;
-	}
-}
-
-function readStoredWidth(): number {
-	const parsed = Number(readStored(WIDTH_KEY));
-	if (!Number.isFinite(parsed) || parsed <= 0) return SCM_DEFAULT_WIDTH;
-	return Math.min(SCM_MAX_WIDTH, Math.max(SCM_MIN_WIDTH, Math.round(parsed)));
-}
-
-async function fetchSnapshot(
-	cwd: string,
-): Promise<ScmSnapshotOk | ScmFailureReason> {
-	try {
-		const raw = await window.claude?.getSourceControlSnapshot(cwd);
-		const parsed = ScmSnapshotSchema.safeParse(raw);
-		if (!parsed.success) return "failed";
-		return parsed.data.ok ? parsed.data : parsed.data.reason;
-	} catch {
-		return "failed";
-	}
-}
-
-export const useSourceControlStore = create<State>((set, get) => ({
-	open: readStored(OPEN_KEY) === "1",
-	width: readStoredWidth(),
-	byRoot: {},
-	collapsed: {},
-	setOpen: (open) => {
-		writeStored(OPEN_KEY, open ? "1" : "0");
-		set({ open });
+export const useSourceControlStore = create<State>((set) => ({
+	connection: getConnection(),
+	byCheckout: {},
+	modalCheckout: null,
+	openModal: (checkout) => {
+		set({ modalCheckout: checkout });
+		requestRefresh(checkout, true);
 	},
-	setWidth: (width) => {
-		writeStored(WIDTH_KEY, String(width));
-		set({ width });
-	},
-	toggleCollapsed: (checkoutPath) =>
+	closeModal: () => set({ modalCheckout: null }),
+	branchModal: null,
+	openBranches: (target) => set({ branchModal: target }),
+	closeBranches: () => set({ branchModal: null }),
+	viewed: {},
+	toggleViewed: (checkout, key) =>
 		set((s) => {
-			const next = { ...s.collapsed };
-			if (next[checkoutPath]) delete next[checkoutPath];
-			else next[checkoutPath] = true;
-			return { collapsed: next };
+			const next = new Set(s.viewed[checkout]);
+			if (next.has(key)) next.delete(key);
+			else next.add(key);
+			return { viewed: { ...s.viewed, [checkout]: next } };
 		}),
-	refresh: async (cwd) => {
-		if (!cwd || get().byRoot[cwd]?.loading) return;
-		set((s) => ({
-			byRoot: { ...s.byRoot, [cwd]: { ...s.byRoot[cwd], loading: true } },
-		}));
-		const result = await fetchSnapshot(cwd);
-		set((s) => {
-			const previous = s.byRoot[cwd];
-			const next: ScmRootState =
-				typeof result !== "string"
-					? { snapshot: result, loading: false }
-					: result === "not-a-repo"
-						? { loading: false, error: result }
-						: { snapshot: previous?.snapshot, loading: false, error: result };
-			return { byRoot: { ...s.byRoot, [cwd]: next } };
-		});
-	},
 }));
+
+onConnectionChange((connection) => useSourceControlStore.setState({ connection }));
+
+function patch(checkout: string, next: (prev: ScmEntry | undefined) => ScmEntry): void {
+	useSourceControlStore.setState((s) => ({
+		byCheckout: { ...s.byCheckout, [checkout]: next(s.byCheckout[checkout]) },
+	}));
+}
+
+const scheduler = new RefreshScheduler({
+	now: () => Date.now(),
+	setTimer: (fn, ms) => window.setTimeout(fn, ms),
+	clearTimer: (handle) => window.clearTimeout(handle as number),
+	run: (checkout) => {
+		const scan = call<"scan">({ t: "scan", checkout });
+		patch(checkout, (prev) => ({ ...prev, loading: true, startedAt: Date.now() }));
+		const promise = scan.promise.then((reply) => {
+			if (reply.ok) {
+				patch(checkout, () => ({ summary: reply.summary, loading: false }));
+				return reply.summary.durationMs;
+			}
+			patch(checkout, (prev) => {
+				if (reply.reason === "cancelled") return { ...prev, loading: false, startedAt: undefined };
+				if (isHardFailure(reply.reason)) return { loading: false, error: reply.reason };
+				return { summary: prev?.summary, loading: false, error: reply.reason };
+			});
+			return null;
+		});
+		return { promise, cancel: () => cancel(scan.id) };
+	},
+});
+
+export function requestRefresh(checkout: string, urgent = false): void {
+	scheduler.request(checkout, urgent);
+}
+
+export function keepOnlyRefreshing(checkouts: Iterable<string | null | undefined>): void {
+	const keep = new Set<string>();
+	for (const c of checkouts) if (c) keep.add(c);
+	scheduler.cancelExcept(keep);
+}
+
+export function lastScanDuration(checkout: string): number {
+	return scheduler.lastDuration(checkout);
+}
+
+export function isSourceControlModalOpen(): boolean {
+	const state = useSourceControlStore.getState();
+	return state.modalCheckout !== null || state.branchModal !== null;
+}

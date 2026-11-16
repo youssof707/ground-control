@@ -118,6 +118,7 @@ export type SessionPatch = Partial<
 		| "finishedAt"
 		| "error"
 		| "branch"
+		| "activeCheckout"
 		| "lastUserMessageBranch"
 		| "startCommit"
 		| "diff"

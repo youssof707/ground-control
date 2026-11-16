@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useCommandPaletteStore } from "../stores/useCommandPaletteStore";
+import { isSourceControlModalOpen } from "../../source-control/useSourceControlStore";
 
 /**
  * Global Cmd+K — opens the same Skills/Shortcuts picker as the ⚡ buttons,
@@ -29,6 +30,7 @@ import { useCommandPaletteStore } from "../stores/useCommandPaletteStore";
 export function useCommandPaletteHotkey(): void {
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
+			if (isSourceControlModalOpen()) return;
 			if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
 			if (e.key.toLowerCase() !== "k") return;
 

@@ -71,9 +71,9 @@ const STATUS_MAP: Record<string, StatusStyle> = {
 	},
 	cancelled: {
 		dot: T.textMute,
-		label: "cancelled",
+		label: "idle",
 		color: T.textDim,
-		bg: T.surface,
+		bg: "transparent",
 		border: T.border,
 	},
 	errored: {
@@ -197,40 +197,79 @@ export function isBranchStale(s: {
 	);
 }
 
+function ChipBranchIcon() {
+	return (
+		<svg width="11" height="11" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
+			<circle cx="3" cy="2.5" r="1.3" stroke="currentColor" strokeWidth="1" />
+			<circle cx="3" cy="9.5" r="1.3" stroke="currentColor" strokeWidth="1" />
+			<circle cx="9" cy="3.5" r="1.3" stroke="currentColor" strokeWidth="1" />
+			<path d="M3 4v4M3 8c0-2 6-2 6-4" stroke="currentColor" strokeWidth="1" fill="none" />
+		</svg>
+	);
+}
+
+function ChipWorktreeIcon() {
+	return (
+		<svg width="11" height="11" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
+			<circle cx="4" cy="3" r="1.5" stroke="currentColor" strokeWidth="1.2" />
+			<circle cx="4" cy="11" r="1.5" stroke="currentColor" strokeWidth="1.2" />
+			<circle cx="10.5" cy="5" r="1.5" stroke="currentColor" strokeWidth="1.2" />
+			<path d="M4 4.5v5M10.5 6.5c0 2-2.5 2.2-5.4 3.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+		</svg>
+	);
+}
+
+const chipText: CSSProperties = {
+	overflow: "hidden",
+	textOverflow: "ellipsis",
+	minWidth: 0,
+};
+
 export function BranchChip({
 	name,
 	stale = false,
 	staleFrom,
+	worktree,
+	onOpen,
+	onPrefetch,
 }: {
 	name: string;
 	stale?: boolean;
-	/** Branch name the session last sent on; surfaced in the tooltip when stale. */
 	staleFrom?: string;
+	worktree?: string | null;
+	onOpen?: () => void;
+	onPrefetch?: () => void;
 }) {
 	const [copied, setCopied] = useState(false);
 
 	const onClick = async (e: React.MouseEvent) => {
 		e.preventDefault();
 		e.stopPropagation();
+		if (onOpen) {
+			onOpen();
+			return;
+		}
 		try {
 			await navigator.clipboard.writeText(name);
 			setCopied(true);
 			setTimeout(() => setCopied(false), 1200);
 		} catch {
-			// noop — clipboard write can fail in some contexts
+			setCopied(false);
 		}
 	};
 
-	const baseTitle = copied
+	const where = worktree ? `Worktree ${worktree}, branch "${name}"` : `Branch "${name}"`;
+	const staleText = stale
+		? staleFrom
+			? ` changed since last message (was "${staleFrom}")`
+			: " changed since last message"
+		: "";
+	const label = copied
 		? "Copied!"
-		: stale
-			? staleFrom
-				? `Branch changed since last message (was "${staleFrom}") — click to copy "${name}"`
-				: `Branch changed since last message — click to copy "${name}"`
-			: `Copy "${name}"`;
+		: onOpen
+			? `${where}${staleText}. Open branches`
+			: `${where}${staleText}. Copy "${name}"`;
 
-	// Resting palette: green when freshly copied, red when stale, otherwise
-	// the normal subdued chip. Hover handlers below mirror this priority.
 	const restingBg = copied ? T.okSoft : stale ? T.dangerSoft : T.surface;
 	const restingBorder = copied ? T.okBorder : stale ? T.dangerBorder : T.border;
 	const restingColor = copied ? T.ok : stale ? T.danger : T.textDim;
@@ -239,7 +278,9 @@ export function BranchChip({
 		<button
 			type="button"
 			onClick={onClick}
-			aria-label={baseTitle}
+			onPointerEnter={onPrefetch}
+			aria-label={label}
+			aria-haspopup={onOpen ? "dialog" : undefined}
 			style={{
 				display: "inline-flex",
 				alignItems: "center",
@@ -253,9 +294,9 @@ export function BranchChip({
 				color: restingColor,
 				fontFamily: T.mono,
 				whiteSpace: "nowrap",
-				maxWidth: 200,
+				maxWidth: worktree ? 340 : 200,
+				minWidth: 0,
 				overflow: "hidden",
-				textOverflow: "ellipsis",
 				cursor: "pointer",
 				transition: "background 0.12s, color 0.12s, border-color 0.12s",
 			}}
@@ -280,22 +321,17 @@ export function BranchChip({
 						strokeLinejoin="round"
 					/>
 				</svg>
+			) : worktree ? (
+				<>
+					<ChipWorktreeIcon />
+					<span style={{ ...chipText, flexShrink: 1 }}>{worktree}</span>
+					<span style={{ color: T.textFaint, flexShrink: 0 }}>·</span>
+					<ChipBranchIcon />
+				</>
 			) : (
-				<svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-					<circle cx="3" cy="2.5" r="1.3" stroke="currentColor" strokeWidth="1" />
-					<circle cx="3" cy="9.5" r="1.3" stroke="currentColor" strokeWidth="1" />
-					<circle cx="9" cy="3.5" r="1.3" stroke="currentColor" strokeWidth="1" />
-					<path
-						d="M3 4v4M3 8c0-2 6-2 6-4"
-						stroke="currentColor"
-						strokeWidth="1"
-						fill="none"
-					/>
-				</svg>
+				<ChipBranchIcon />
 			)}
-			<span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-				{copied ? "Copied" : name}
-			</span>
+			<span style={{ ...chipText, flexShrink: 2 }}>{copied ? "Copied" : name}</span>
 		</button>
 	);
 }
@@ -461,6 +497,9 @@ export function BranchChipWithDelta({
 	sessionId,
 	showCurrentHint = true,
 	suppressStale = false,
+	worktree,
+	onOpen,
+	onPrefetch,
 }: {
 	branch?: string;
 	lastUserMessageBranch?: string;
@@ -477,6 +516,9 @@ export function BranchChipWithDelta({
 	 * the warning would be noisy; the SessionChat header keeps it on so the
 	 * user sees the warning in the actual session view. */
 	suppressStale?: boolean;
+	worktree?: string | null;
+	onOpen?: () => void;
+	onPrefetch?: () => void;
 }) {
 	if (!branch) return null;
 	const stale =
@@ -488,6 +530,9 @@ export function BranchChipWithDelta({
 				name={branch}
 				stale={stale}
 				staleFrom={stale ? lastUserMessageBranch : undefined}
+				worktree={worktree}
+				onOpen={onOpen}
+				onPrefetch={onPrefetch}
 			/>
 			{showHint ? (
 				<span

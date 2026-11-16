@@ -4,6 +4,7 @@ import { getDictationHandle } from "../lib/dictationRegistry";
 import { focusComposer } from "../lib/composerActions";
 import { openSidequestPanelAndFocus } from "../lib/sidequestActions";
 import { useSidequestsStore } from "../stores/useSidequestsStore";
+import { isSourceControlModalOpen } from "../../source-control/useSourceControlStore";
 
 /**
  * Global Cmd+D — starts voice dictation, or stops whichever take is already
@@ -64,6 +65,7 @@ export function useDictationHotkey(): void {
 
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
+			if (isSourceControlModalOpen()) return;
 			if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
 			if (e.key.toLowerCase() !== "d") return;
 

@@ -18,8 +18,13 @@ import type {
 	CreateScheduleInput,
 	UpdateScheduleInput,
 } from "../shared/schemas/schedules";
+import { SCM_PORT_MESSAGE } from "../shared/schemas/source_control";
 
 const api = {};
+
+ipcRenderer.on("scm:port", (event) => {
+	window.postMessage({ type: SCM_PORT_MESSAGE }, "*", event.ports);
+});
 
 const claude = {
 	startSession: (input: StartSessionInput) =>
@@ -130,8 +135,7 @@ const claude = {
 	createWorktree: (input: CreateWorktreeInput) =>
 		ipcRenderer.invoke("worktrees:create", input),
 	deleteWorktree: (id: string) => ipcRenderer.invoke("worktrees:delete", id),
-	getSourceControlSnapshot: (cwd: string) =>
-		ipcRenderer.invoke("scm:snapshot", { cwd }),
+	connectSourceControl: () => ipcRenderer.send("scm:connect"),
 	listGroups: () => ipcRenderer.invoke("groups:list"),
 	createGroup: (input: CreateSessionGroupInput) =>
 		ipcRenderer.invoke("groups:create", input),

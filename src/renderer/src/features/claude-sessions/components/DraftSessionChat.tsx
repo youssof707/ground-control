@@ -15,6 +15,8 @@ import {
 	startCreateWorktreeAction,
 } from "../lib/draftActions";
 import { WorktreeChip } from "../../../design/WorktreeChip";
+import { SourceControlWidget } from "../../source-control/SourceControlWidget";
+import { useSessionCheckout } from "../../source-control/useSessionCheckout";
 import { T } from "../../../design/tokens";
 import { formatModelName } from "@shared/claude-sessions/sessionModel";
 
@@ -37,6 +39,7 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 	const draft = useDraftSessionsStore((s) =>
 		s.draft && s.draft.id === draftId ? s.draft : null,
 	);
+	const scmCheckout = useSessionCheckout(draftId);
 	// Mirrors SessionChat's auto-grow rule but skips the manual drag-shrink
 	// lock since no resize divider handlers are wired up here — see
 	// `ComposerDivider`'s `static` variant below.
@@ -399,6 +402,7 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 							onClick={() => setWorktreeModalOpen(true)}
 						/>
 					) : null}
+					<SourceControlWidget checkout={scmCheckout} />
 				</div>
 				{pendingWorktree?.status === "error" ? (
 					<div

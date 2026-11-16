@@ -5,6 +5,7 @@ import { openSidequestPanelAndFocus } from "../lib/sidequestActions";
 import { selectionStartElement, selectionText } from "../lib/selection";
 import { usePermissionsStore } from "../stores/usePermissionsStore";
 import { useSidequestsStore } from "../stores/useSidequestsStore";
+import { isSourceControlModalOpen } from "../../source-control/useSourceControlStore";
 
 // A pending permission request (plan-mode's ExitPlanMode card, an
 // AskUserQuestion card, etc.) disables the composer's `<textarea>` — see
@@ -60,6 +61,7 @@ export function useComposerFocusHotkey(): void {
 
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
+			if (isSourceControlModalOpen()) return;
 			if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
 			if (e.key.toLowerCase() !== "r") return;
 
