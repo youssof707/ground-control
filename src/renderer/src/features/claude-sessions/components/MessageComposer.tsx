@@ -27,7 +27,7 @@ import {
 import { isDraftId } from "../stores/useDraftSessionsStore";
 import { isSidequestId } from "../stores/useSidequestsStore";
 import { T } from "../../../design/tokens";
-import { ModeToggle, isBranchStale } from "../../../design/Atoms";
+import { ModeToggle } from "../../../design/Atoms";
 import { DictationButton, type DictationHandle } from "./DictationButton";
 import { PendingImageStrip } from "./PendingImageThumb";
 import type { Shortcut } from "@shared/schemas/shortcuts";
@@ -142,15 +142,6 @@ export function MessageComposer({
 			!disabled && !sending && !target.sending,
 		);
 	const [modeSwitching, setModeSwitching] = useState(false);
-
-	// Subscribe to the two branch fields so the send button mirrors the
-	// BranchChip's stale (red) state — extra visibility for "you're about
-	// to send on a different branch than your last message." Undefined for
-	// draft/sidequest targets, which reads as "not stale".
-	const branchStale = isBranchStale({
-		branch: target.branch,
-		lastUserMessageBranch: target.lastUserMessageBranch,
-	});
 
 	// Queued pre-move(s) for this target — see useQueuedMessagesStore /
 	// useQueuedMessageFlusher. The UI only ever lets one accumulate today
@@ -531,38 +522,11 @@ export function MessageComposer({
 	const sendDisabled = disabled || busy || !canSend;
 	const shownError = error ?? target.sendError;
 
-	const sendAriaLabel =
-		branchStale && target.lastUserMessageBranch
-			? `Send (branch changed since last message, was "${target.lastUserMessageBranch}")`
-			: "Send";
+	const sendAriaLabel = "Send";
 
 	// Shared between the plain and split renderings of the Send button below.
 	const sendContent = (
 		<>
-			{branchStale && !busy ? (
-				<svg
-					width="12"
-					height="12"
-					viewBox="0 0 12 12"
-					fill="none"
-					aria-hidden
-				>
-					<path
-						d="M6 1.6 L11 10.4 H1 Z"
-						stroke="currentColor"
-						strokeWidth="1.4"
-						strokeLinecap="round"
-						strokeLinejoin="round"
-					/>
-					<path
-						d="M6 5 V7.3"
-						stroke="currentColor"
-						strokeWidth="1.4"
-						strokeLinecap="round"
-					/>
-					<circle cx="6" cy="9" r="0.7" fill="currentColor" />
-				</svg>
-			) : null}
 			{busy ? (
 				<span className="asyncy-btn-spinner" aria-hidden />
 			) : (
@@ -764,7 +728,7 @@ export function MessageComposer({
 								onClick={(e) => (e.detail === 0 ? queueMessage() : void send())}
 								disabled={sendDisabled}
 								aria-busy={busy}
-								className={`btn ${branchStale ? "btn-destructive" : "btn-primary"}`}
+								className="btn btn-primary"
 								aria-label={sendAriaLabel}
 								style={{
 									opacity: 0.55,
@@ -778,7 +742,7 @@ export function MessageComposer({
 								type="button"
 								onClick={() => setSendMenuOpen((o) => !o)}
 								disabled={sendDisabled}
-								className={`btn ${branchStale ? "btn-destructive" : "btn-primary"}`}
+								className="btn btn-primary"
 								aria-haspopup="menu"
 								aria-expanded={sendMenuOpen}
 								aria-label="Send options"
@@ -786,11 +750,7 @@ export function MessageComposer({
 									width: 26,
 									padding: 0,
 									borderRadius: "0 8px 8px 0",
-									borderLeft: `0.5px solid ${
-										branchStale
-											? "rgba(255,255,255,0.28)"
-											: "rgba(26,20,16,0.22)"
-									}`,
+									borderLeft: "0.5px solid rgba(26,20,16,0.22)",
 									// Full opacity while enabled — unlike the main half,
 									// this is the live control right now, so it must not
 									// read as disabled just because the turn is running.
@@ -841,7 +801,7 @@ export function MessageComposer({
 							onClick={send}
 							disabled={sendDisabled}
 							aria-busy={busy}
-							className={`btn ${branchStale ? "btn-destructive" : "btn-primary"}`}
+							className="btn btn-primary"
 							aria-label={sendAriaLabel}
 						>
 							{sendContent}

@@ -78,9 +78,18 @@ describe("parseWorktreeList", () => {
 });
 
 describe("createStatusParser", () => {
+	it("reads upstream and ahead/behind", () => {
+		const { header } = parse(
+			records(`# branch.oid ${SHA}`, "# branch.head main", "# branch.upstream origin/main", "# branch.ab +2 -5"),
+		);
+		expect(header.upstream).toBe("origin/main");
+		expect(header.ahead).toBe(2);
+		expect(header.behind).toBe(5);
+	});
+
 	it("reads branch headers", () => {
 		const { header } = parse(records(`# branch.oid ${SHA}`, "# branch.head main"));
-		expect(header).toEqual({ branch: "main", head: "1234567", unborn: false });
+		expect(header).toEqual({ branch: "main", head: "1234567", unborn: false, upstream: null, ahead: 0, behind: 0 });
 	});
 
 	it("reports a detached head with no branch", () => {
@@ -91,7 +100,7 @@ describe("createStatusParser", () => {
 
 	it("reports an unborn head", () => {
 		const { header } = parse(records("# branch.oid (initial)", "# branch.head main"));
-		expect(header).toEqual({ branch: "main", head: null, unborn: true });
+		expect(header).toEqual({ branch: "main", head: null, unborn: true, upstream: null, ahead: 0, behind: 0 });
 	});
 
 	it("splits each path into a staged row and an unstaged row", () => {

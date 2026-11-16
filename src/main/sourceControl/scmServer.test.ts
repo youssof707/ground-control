@@ -37,13 +37,14 @@ function okScan(paths: string[]): ScanResult {
 		ok: true,
 		root: "/repo",
 		worktreeName: null,
-		header: { branch: "main", head: "abc1234", unborn: false },
+		header: { branch: "main", head: "abc1234", unborn: false, upstream: "origin/main", ahead: 2, behind: 3 },
 		entries: paths.map(entry),
 		stagedListed: 0,
 		staged: 0,
 		unstaged: paths.length,
 		changed: paths.length,
 		conflicts: 0,
+		unpublished: null,
 		worktrees: [{ path: "/repo", branch: "main", head: "abc1234", isMain: true }],
 		durationMs: 1,
 	};
@@ -66,6 +67,8 @@ function harness(options: {
 		},
 		apply: (action, target) => (options.apply ? options.apply(action, target) : Promise.resolve()),
 		branches: () => Promise.resolve({ current: "main", worktreeName: null, branches: [], fetchedAt: 0 }),
+		remote: (checkout, op) =>
+			checkout === "/fail" ? Promise.reject(new Error(`${op} rejected`)) : Promise.resolve(),
 		switchBranch: (_checkout, branch) =>
 			branch === "missing" ? Promise.reject(new Error("invalid reference: missing")) : Promise.resolve(),
 		diff: (_checkout, e, { signal }) =>
@@ -78,6 +81,28 @@ function harness(options: {
 }
 
 describe("ScmServer", () => {
+	it("reports upstream and ahead/behind in the summary", async () => {
+		const { conn, replies } = harness({});
+		conn.handle({ t: "scan", id: 1, checkout: "/repo" });
+		await flush();
+		const reply = replies[0];
+		expect(reply.t === "scan" && reply.ok && [reply.summary.upstream, reply.summary.ahead, reply.summary.behind]).toEqual([
+			"origin/main",
+			2,
+			3,
+		]);
+	});
+
+	it("runs remote ops and returns git's message on failure", async () => {
+		const { conn, replies } = harness({});
+		conn.handle({ t: "remote", id: 1, checkout: "/repo", op: "push" });
+		conn.handle({ t: "remote", id: 2, checkout: "/fail", op: "pull" });
+		await flush();
+		await flush();
+		expect(replies).toContainEqual({ t: "remote", id: 1, ok: true });
+		expect(replies).toContainEqual({ t: "remote", id: 2, ok: false, reason: "failed", message: "pull rejected" });
+	});
+
 	it("joins scan requests that arrive during a scan into one trailing rerun", async () => {
 		const runs: Deferred<ScanResult>[] = [];
 		const h = harness({

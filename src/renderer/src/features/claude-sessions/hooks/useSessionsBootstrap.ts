@@ -249,11 +249,14 @@ export function useSessionsBootstrap() {
 				setStatus(sessionId, "usage_limit");
 			}),
 			window.claude.on("session:errored", (p) => {
-				const { sessionId } = p as {
+				const { sessionId, error } = p as {
 					sessionId: string;
 					error?: string;
 				};
 				setStatus(sessionId, "errored");
+				if (useSessionsStore.getState().sessions[sessionId]) {
+					upsertSession({ id: sessionId, error });
+				}
 			}),
 			window.claude.on("session:tasks", (p) => {
 				const { sessionId, tasks } = p as {

@@ -23,7 +23,6 @@ export const STATUS_ARGS = [
 	"-z",
 	"--untracked-files=all",
 	"--no-renames",
-	"--no-ahead-behind",
 	"--ignore-submodules=dirty",
 ];
 
@@ -38,6 +37,7 @@ export interface ScanOk {
 	unstaged: number;
 	changed: number;
 	conflicts: number;
+	unpublished: number | null;
 	worktrees: ScmWorktree[];
 	durationMs: number;
 }
@@ -122,7 +122,7 @@ async function readStatus(
 	cap: number,
 	signal: AbortSignal | undefined,
 	nested: ReadonlySet<string>,
-): Promise<Omit<ScanOk, "ok" | "root" | "worktreeName" | "worktrees" | "durationMs">> {
+): Promise<Omit<ScanOk, "ok" | "root" | "worktreeName" | "worktrees" | "durationMs" | "unpublished">> {
 	const stagedEntries: StatusEntry[] = [];
 	const unstagedEntries: StatusEntry[] = [];
 	let staged = 0;
@@ -172,6 +172,25 @@ async function readStatus(
 	};
 }
 
+async function countUnpublished(checkout: string, signal: AbortSignal | undefined): Promise<number | null> {
+	const origin = await runGit({
+		cwd: checkout,
+		args: ["config", "--get", "remote.origin.url"],
+		signal,
+		timeoutMs: 30_000,
+	});
+	if (origin.code !== 0) return null;
+	const count = await runGit({
+		cwd: checkout,
+		args: ["rev-list", "--count", "HEAD", "--not", "--remotes=origin"],
+		signal,
+		timeoutMs: 30_000,
+	});
+	if (count.code !== 0) return null;
+	const n = Number(count.stdout.toString("utf8").trim());
+	return Number.isFinite(n) ? n : null;
+}
+
 export async function scanCheckout(
 	checkout: string,
 	options: ScanOptions,
@@ -190,11 +209,15 @@ export async function scanCheckout(
 		const [worktrees, info] = await Promise.all([listing, top]);
 		const nested = await nestedWorktrees(info.root, worktrees);
 		const parsed = await readStatus(checkout, options.cap, local.signal, nested);
+		const { header } = parsed;
+		const unpublished =
+			header.branch && !header.upstream && !header.unborn ? await countUnpublished(checkout, local.signal) : null;
 		return {
 			ok: true,
 			root: info.root,
 			worktreeName: info.worktreeName,
 			...parsed,
+			unpublished,
 			worktrees,
 			durationMs: Date.now() - started,
 		};

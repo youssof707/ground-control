@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useSessionsStore } from "../claude-sessions/stores/useSessionsStore";
 import { useSessionCheckout } from "./useSessionCheckout";
 import {
+	backgroundFetch,
 	keepOnlyRefreshing,
 	lastScanDuration,
 	requestRefresh,
@@ -9,6 +10,8 @@ import {
 } from "./useSourceControlStore";
 
 const IDLE_MIN_MS = 15_000;
+const FETCH_INTERVAL_MS = 5 * 60_000;
+const FETCH_MIN_GAP_MS = 60_000;
 
 export function idleDelay(lastDuration: number): number {
 	return Math.max(IDLE_MIN_MS, lastDuration * 10);
@@ -24,10 +27,33 @@ export function useSourceControlRefresh(activeSessionId: string | undefined): vo
 	const checkoutRef = useRef(checkout);
 	checkoutRef.current = checkout;
 
+	const lastFetch = useRef(new Map<string, number>());
+
 	useEffect(() => {
 		keepOnlyRefreshing([checkout, modalCheckout]);
 		if (checkout) requestRefresh(checkout);
 	}, [checkout, modalCheckout]);
+
+	useEffect(() => {
+		const fetchIfStale = (minGap: number): void => {
+			const current = checkoutRef.current;
+			if (!current) return;
+			const now = Date.now();
+			if (now - (lastFetch.current.get(current) ?? 0) < minGap) return;
+			lastFetch.current.set(current, now);
+			backgroundFetch(current);
+		};
+		fetchIfStale(FETCH_MIN_GAP_MS);
+		const onFocus = (): void => fetchIfStale(FETCH_MIN_GAP_MS);
+		const timer = window.setInterval(() => {
+			if (documentActive()) fetchIfStale(FETCH_INTERVAL_MS - 1_000);
+		}, FETCH_INTERVAL_MS);
+		window.addEventListener("focus", onFocus);
+		return () => {
+			window.clearInterval(timer);
+			window.removeEventListener("focus", onFocus);
+		};
+	}, [checkout]);
 
 	useEffect(() => {
 		if (!activeSessionId) return;

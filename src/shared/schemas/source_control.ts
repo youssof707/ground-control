@@ -32,6 +32,10 @@ export interface ScmSummary {
 	fingerprint: string;
 	worktrees: ScmWorktree[];
 	worktreeName: string | null;
+	upstream: string | null;
+	ahead: number;
+	behind: number;
+	unpublished: number | null;
 	fetchedAt: number;
 	durationMs: number;
 }
@@ -68,6 +72,8 @@ export type ScmAction = "stage" | "unstage" | "discard";
 
 export type ScmPick = "all" | string[];
 
+export type ScmRemoteOp = "fetch" | "pull" | "push";
+
 export type ScmRequest =
 	| { t: "scan"; id: number; checkout: string }
 	| {
@@ -98,6 +104,7 @@ export type ScmRequest =
 	}
 	| { t: "branches"; id: number; checkout: string }
 	| { t: "switch"; id: number; checkout: string; branch: string; remote: boolean }
+	| { t: "remote"; id: number; checkout: string; op: ScmRemoteOp }
 	| { t: "cancel"; id: number };
 
 export type ScmCallKind = Exclude<ScmRequest["t"], "cancel">;
@@ -133,13 +140,18 @@ export type ScmSwitchReply =
 	| { t: "switch"; id: number; ok: true }
 	| { t: "switch"; id: number; ok: false; reason: ScmFailure; message?: string };
 
+export type ScmRemoteReply =
+	| { t: "remote"; id: number; ok: true }
+	| { t: "remote"; id: number; ok: false; reason: ScmFailure; message?: string };
+
 export type ScmReply =
 	| ScmScanReply
 	| ScmRowsReply
 	| ScmDiffReply
 	| ScmApplyReply
 	| ScmBranchesReply
-	| ScmSwitchReply;
+	| ScmSwitchReply
+	| ScmRemoteReply;
 
 export type ScmReplyFor<K extends ScmCallKind> = Extract<ScmReply, { t: K }>;
 

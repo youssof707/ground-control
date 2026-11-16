@@ -78,18 +78,29 @@ export const FileRow = memo(function FileRow({
 			<span className="scm-row-dir">
 				<bdi>{dir}</bdi>
 			</span>
-			<input
-				type="checkbox"
+			<button
+				type="button"
 				className="scm-row-viewed"
-				aria-label="Viewed"
+				aria-label={viewed ? "Viewed, mark as not viewed" : "Mark as viewed"}
+				aria-pressed={viewed}
 				tabIndex={-1}
-				checked={viewed}
 				onMouseDown={(e) => {
 					e.stopPropagation();
 					e.preventDefault();
 				}}
-				onChange={() => onViewed(index)}
-			/>
+				onClick={() => onViewed(index)}
+			>
+				{viewed ? (
+					<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+						<path d="M3 8.5l3.2 3.2L13 4.8" />
+					</svg>
+				) : (
+					<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+						<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z" />
+						<circle cx="8" cy="8" r="2" />
+					</svg>
+				)}
+			</button>
 		</div>
 	);
 });

@@ -28,6 +28,7 @@ export interface GitOptions {
 	onStdout?: (chunk: Buffer) => void;
 	maxStdout?: number;
 	input?: Buffer;
+	env?: Record<string, string>;
 }
 
 export interface GitResult {
@@ -51,13 +52,13 @@ export const GIT_ENV = {
 };
 
 export function runGit(options: GitOptions): Promise<GitResult> {
-	const { cwd, args, signal, timeoutMs, onStdout, maxStdout, input } = options;
+	const { cwd, args, signal, timeoutMs, onStdout, maxStdout, input, env } = options;
 	if (signal?.aborted) return Promise.reject(new GitAbortedError());
 
 	return new Promise<GitResult>((resolve, reject) => {
 		const child = spawn(gitBinary, ["--no-optional-locks", ...args], {
 			cwd,
-			env: { ...process.env, ...GIT_ENV },
+			env: { ...process.env, ...GIT_ENV, ...env },
 			stdio: [input ? "pipe" : "ignore", "pipe", "pipe"],
 		});
 		const { stdout, stderr: errStream } = child;

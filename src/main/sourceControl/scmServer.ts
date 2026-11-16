@@ -5,6 +5,7 @@ import {
 	type ScmDiffContent,
 	type ScmFailure,
 	type ScmPick,
+	type ScmRemoteOp,
 	type ScmReply,
 	type ScmRequest,
 	type ScmSummary,
@@ -14,6 +15,7 @@ import { listBranches, RepoError, switchBranch } from "./branches";
 import { readDiff } from "./content";
 import { GitAbortedError, GitMissingError } from "./gitProcess";
 import type { StatusEntry } from "./parseStatus";
+import { runRemote } from "./remote";
 import { scanCheckout, type ScanResult } from "./scan";
 
 const MAX_SCANS = 2;
@@ -34,6 +36,7 @@ export interface ScmServerDeps {
 	apply: (action: ScmAction, target: ApplyTarget) => Promise<void>;
 	branches: (checkout: string, signal: AbortSignal) => Promise<ScmBranchList>;
 	switchBranch: (checkout: string, branch: string, remote: boolean) => Promise<void>;
+	remote: (checkout: string, op: ScmRemoteOp, signal: AbortSignal) => Promise<void>;
 	cap: number;
 }
 
@@ -155,6 +158,12 @@ function isRequest(value: unknown): value is ScmRequest {
 				typeof msg.branch === "string" &&
 				typeof msg.remote === "boolean"
 			);
+		case "remote":
+			return (
+				typeof msg.checkout === "string" &&
+				msg.checkout.startsWith("/") &&
+				(msg.op === "fetch" || msg.op === "pull" || msg.op === "push")
+			);
 		case "rows":
 			return (
 				typeof msg.checkout === "string" &&
@@ -239,6 +248,9 @@ export class ScmServer {
 			case "switch":
 				void this.switchBranch(conn, message);
 				return;
+			case "remote":
+				void this.remote(conn, message);
+				return;
 		}
 	}
 
@@ -315,6 +327,10 @@ export class ScmServer {
 				fingerprint: fingerprint(result.entries),
 				worktrees: result.worktrees,
 				worktreeName: result.worktreeName,
+				upstream: result.header.upstream,
+				ahead: result.header.ahead,
+				behind: result.header.behind,
+				unpublished: result.unpublished,
 				fetchedAt: Date.now(),
 				durationMs: result.durationMs,
 			};
@@ -478,6 +494,36 @@ export class ScmServer {
 		}
 	}
 
+	private async remote(
+		conn: Conn,
+		message: Extract<ScmRequest, { t: "remote" }>,
+	): Promise<void> {
+		const { id } = message;
+		const controller = new AbortController();
+		conn.cancels.set(id, () => {
+			conn.cancels.delete(id);
+			controller.abort();
+		});
+		const slot = message.op === "fetch" ? this.reads : this.writes;
+		try {
+			const release = await slot.acquire(controller.signal);
+			try {
+				await this.deps.remote(message.checkout, message.op, controller.signal);
+				this.reply(conn, { t: "remote", id, ok: true });
+			} finally {
+				release();
+			}
+		} catch (err) {
+			this.reply(conn, {
+				t: "remote",
+				id,
+				ok: false,
+				reason: controller.signal.aborted ? "cancelled" : failureOf(err),
+				message: messageOf(err),
+			});
+		}
+	}
+
 	private async diff(
 		conn: Conn,
 		message: Extract<ScmRequest, { t: "diff" }>,
@@ -533,6 +579,7 @@ export function createScmServer(): ScmServer {
 		apply: applyAction,
 		branches: listBranches,
 		switchBranch,
+		remote: runRemote,
 		cap: SCM_LIST_CAP,
 	});
 }

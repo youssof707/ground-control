@@ -94,6 +94,7 @@ function CopyButton({ text }: { text: string }) {
 function BranchModal({ target, onClose }: { target: BranchModalTarget; onClose: () => void }) {
 	const { checkout, sessionId } = target;
 	const sessionBranch = useSessionsStore((s) => s.sessions[sessionId]?.branch);
+	const lastUserMessageBranch = useSessionsStore((s) => s.sessions[sessionId]?.lastUserMessageBranch);
 	const worktreeName = useSourceControlStore(
 		(s) => s.byCheckout[checkout]?.summary?.worktreeName ?? null,
 	);
@@ -182,6 +183,9 @@ function BranchModal({ target, onClose }: { target: BranchModalTarget; onClose: 
 		},
 		[checkout, current, onClose, sessionId, switching],
 	);
+
+	const previous =
+		lastUserMessageBranch && sessionBranch && lastUserMessageBranch !== sessionBranch ? lastUserMessageBranch : null;
 
 	const onInputKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
 		const last = items.length - 1;
@@ -325,6 +329,20 @@ function BranchModal({ target, onClose }: { target: BranchModalTarget; onClose: 
 					/>
 					{loading && list ? <span className="asyncy-btn-spinner" aria-label="Refreshing branches" /> : null}
 				</div>
+				{previous ? (
+					<div className="branch-previous">
+						<span>Previously working on {previous}</span>
+						<button
+							type="button"
+							className="btn"
+							disabled={switching !== null}
+							onClick={() => choose({ name: previous, remote: null, date: 0, worktree: null })}
+						>
+							{switching === previous ? <span className="asyncy-btn-spinner" aria-hidden="true" /> : null}
+							Switch back
+						</button>
+					</div>
+				) : null}
 				{error ? (
 					<div className="branch-error" role="alert">
 						<span>{error}</span>

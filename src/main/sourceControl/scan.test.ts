@@ -180,7 +180,7 @@ describe("scanCheckout", () => {
 		const fresh = makeRepo("fresh");
 		write(path.join(fresh, "a.txt"), "a\n");
 		const result = await scanOk(fresh);
-		expect(result.header).toEqual({ branch: "main", head: null, unborn: true });
+		expect(result.header).toMatchObject({ branch: "main", head: null, unborn: true });
 		expect(result.entries.map((e) => [e.path, e.status])).toEqual([["a.txt", "U"]]);
 	});
 

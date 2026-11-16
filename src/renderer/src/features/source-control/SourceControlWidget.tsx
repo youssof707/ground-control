@@ -1,6 +1,6 @@
-import { T } from "../../design/tokens";
+import { BRANCH_PREFETCH_MAX_AGE_MS, refreshBranches } from "./branchCache";
 import { compactCount, plural } from "./format";
-import { isHardFailure, useSourceControlStore } from "./useSourceControlStore";
+import { isHardFailure, runRemoteOp, useSourceControlStore } from "./useSourceControlStore";
 
 export function FilesIcon({ size = 12 }: { size?: number }) {
 	return (
@@ -20,74 +20,172 @@ export function FilesIcon({ size = 12 }: { size?: number }) {
 export function WorktreesIcon({ size = 12 }: { size?: number }) {
 	return (
 		<svg width={size} height={size} viewBox="0 0 14 14" fill="none" aria-hidden="true">
-			<circle cx="4" cy="3" r="1.5" stroke="currentColor" strokeWidth="1.2" />
-			<circle cx="4" cy="11" r="1.5" stroke="currentColor" strokeWidth="1.2" />
-			<circle cx="10.5" cy="5" r="1.5" stroke="currentColor" strokeWidth="1.2" />
 			<path
-				d="M4 4.5v5M10.5 6.5c0 2-2.5 2.2-5.4 3.6"
+				d="M1.5 3.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-7.5Z"
 				stroke="currentColor"
 				strokeWidth="1.2"
-				strokeLinecap="round"
+				strokeLinejoin="round"
 			/>
 		</svg>
 	);
 }
 
-export function SourceControlWidget({ checkout }: { checkout: string | undefined }) {
-	const changed = useSourceControlStore((s) =>
-		checkout ? s.byCheckout[checkout]?.summary?.changed : undefined,
+function BranchGlyph() {
+	return (
+		<svg width={12} height={12} viewBox="0 0 14 14" fill="none" aria-hidden="true">
+			<circle cx="4" cy="3" r="1.5" stroke="currentColor" strokeWidth="1.2" />
+			<circle cx="4" cy="11" r="1.5" stroke="currentColor" strokeWidth="1.2" />
+			<circle cx="10.5" cy="4.5" r="1.5" stroke="currentColor" strokeWidth="1.2" />
+			<path d="M4 4.5v5M10.5 6c0 2.4-3 2.6-6.2 3.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+		</svg>
 	);
-	const conflicts = useSourceControlStore((s) =>
-		checkout ? s.byCheckout[checkout]?.summary?.conflicts ?? 0 : 0,
+}
+
+function Arrow({ up }: { up: boolean }) {
+	return (
+		<svg width={10} height={10} viewBox="0 0 10 10" fill="none" aria-hidden="true">
+			<path
+				d={up ? "M5 8.5V1.8M2 4.6 5 1.6l3 3" : "M5 1.5v6.7M2 5.4l3 3 3-3"}
+				stroke="currentColor"
+				strokeWidth="1.4"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
+		</svg>
 	);
-	const worktrees = useSourceControlStore((s) => {
-		const list = checkout ? s.byCheckout[checkout]?.summary?.worktrees : undefined;
-		if (!list) return 0;
-		let linked = 0;
-		for (const w of list) if (!w.isMain) linked++;
-		return linked;
-	});
-	const error = useSourceControlStore((s) =>
-		checkout ? s.byCheckout[checkout]?.error : undefined,
-	);
+}
+
+function changesPart(changed: number | undefined, conflicts: number): { text: string; tone: string } {
+	if (changed === undefined) return { text: "Checking…", tone: "repo-card-tone-mute" };
+	if (conflicts > 0) return { text: plural(conflicts, "conflict", "conflicts"), tone: "repo-card-tone-danger" };
+	if (changed === 0) return { text: "Clean", tone: "repo-card-tone-mute" };
+	return { text: `${compactCount(changed)} changed`, tone: "repo-card-tone-warn" };
+}
+
+export function SourceControlWidget({
+	checkout,
+	sessionId,
+	branch: sessionBranch,
+	lastUserMessageBranch,
+}: {
+	checkout: string | undefined;
+	sessionId?: string;
+	branch?: string;
+	lastUserMessageBranch?: string;
+}) {
+	const summary = useSourceControlStore((s) => (checkout ? s.byCheckout[checkout]?.summary : undefined));
+	const error = useSourceControlStore((s) => (checkout ? s.byCheckout[checkout]?.error : undefined));
+	const busy = useSourceControlStore((s) => (checkout ? s.remote[checkout]?.busy ?? null : null));
+	const remoteError = useSourceControlStore((s) => (checkout ? s.remote[checkout]?.error ?? null : null));
 	const openModal = useSourceControlStore((s) => s.openModal);
+	const openBranches = useSourceControlStore((s) => s.openBranches);
+	const dismissRemoteError = useSourceControlStore((s) => s.dismissRemoteError);
 
 	if (!checkout || isHardFailure(error)) return null;
 
-	const filesText =
-		changed === undefined
-			? "Checking for changes…"
-			: changed === 0
-				? "No changes"
-				: `${compactCount(changed)} ${changed === 1 ? "file" : "files"} changed`;
-	const worktreesText =
-		worktrees > 0 ? `${compactCount(worktrees)} ${worktrees === 1 ? "worktree" : "worktrees"}` : null;
-	const label =
-		changed === undefined
-			? "Source control, checking for changes"
-			: `Source control: ${plural(changed, "file", "files")} changed${worktreesText ? `, ${plural(worktrees, "worktree", "worktrees")}` : ""}`;
+	const branch = (sessionBranch && sessionBranch !== "HEAD" ? sessionBranch : null) ?? summary?.branch ?? null;
+	const branchText = branch ?? (summary?.head ? `Detached at ${summary.head}` : summary ? "Detached HEAD" : "…");
+	const stale = !!branch && !!lastUserMessageBranch && branch !== lastUserMessageBranch;
+	const worktreeName = summary?.worktreeName ?? null;
+	let linked = 0;
+	for (const w of summary?.worktrees ?? []) if (!w.isMain) linked++;
+	const changes = changesPart(summary?.changed, summary?.conflicts ?? 0);
+	const upstream = summary?.upstream ?? null;
+	const unpublished = summary && branch && !upstream ? summary.unpublished : null;
+	const ahead = upstream ? summary?.ahead ?? 0 : unpublished ?? 0;
+	const behind = upstream ? summary?.behind ?? 0 : 0;
+	const showPull = behind > 0;
+	const showPush = upstream ? ahead > 0 : unpublished !== null;
+	const run = (op: "pull" | "push"): void => void runRemoteOp(checkout, op, sessionId);
+
+	const branchLabel = `${worktreeName ? `Worktree ${worktreeName}, branch` : "Branch"} ${branchText}${
+		stale ? `, changed since your last message (was ${lastUserMessageBranch})` : ""
+	}${sessionId ? ". Open branches" : ""}`;
+	const changesLabel = `${changes.text}${linked > 0 ? `, ${plural(linked, "worktree", "worktrees")}` : ""}. Open source control`;
 
 	return (
-		<button
-			type="button"
-			className="scm-widget"
-			onClick={() => openModal(checkout)}
-			aria-label={label}
-			aria-haspopup="dialog"
-		>
-			<span style={{ display: "inline-flex", color: conflicts > 0 ? T.danger : changed ? T.warn : T.textMute }}>
-				<FilesIcon />
-			</span>
-			<span style={{ color: conflicts > 0 ? T.danger : undefined }}>{filesText}</span>
-			{worktreesText ? (
-				<>
-					<span className="scm-widget-sep" aria-hidden="true">·</span>
-					<span style={{ display: "inline-flex" }}>
-						<WorktreesIcon />
+		<div className="repo-card-wrap">
+			<div className="repo-card">
+				<div className="repo-card-line">
+					<button
+						type="button"
+						className={`repo-card-row repo-card-branch${stale ? " is-stale" : ""}`}
+						disabled={!sessionId}
+						onClick={sessionId ? () => openBranches({ checkout, sessionId }) : undefined}
+						onPointerEnter={() => void refreshBranches(checkout, BRANCH_PREFETCH_MAX_AGE_MS)}
+						aria-label={branchLabel}
+						aria-haspopup={sessionId ? "dialog" : undefined}
+					>
+						<BranchGlyph />
+						<span className="repo-card-ellipsis">{branchText}</span>
+						{stale ? <span className="repo-card-stale-dot" aria-hidden="true" /> : null}
+					</button>
+					{showPull ? (
+						<button
+							type="button"
+							className="repo-card-sync-btn is-pull"
+							disabled={busy !== null}
+							onClick={() => run("pull")}
+							aria-label={`Pull ${plural(behind, "commit", "commits")} from ${upstream}`}
+						>
+							{busy === "pull" ? <span className="repo-card-spinner" aria-hidden="true" /> : <Arrow up={false} />}
+							<span>{compactCount(behind)}</span>
+						</button>
+					) : null}
+					{showPush ? (
+						<button
+							type="button"
+							className={`repo-card-sync-btn ${ahead > 0 ? "is-push" : "is-idle"}`}
+							disabled={busy !== null}
+							onClick={() => run("push")}
+							aria-label={
+								upstream
+									? `Push ${plural(ahead, "commit", "commits")} to ${upstream}`
+									: `Publish ${branch} to origin with ${plural(ahead, "commit", "commits")}`
+							}
+						>
+							{busy === "push" ? <span className="repo-card-spinner" aria-hidden="true" /> : <Arrow up />}
+							<span>{compactCount(ahead)}</span>
+						</button>
+					) : null}
+				</div>
+				<button
+					type="button"
+					className="repo-card-row repo-card-meta"
+					onClick={() => openModal(checkout)}
+					aria-label={changesLabel}
+					aria-haspopup="dialog"
+				>
+					<span className={`repo-card-meta-item ${changes.tone}`}>
+						<FilesIcon size={11} />
+						<span>{changes.text}</span>
 					</span>
-					<span>{worktreesText}</span>
-				</>
+					{worktreeName ? (
+						<span className="repo-card-meta-item repo-card-worktree">
+							<WorktreesIcon size={11} />
+							<span className="repo-card-ellipsis">{worktreeName}</span>
+						</span>
+					) : linked > 0 ? (
+						<span className="repo-card-meta-item repo-card-worktree">
+							<WorktreesIcon size={11} />
+							<span>{plural(linked, "worktree", "worktrees")}</span>
+						</span>
+					) : null}
+				</button>
+			</div>
+			{remoteError ? (
+				<div className="repo-card-error" role="alert">
+					<span>{remoteError}</span>
+					<button
+						type="button"
+						className="btn btn-ghost btn-icon"
+						aria-label="Dismiss error"
+						onClick={() => dismissRemoteError(checkout)}
+					>
+						×
+					</button>
+				</div>
 			) : null}
-		</button>
+		</div>
 	);
 }

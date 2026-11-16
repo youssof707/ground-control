@@ -23,6 +23,9 @@ export interface StatusHeader {
 	branch: string | null;
 	head: string | null;
 	unborn: boolean;
+	upstream: string | null;
+	ahead: number;
+	behind: number;
 }
 
 export interface StatusParser {
@@ -131,7 +134,7 @@ export function createStatusParser(
 	onRecord: () => void = () => {},
 	skipUntracked: (path: string) => boolean = () => false,
 ): StatusParser {
-	const header: StatusHeader = { branch: null, head: null, unborn: false };
+	const header: StatusHeader = { branch: null, head: null, unborn: false, upstream: null, ahead: 0, behind: 0 };
 	let skipNext = false;
 
 	const feed = (record: Buffer): void => {
@@ -151,6 +154,14 @@ export function createStatusParser(
 			} else if (line.startsWith("# branch.head ")) {
 				const name = line.slice("# branch.head ".length);
 				header.branch = name === "(detached)" ? null : name;
+			} else if (line.startsWith("# branch.upstream ")) {
+				header.upstream = line.slice("# branch.upstream ".length) || null;
+			} else if (line.startsWith("# branch.ab ")) {
+				const match = /^\+(\d+) -(\d+)$/.exec(line.slice("# branch.ab ".length));
+				if (match) {
+					header.ahead = Number(match[1]);
+					header.behind = Number(match[2]);
+				}
 			}
 			return;
 		}

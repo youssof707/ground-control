@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ScmFailure, ScmSummary } from "@shared/schemas/source_control";
+import type { ScmFailure, ScmRemoteOp, ScmSummary } from "@shared/schemas/source_control";
 import {
 	call,
 	cancel,
@@ -27,6 +27,13 @@ interface State {
 	closeBranches: () => void;
 	viewed: Record<string, ReadonlySet<string>>;
 	toggleViewed: (checkout: string, key: string) => void;
+	remote: Record<string, RemoteState>;
+	dismissRemoteError: (checkout: string) => void;
+}
+
+export interface RemoteState {
+	busy: ScmRemoteOp | null;
+	error: string | null;
 }
 
 export interface BranchModalTarget {
@@ -72,7 +79,47 @@ export const useSourceControlStore = create<State>((set) => ({
 			else next.add(key);
 			return { viewed: { ...s.viewed, [checkout]: next } };
 		}),
+	remote: {},
+	dismissRemoteError: (checkout) =>
+		set((s) => ({ remote: { ...s.remote, [checkout]: { busy: s.remote[checkout]?.busy ?? null, error: null } } })),
 }));
+
+function patchRemote(checkout: string, next: Partial<RemoteState>): void {
+	useSourceControlStore.setState((s) => {
+		const prev = s.remote[checkout] ?? { busy: null, error: null };
+		return { remote: { ...s.remote, [checkout]: { ...prev, ...next } } };
+	});
+}
+
+const REMOTE_ERRORS: Record<ScmRemoteOp, string> = {
+	fetch: "Couldn't fetch from the remote.",
+	pull: "Couldn't pull.",
+	push: "Couldn't push.",
+};
+
+const fetching = new Set<string>();
+
+export function backgroundFetch(checkout: string): void {
+	if (fetching.has(checkout) || useSourceControlStore.getState().remote[checkout]?.busy) return;
+	fetching.add(checkout);
+	void call<"remote">({ t: "remote", checkout, op: "fetch" })
+		.promise.then((reply) => {
+			if (reply.ok) requestRefresh(checkout, true);
+		})
+		.finally(() => fetching.delete(checkout));
+}
+
+export async function runRemoteOp(checkout: string, op: ScmRemoteOp, sessionId?: string): Promise<void> {
+	if (useSourceControlStore.getState().remote[checkout]?.busy) return;
+	patchRemote(checkout, { busy: op, error: null });
+	const reply = await call<"remote">({ t: "remote", checkout, op }).promise;
+	patchRemote(checkout, {
+		busy: null,
+		error: reply.ok || reply.reason === "cancelled" ? null : reply.message || REMOTE_ERRORS[op],
+	});
+	requestRefresh(checkout, true);
+	if (reply.ok && sessionId) await window.claude.refreshBranch(sessionId).catch(() => undefined);
+}
 
 onConnectionChange((connection) => useSourceControlStore.setState({ connection }));
 
