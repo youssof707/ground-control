@@ -402,7 +402,7 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 							onClick={() => setWorktreeModalOpen(true)}
 						/>
 					) : null}
-					<SourceControlWidget checkout={scmCheckout} />
+					<SourceControlWidget checkout={scmCheckout} composerId={draftId} />
 				</div>
 				{pendingWorktree?.status === "error" ? (
 					<div

@@ -20,15 +20,44 @@ interface State {
 	connection: ScmConnection;
 	byCheckout: Record<string, ScmEntry>;
 	modalCheckout: string | null;
-	openModal: (checkout: string) => void;
+	modalComposer: string | null;
+	openModal: (checkout: string, composer?: string) => void;
 	closeModal: () => void;
 	branchModal: BranchModalTarget | null;
 	openBranches: (target: BranchModalTarget) => void;
 	closeBranches: () => void;
 	viewed: Record<string, ReadonlySet<string>>;
 	toggleViewed: (checkout: string, key: string) => void;
+	comments: Record<string, ReviewComment[]>;
+	addComment: (checkout: string, comment: Omit<ReviewComment, "id">) => void;
+	editComment: (checkout: string, id: string, body: string) => void;
+	removeComment: (checkout: string, id: string) => void;
+	clearComments: (checkout: string) => void;
 	remote: Record<string, RemoteState>;
 	dismissRemoteError: (checkout: string) => void;
+}
+
+export interface ReviewComment {
+	id: string;
+	fileKey: string;
+	path: string;
+	startLine: number;
+	endLine: number;
+	code: string;
+	body: string;
+}
+
+let commentSeq = 0;
+
+function patchComments(
+	all: Record<string, ReviewComment[]>,
+	checkout: string,
+	next: ReviewComment[],
+): Record<string, ReviewComment[]> {
+	const rest = { ...all };
+	if (next.length === 0) delete rest[checkout];
+	else rest[checkout] = next;
+	return rest;
 }
 
 export interface RemoteState {
@@ -64,11 +93,12 @@ export const useSourceControlStore = create<State>((set) => ({
 	connection: getConnection(),
 	byCheckout: {},
 	modalCheckout: null,
-	openModal: (checkout) => {
-		set({ modalCheckout: checkout });
+	modalComposer: null,
+	openModal: (checkout, composer) => {
+		set({ modalCheckout: checkout, modalComposer: composer ?? null });
 		requestRefresh(checkout, true);
 	},
-	closeModal: () => set({ modalCheckout: null }),
+	closeModal: () => set({ modalCheckout: null, modalComposer: null }),
 	branchModal: null,
 	openBranches: (target) => set({ branchModal: target }),
 	closeBranches: () => set({ branchModal: null }),
@@ -80,6 +110,31 @@ export const useSourceControlStore = create<State>((set) => ({
 			else next.add(key);
 			return { viewed: { ...s.viewed, [checkout]: next } };
 		}),
+	comments: {},
+	addComment: (checkout, comment) =>
+		set((s) => ({
+			comments: patchComments(s.comments, checkout, [
+				...(s.comments[checkout] ?? []),
+				{ ...comment, id: `c${++commentSeq}` },
+			]),
+		})),
+	editComment: (checkout, id, body) =>
+		set((s) => ({
+			comments: patchComments(
+				s.comments,
+				checkout,
+				(s.comments[checkout] ?? []).map((c) => (c.id === id ? { ...c, body } : c)),
+			),
+		})),
+	removeComment: (checkout, id) =>
+		set((s) => ({
+			comments: patchComments(
+				s.comments,
+				checkout,
+				(s.comments[checkout] ?? []).filter((c) => c.id !== id),
+			),
+		})),
+	clearComments: (checkout) => set((s) => ({ comments: patchComments(s.comments, checkout, []) })),
 	remote: {},
 	dismissRemoteError: (checkout) =>
 		set((s) => ({ remote: { ...s.remote, [checkout]: { busy: s.remote[checkout]?.busy ?? null, error: null } } })),

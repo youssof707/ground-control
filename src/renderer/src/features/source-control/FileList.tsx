@@ -25,6 +25,7 @@ export interface FileListRows {
 	status: (index: number) => ScmFileStatus;
 	selected: (index: number) => boolean;
 	viewed: (index: number) => boolean;
+	commented: (index: number) => boolean;
 }
 
 export interface FileListHandle {
@@ -209,6 +210,7 @@ export const FileList = forwardRef<
 				selected={rows.selected(i)}
 				focused={i === focused}
 				viewed={rows.viewed(i)}
+				commented={rows.commented(i)}
 				onPointer={onPointer}
 				onContext={onRowContext}
 				onViewed={onViewed}

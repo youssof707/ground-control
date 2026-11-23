@@ -67,9 +67,11 @@ export function SourceControlWidget({
 	sessionId,
 	branch: sessionBranch,
 	lastUserMessageBranch,
+	composerId,
 }: {
 	checkout: string | undefined;
 	sessionId?: string;
+	composerId?: string;
 	branch?: string;
 	lastUserMessageBranch?: string;
 }) {
@@ -153,7 +155,7 @@ export function SourceControlWidget({
 				<button
 					type="button"
 					className="repo-card-row repo-card-meta"
-					onClick={() => openModal(checkout)}
+					onClick={() => openModal(checkout, sessionId ?? composerId)}
 					aria-label={changesLabel}
 					aria-haspopup="dialog"
 				>

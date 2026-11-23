@@ -36,6 +36,7 @@ export const FileRow = memo(function FileRow({
 	selected,
 	focused,
 	viewed,
+	commented,
 	onPointer,
 	onContext,
 	onViewed,
@@ -49,6 +50,7 @@ export const FileRow = memo(function FileRow({
 	selected: boolean;
 	focused: boolean;
 	viewed: boolean;
+	commented: boolean;
 	onPointer: (index: number, pointer: RowPointer) => void;
 	onContext: (index: number, x: number, y: number) => void;
 	onViewed: (index: number) => void;
@@ -78,6 +80,11 @@ export const FileRow = memo(function FileRow({
 			<span className="scm-row-dir">
 				<bdi>{dir}</bdi>
 			</span>
+			{commented ? (
+				<svg className="scm-row-comment" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-label="Has comments" role="img">
+					<path d="M2.5 3.5h11v7.5H7.5L4.5 13.5V11h-2z" />
+				</svg>
+			) : null}
 			<button
 				type="button"
 				className="scm-row-viewed"

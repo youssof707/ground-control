@@ -14,12 +14,14 @@ import { useBackdropDismiss } from "../../components/useBackdropDismiss";
 import { T } from "../../design/tokens";
 import { useWorktreesStore } from "../claude-sessions/stores/useWorktreesStore";
 import { CloseIcon } from "../claude-sessions/components/TerminalModal";
+import { appendPromptBlock, focusComposer } from "../claude-sessions/lib/composerActions";
 import { CheckoutPicker, type PickerOption } from "./CheckoutPicker";
 import { DiffPane, type DiffView } from "./DiffPane";
 import { FileList, type FileListHandle, type FileListRows } from "./FileList";
 import type { RowPointer } from "./FileRow";
 import { ScmContextMenu, type MenuItem } from "./ScmContextMenu";
 import { formatAge, leafName, plural } from "./format";
+import { buildReviewPrompt } from "./reviewPrompt";
 import {
 	canReuse,
 	createBuffer,
@@ -269,6 +271,10 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 	const entry = useSourceControlStore((s) => s.byCheckout[checkout]);
 	const connection = useSourceControlStore((s) => s.connection);
 	const viewed = useSourceControlStore((s) => s.viewed[checkout]);
+	const composer = useSourceControlStore((s) => s.modalComposer);
+	const comments = useSourceControlStore((s) => s.comments[checkout]);
+	const reviewCount = comments?.length ?? 0;
+	const commentedKeys = useMemo(() => new Set(comments?.map((c) => c.fileKey)), [comments]);
 	const summary = entry?.summary;
 	const loading = entry?.loading ?? false;
 	const backdropProps = useBackdropDismiss(onClose);
@@ -319,6 +325,7 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 			const onPage = target === null || target === document.body || target === document.documentElement;
 			if (!insideCard && !onPage) return;
 			if (card.querySelector(".find-widget.visible, .scm-picker-menu, .scm-ctx-menu")) return;
+			if (target instanceof Element && target.closest(".scm-review-zone")) return;
 			e.preventDefault();
 			e.stopPropagation();
 			onClose();
@@ -467,6 +474,7 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 			loading: true,
 			content: prev?.content ?? null,
 			contentPath: prev?.contentPath ?? null,
+			contentStaged: prev?.contentStaged ?? false,
 			noLongerChanged: false,
 		}));
 
@@ -494,6 +502,7 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 						loading: false,
 						content: reply.content,
 						contentPath: path,
+						contentStaged: staged,
 						noLongerChanged: false,
 					});
 					return;
@@ -511,6 +520,7 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 					loading: false,
 					content: { kind: "error", message: "source control stopped responding." },
 					contentPath: path,
+					contentStaged: staged,
 					noLongerChanged: false,
 				});
 			});
@@ -688,6 +698,33 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 		[checkout],
 	);
 
+	const sendReview = useCallback(() => {
+		const state = useSourceControlStore.getState();
+		const comments = state.comments[checkout];
+		if (!composer || !comments?.length) return;
+		appendPromptBlock(composer, buildReviewPrompt(comments));
+		state.clearComments(checkout);
+		onClose();
+		focusComposer();
+	}, [checkout, composer, onClose]);
+
+	useEffect(() => {
+		const onKeyDown = (e: KeyboardEvent): void => {
+			if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey) || e.isComposing || confirmOpenRef.current) return;
+			const target = e.target instanceof Element ? e.target : null;
+			if (target?.closest(".scm-review-zone")) return;
+			const typing = target?.matches("input, textarea, [contenteditable='true']") && !target.closest(".monaco-editor");
+			if (typing) return;
+			const state = useSourceControlStore.getState();
+			if (!composer || !state.comments[checkout]?.length) return;
+			e.preventDefault();
+			e.stopPropagation();
+			sendReview();
+		};
+		window.addEventListener("keydown", onKeyDown, true);
+		return () => window.removeEventListener("keydown", onKeyDown, true);
+	}, [checkout, composer, sendReview]);
+
 	const onForce = useCallback(() => {
 		const key = focusRef.current?.key;
 		if (key) setForcePath(key);
@@ -703,6 +740,7 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 		status: (i) => (buffer ? statusAt(buffer, i) : "M"),
 		selected: (i) => (buffer ? selection.has(rowKey(buffer, i)) : false),
 		viewed: (i) => (buffer && viewed ? viewed.has(rowKey(buffer, i)) : false),
+		commented: (i) => (buffer ? commentedKeys.has(rowKey(buffer, i)) : false),
 	};
 	const selectedCount = selection.size;
 
@@ -821,6 +859,12 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 					</span>
 					<span style={{ flex: 1 }} />
 					<ScanStatus entry={entry} />
+					{composer && reviewCount > 0 ? (
+						<button type="button" className="btn btn-primary scm-review-send" onClick={sendReview}>
+							Send review
+							<span className="scm-review-count">{reviewCount}</span>
+						</button>
+					) : null}
 					<button
 						type="button"
 						className="btn btn-ghost btn-icon"
@@ -919,7 +963,7 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 							</div>
 						) : null}
 					</div>
-					<DiffPane view={summary && listed > 0 ? view : null} onForce={onForce} />
+					<DiffPane view={summary && listed > 0 ? view : null} onForce={onForce} reviewCheckout={composer ? checkout : null} />
 				</div>
 				{menu ? <ScmContextMenu x={menu.x} y={menu.y} items={menu.items} disabled={busy} onClose={closeMenu} /> : null}
 			</div>

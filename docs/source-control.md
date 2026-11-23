@@ -114,6 +114,15 @@ Pacing:
 - Monaco loads only when the modal first opens. It includes the core editor, diff, find, copy, and the lazy syntax-colouring definitions, but no language services.
 - If Monaco's diff worker fails to start, diffs are disabled. Monaco would otherwise diff on the UI thread.
 
+## Review comments
+
+- When the modal was opened from a session or draft header, hovering a diff line shows a `+` in the gutter. Clicking it opens an inline comment box under that line; with a multi-line selection under the cursor, the comment covers the selected lines.
+- Comments sit on lines of the new side only. Deleted lines can't be commented on directly.
+- Enter saves, ⌘↵ (or ⇧↵) inserts a newline, Esc cancels. Saved comments can be edited or deleted in place.
+- A file row with comments shows a grey comment icon left of the eye toggle (staged and unstaged entries are separate).
+- Comments are kept in memory per checkout (keyed by file and staged/unstaged), survive closing the modal and switching files, and are lost on reload. Each stores a snapshot of its lines (up to 30), so the prompt stays unambiguous if the file changes later.
+- **Send review (N)** in the modal header (or ⌘↵ while no comment box or text field is focused) appends one prompt to the session's composer (`path:start-end`, the fenced code, then the comment, sorted by path and line), clears the comments, closes the modal and focuses the composer. It doesn't send; the user edits and sends.
+
 ## Rendering
 
 - The file list is windowed by hand: fixed 26 px rows, and only the visible rows plus overscan are mounted.

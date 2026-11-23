@@ -935,6 +935,10 @@ input[type="number"]::-webkit-outer-spin-button {
 	flex-shrink: 1;
 	min-width: 40px;
 }
+.scm-row-comment {
+	flex-shrink: 0;
+	color: oklch(0.6 0.008 70);
+}
 .scm-row[data-viewed] .scm-row-name,
 .scm-row[data-viewed] .scm-row-dir {
 	opacity: 0.4;
@@ -958,8 +962,7 @@ input[type="number"]::-webkit-outer-spin-button {
 	opacity: 0;
 	transition: opacity 0.12s, color 0.12s, background-color 0.12s;
 }
-.scm-row:hover .scm-row-viewed,
-.scm-row[data-focused] .scm-row-viewed {
+.scm-row:hover .scm-row-viewed {
 	opacity: 1;
 }
 .scm-row-viewed:hover {
@@ -977,6 +980,157 @@ input[type="number"]::-webkit-outer-spin-button {
 .scm-row-viewed:focus-visible {
 	outline: none;
 	box-shadow: none;
+}
+.scm-comment-glyph {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+}
+.scm-comment-glyph::before {
+	content: "";
+	width: 9px;
+	height: 9px;
+	background:
+		linear-gradient(oklch(0.94 0.005 80), oklch(0.94 0.005 80)) center / 100% 1.5px no-repeat,
+		linear-gradient(oklch(0.94 0.005 80), oklch(0.94 0.005 80)) center / 1.5px 100% no-repeat;
+}
+.monaco-editor .view-zones .scm-review-zone {
+	z-index: 1;
+}
+.scm-review-zone {
+	box-sizing: border-box;
+	padding: 6px 16px 6px 8px;
+	background: oklch(0.19 0.006 60);
+	font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	white-space: normal;
+	user-select: text;
+	cursor: auto;
+}
+.scm-review-margin {
+	height: 100%;
+	background: oklch(0.19 0.006 60);
+}
+.scm-review-zone.is-inserted {
+	background: var(--vscode-diffEditor-insertedLineBackground);
+}
+.scm-review-margin.is-inserted {
+	background: var(--vscode-diffEditorGutter-insertedLineBackground);
+}
+.scm-review-box {
+	box-sizing: border-box;
+	max-width: 560px;
+	padding: 9px 12px 8px;
+	background: oklch(0.225 0.007 60);
+	border: 0.5px solid oklch(0.30 0.008 60);
+	border-radius: 10px;
+	font-size: 13px;
+	line-height: 1.5;
+	color: oklch(0.94 0.005 80);
+}
+.monaco-editor .scm-review-zone .scm-review-input,
+.monaco-editor .scm-review-zone .scm-review-input:focus,
+.monaco-editor .scm-review-zone .scm-review-input:focus-visible {
+	display: block;
+	box-sizing: border-box;
+	width: 100%;
+	min-height: 20px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	resize: none;
+	outline: none;
+	box-shadow: none;
+}
+.monaco-editor .scm-review-zone *:focus,
+.monaco-editor .scm-review-zone *:focus-visible {
+	outline: none;
+	box-shadow: none;
+}
+.scm-review-input::placeholder {
+	color: oklch(0.46 0.010 70);
+}
+.scm-review-actions,
+.scm-review-head {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+.scm-review-actions {
+	justify-content: flex-end;
+	margin: 8px -4px 0 0;
+}
+.scm-review-head {
+	margin: -3px -6px 3px 0;
+	font-size: 11.5px;
+	color: oklch(0.50 0.010 70);
+	font-variant-numeric: tabular-nums;
+}
+.scm-review-hint {
+	margin-right: 6px;
+	font-size: 11px;
+	color: oklch(0.42 0.010 70);
+}
+.scm-review-btn {
+	appearance: none;
+	height: 24px;
+	padding: 0 9px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: oklch(0.65 0.008 70);
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+	outline: none;
+	transition: background-color 0.1s, color 0.1s;
+}
+.scm-review-btn:hover:not(:disabled) {
+	background: oklch(1 0 0 / 0.06);
+	color: oklch(0.94 0.005 80);
+}
+.scm-review-btn.is-primary {
+	background: oklch(0.76 0.10 250);
+	color: #1a1410;
+	font-weight: 500;
+}
+.scm-review-btn.is-primary:hover:not(:disabled) {
+	background: oklch(0.80 0.10 250);
+	color: #1a1410;
+}
+.scm-review-btn.is-primary:disabled {
+	background: oklch(1 0 0 / 0.06);
+	color: oklch(0.46 0.010 70);
+	cursor: default;
+}
+.scm-review-body {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.scm-review-send {
+	height: 26px;
+	padding: 0 6px 0 10px;
+	gap: 6px;
+	font-size: 12px;
+}
+.scm-review-count {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 16px;
+	height: 16px;
+	padding: 0 4px;
+	border-radius: 8px;
+	background: rgba(26, 20, 16, 0.14);
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+}
+.monaco-diff-editor .cursors-layer {
+	display: none;
 }
 .monaco-diff-editor:not(.side-by-side) .editor.original .margin-view-zones .gutter-delete {
 	background-color: var(--vscode-diffEditorGutter-insertedLineBackground);
@@ -1228,6 +1382,11 @@ input[type="number"]::-webkit-outer-spin-button {
 	gap: 6px;
 	font-size: 12px;
 	flex-shrink: 0;
+}
+.branch-copy-icon {
+	width: 26px;
+	padding: 0;
+	justify-content: center;
 }
 .branch-copy-done,
 .branch-copy-done:hover:not(:disabled) {

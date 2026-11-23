@@ -17,6 +17,7 @@ import { useSessionsStore } from "../claude-sessions/stores/useSessionsStore";
 import { markCurrentBranch, refreshBranches, branchListFor, useBranchStore } from "./branchCache";
 import { indexBranches, searchBranches } from "./branchSearch";
 import { leafName, plural, shortAge } from "./format";
+import { CopyButton } from "./CopyButton";
 import { call } from "./scmClient";
 import { WorktreesIcon } from "./SourceControlWidget";
 import {
@@ -39,15 +40,6 @@ export function BranchIcon({ size = 11 }: { size?: number }) {
 	);
 }
 
-function CopyIcon() {
-	return (
-		<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-			<rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1.3" stroke="currentColor" strokeWidth="1.1" />
-			<path d="M8 2H3.2A1.2 1.2 0 0 0 2 3.2V8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-		</svg>
-	);
-}
-
 function CheckIcon() {
 	return (
 		<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
@@ -63,31 +55,6 @@ export function BranchModalHost() {
 	return createPortal(
 		<BranchModal key={`${target.sessionId}:${target.checkout}`} target={target} onClose={close} />,
 		document.body,
-	);
-}
-
-function CopyButton({ text }: { text: string }) {
-	const [copied, setCopied] = useState(false);
-	useEffect(() => {
-		if (!copied) return;
-		const timer = window.setTimeout(() => setCopied(false), 1200);
-		return () => window.clearTimeout(timer);
-	}, [copied]);
-	return (
-		<button
-			type="button"
-			className={`btn btn-ghost branch-copy${copied ? " branch-copy-done" : ""}`}
-			aria-label={copied ? "Copied" : `Copy branch name ${text}`}
-			onClick={() => {
-				navigator.clipboard.writeText(text).then(
-					() => setCopied(true),
-					() => setCopied(false),
-				);
-			}}
-		>
-			{copied ? <CheckIcon /> : <CopyIcon />}
-			<span>{copied ? "Copied" : "Copy"}</span>
-		</button>
 	);
 }
 
@@ -306,7 +273,7 @@ function BranchModal({ target, onClose }: { target: BranchModalTarget; onClose: 
 							<span className="branch-head-text">{current ?? "Detached HEAD"}</span>
 						</span>
 					</div>
-					{current ? <CopyButton text={current} /> : null}
+					{current ? <CopyButton text={current} label={`Copy branch name ${current}`} /> : null}
 					<button type="button" className="btn btn-ghost btn-icon" aria-label="Close" onClick={onClose}>
 						<CloseIcon />
 					</button>

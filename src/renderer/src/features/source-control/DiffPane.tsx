@@ -1,12 +1,67 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { ScmDiffContent, ScmFileStatus } from "@shared/schemas/source_control";
 import { T } from "../../design/tokens";
+import { CopyButton } from "./CopyButton";
 import { STATUS_LABEL } from "./FileRow";
 import { formatBytes } from "./format";
 import { isHeavy, onlyLineEndingsDiffer } from "./diffText";
 import { loadMonaco, type MonacoModule } from "./monaco/load";
+import { ReviewBox } from "./ReviewBox";
+import { snippet } from "./reviewPrompt";
+import { makeKey } from "./rowBuffer";
+import { useSourceControlStore, type ReviewComment } from "./useSourceControlStore";
 
+type EditorNs = typeof import("monaco-editor/editor/editor.api").editor;
 type DiffEditor = import("monaco-editor/editor/editor.api").editor.IStandaloneDiffEditor;
+type ViewZone = import("monaco-editor/editor/editor.api").editor.IViewZone;
+type MouseTarget = import("monaco-editor/editor/editor.api").editor.IMouseTarget;
+
+interface Zone {
+	id: string;
+	zoneId: string;
+	zone: ViewZone;
+	node: HTMLDivElement;
+	margin: HTMLDivElement;
+}
+
+function paintZones(editor: DiffEditor, zones: Iterable<Zone>): void {
+	const changes = editor.getLineChanges() ?? [];
+	for (const z of zones) {
+		const line = z.zone.afterLineNumber;
+		const inserted = changes.some(
+			(c) => c.modifiedEndLineNumber > 0 && line >= c.modifiedStartLineNumber && line <= c.modifiedEndLineNumber,
+		);
+		z.node.classList.toggle("is-inserted", inserted);
+		z.margin.classList.toggle("is-inserted", inserted);
+	}
+}
+
+interface Draft {
+	startLine: number;
+	endLine: number;
+}
+
+const NO_COMMENTS: ReviewComment[] = [];
+const ISOLATED_EVENTS = ["pointerdown", "mousedown", "mouseup", "click", "dblclick", "keydown", "keyup", "keypress", "contextmenu"];
+
+function draftId(draft: Draft): string {
+	return `draft:${draft.startLine}-${draft.endLine}`;
+}
+
+function commentLine(types: EditorNs["MouseTargetType"], target: MouseTarget): number | null {
+	if (!target.position) return null;
+	switch (target.type) {
+		case types.GUTTER_GLYPH_MARGIN:
+		case types.GUTTER_LINE_NUMBERS:
+		case types.GUTTER_LINE_DECORATIONS:
+		case types.CONTENT_TEXT:
+		case types.CONTENT_EMPTY:
+			return target.position.lineNumber;
+		default:
+			return null;
+	}
+}
 
 export interface DiffView {
 	path: string;
@@ -15,6 +70,7 @@ export interface DiffView {
 	loading: boolean;
 	content: ScmDiffContent | null;
 	contentPath: string | null;
+	contentStaged: boolean;
 	noLongerChanged: boolean;
 }
 
@@ -22,6 +78,7 @@ const SLOW_LOADING_MS = 150;
 
 interface Shown {
 	path: string;
+	staged: boolean;
 	original: string;
 	modified: string;
 }
@@ -105,9 +162,11 @@ function describe(content: ScmDiffContent, onForce: () => void): ReactNode {
 export function DiffPane({
 	view,
 	onForce,
+	reviewCheckout,
 }: {
 	view: DiffView | null;
 	onForce: () => void;
+	reviewCheckout: string | null;
 }) {
 	const hostRef = useRef<HTMLDivElement>(null);
 	const editorRef = useRef<DiffEditor | null>(null);
@@ -117,6 +176,14 @@ export function DiffPane({
 	const [loadError, setLoadError] = useState<string | null>(null);
 	const [workerFailed, setWorkerFailed] = useState(false);
 	const [slow, setSlow] = useState(false);
+	const [modelVersion, setModelVersion] = useState(0);
+	const [shownKey, setShownKey] = useState<string | null>(null);
+	const [draft, setDraft] = useState<Draft | null>(null);
+	const zonesRef = useRef(new Map<string, Zone>());
+	const [zones, setZones] = useState<Zone[]>([]);
+	const commentableRef = useRef(false);
+	const shownKeyRef = useRef<string | null>(null);
+	const draftTextRef = useRef("");
 
 	useEffect(() => {
 		let disposed = false;
@@ -134,7 +201,7 @@ export function DiffPane({
 					originalEditable: false,
 					automaticLayout: true,
 					renderSideBySide: false,
-					renderIndicators: true,
+					renderIndicators: false,
 					hideUnchangedRegions: {
 						enabled: true,
 						contextLineCount: 3,
@@ -151,7 +218,7 @@ export function DiffPane({
 					scrollBeyondLastLine: false,
 					stickyScroll: { enabled: false },
 					folding: false,
-					glyphMargin: false,
+					glyphMargin: true,
 					links: false,
 					occurrencesHighlight: "off",
 					selectionHighlight: false,
@@ -200,6 +267,7 @@ export function DiffPane({
 
 	const content = view?.content ?? null;
 	const contentPath = view?.contentPath ?? null;
+	const contentStaged = view?.contentStaged ?? false;
 
 	useEffect(() => {
 		const mod = monacoRef.current;
@@ -210,6 +278,7 @@ export function DiffPane({
 		if (
 			prev &&
 			prev.path === contentPath &&
+			prev.staged === contentStaged &&
 			prev.original === content.original &&
 			prev.modified === content.modified
 		) {
@@ -224,12 +293,201 @@ export function DiffPane({
 		original.updateOptions({ tabSize: 4, indentSize: 4 });
 		modified.updateOptions({ tabSize: 4, indentSize: 4 });
 		const old = editor.getModel();
+		const zones = zonesRef.current;
+		editor.getModifiedEditor().changeViewZones((acc) => {
+			for (const z of zones.values()) acc.removeZone(z.zoneId);
+		});
+		zones.clear();
 		editor.setModel({ original, modified });
 		if (viewState) editor.restoreViewState(viewState);
 		old?.original.dispose();
 		old?.modified.dispose();
-		shownRef.current = { path: contentPath, original: content.original, modified: content.modified };
-	}, [ready, workerFailed, content, contentPath]);
+		shownRef.current = { path: contentPath, staged: contentStaged, original: content.original, modified: content.modified };
+		const key = makeKey(contentStaged, contentPath);
+		if (shownKeyRef.current !== key) {
+			setDraft(null);
+			draftTextRef.current = "";
+		}
+		shownKeyRef.current = key;
+		setShownKey(key);
+		setZones([]);
+		setModelVersion((v) => v + 1);
+	}, [ready, workerFailed, content, contentPath, contentStaged]);
+
+	const allComments = useSourceControlStore((s) => (reviewCheckout ? s.comments[reviewCheckout] : undefined));
+	const fileComments = useMemo(
+		() => (allComments && shownKey ? allComments.filter((c) => c.fileKey === shownKey) : NO_COMMENTS),
+		[allComments, shownKey],
+	);
+	const commentable = reviewCheckout !== null && shownKey !== null && content?.kind === "text";
+	commentableRef.current = commentable;
+
+	useEffect(() => {
+		const mod = monacoRef.current;
+		const editor = editorRef.current;
+		if (!ready || !mod || !editor) return;
+		const modified = editor.getModifiedEditor();
+		const types = mod.monaco.editor.MouseTargetType;
+		let hover: string[] = [];
+		let hoverLine: number | null = null;
+		const setHover = (line: number | null): void => {
+			if (line === hoverLine) return;
+			hoverLine = line;
+			hover = modified.deltaDecorations(
+				hover,
+				line === null
+					? []
+					: [{ range: new mod.monaco.Range(line, 1, line, 1), options: { glyphMarginClassName: "scm-comment-glyph" } }],
+			);
+		};
+		const move = modified.onMouseMove((e) => setHover(commentableRef.current ? commentLine(types, e.target) : null));
+		const leave = modified.onMouseLeave(() => setHover(null));
+		const diffed = editor.onDidUpdateDiff(() => paintZones(editor, zonesRef.current.values()));
+		const swap = modified.onDidChangeModel(() => {
+			hover = [];
+			hoverLine = null;
+		});
+		const down = modified.onMouseDown((e) => {
+			if (!commentableRef.current || e.target.type !== types.GUTTER_GLYPH_MARGIN) return;
+			const line = commentLine(types, e.target);
+			if (line === null) return;
+			const sel = modified.getSelection();
+			let startLine = line;
+			let endLine = line;
+			if (sel && !sel.isEmpty() && line >= sel.startLineNumber && line <= sel.endLineNumber) {
+				startLine = sel.startLineNumber;
+				endLine = sel.endColumn === 1 && sel.endLineNumber > sel.startLineNumber ? sel.endLineNumber - 1 : sel.endLineNumber;
+			}
+			draftTextRef.current = "";
+			setDraft({ startLine, endLine });
+		});
+		return () => {
+			move.dispose();
+			leave.dispose();
+			diffed.dispose();
+			swap.dispose();
+			down.dispose();
+			modified.deltaDecorations(hover, []);
+		};
+	}, [ready]);
+
+	useEffect(() => {
+		const editor = editorRef.current;
+		if (!ready || !editor) return;
+		const modified = editor.getModifiedEditor();
+		const lineCount = modified.getModel()?.getLineCount() ?? 0;
+		const wanted = new Map<string, number>();
+		if (commentable && lineCount > 0) {
+			for (const c of fileComments) wanted.set(c.id, Math.min(c.endLine, lineCount));
+			if (draft) wanted.set(draftId(draft), Math.min(draft.endLine, lineCount));
+		}
+		const current = zonesRef.current;
+		let changed = false;
+		modified.changeViewZones((acc) => {
+			for (const [id, z] of current) {
+				if (wanted.has(id)) continue;
+				acc.removeZone(z.zoneId);
+				current.delete(id);
+				changed = true;
+			}
+			for (const [id, after] of wanted) {
+				if (current.has(id)) continue;
+				const node = document.createElement("div");
+				node.className = "scm-review-zone";
+				for (const type of ISOLATED_EVENTS) node.addEventListener(type, (e) => e.stopPropagation());
+				const margin = document.createElement("div");
+				margin.className = "scm-review-margin";
+				const zone: ViewZone = { afterLineNumber: after, heightInPx: 0, domNode: node, marginDomNode: margin };
+				current.set(id, { id, zoneId: acc.addZone(zone), zone, node, margin });
+				changed = true;
+			}
+		});
+		paintZones(editor, current.values());
+		if (changed) setZones([...current.values()]);
+	}, [ready, modelVersion, commentable, fileComments, draft]);
+
+	const layoutZone = useCallback((id: string, height: number) => {
+		const z = zonesRef.current.get(id);
+		const editor = editorRef.current;
+		if (!z || !editor || z.zone.heightInPx === height) return;
+		z.zone.heightInPx = height;
+		editor.getModifiedEditor().changeViewZones((acc) => acc.layoutZone(z.zoneId));
+	}, []);
+
+	const heightFor = useMemo(() => {
+		const map = new Map<string, (h: number) => void>();
+		return (id: string) => {
+			let fn = map.get(id);
+			if (!fn) {
+				fn = (h: number) => layoutZone(id, h);
+				map.set(id, fn);
+			}
+			return fn;
+		};
+	}, [layoutZone]);
+
+	const saveDraft = useCallback(
+		(body: string) => {
+			const model = editorRef.current?.getModifiedEditor().getModel();
+			if (!draft || !reviewCheckout || !shownKey || !model || !contentPath) return;
+			const last = Math.min(draft.endLine, model.getLineCount());
+			const lines: string[] = [];
+			for (let i = draft.startLine; i <= last; i++) lines.push(model.getLineContent(i));
+			useSourceControlStore.getState().addComment(reviewCheckout, {
+				fileKey: shownKey,
+				path: contentPath,
+				startLine: draft.startLine,
+				endLine: draft.endLine,
+				code: snippet(lines),
+				body,
+			});
+			setDraft(null);
+			draftTextRef.current = "";
+		},
+		[draft, reviewCheckout, shownKey, contentPath],
+	);
+
+	const cancelDraft = useCallback(() => setDraft(null), []);
+	const setDraftText = useCallback((text: string) => {
+		draftTextRef.current = text;
+	}, []);
+
+	const commentsById = useMemo(() => new Map(fileComments.map((c) => [c.id, c])), [fileComments]);
+	const portals = zones.map((z) => {
+		if (z.id.startsWith("draft:")) {
+			if (!draft || z.id !== draftId(draft)) return null;
+			return createPortal(
+				<ReviewBox
+					startLine={draft.startLine}
+					endLine={draft.endLine}
+					body={null}
+					initialText={draftTextRef.current}
+					onTextChange={setDraftText}
+					onSave={saveDraft}
+					onCancel={cancelDraft}
+					onHeight={heightFor(z.id)}
+				/>,
+				z.node,
+				z.id,
+			);
+		}
+		const c = commentsById.get(z.id);
+		if (!c || !reviewCheckout) return null;
+		const store = useSourceControlStore.getState();
+		return createPortal(
+			<ReviewBox
+				startLine={c.startLine}
+				endLine={c.endLine}
+				body={c.body}
+				onSave={(body) => store.editComment(reviewCheckout, c.id, body)}
+				onCancel={cancelDraft}
+				onDelete={() => store.removeComment(reviewCheckout, c.id)}
+				onHeight={heightFor(z.id)}
+			/>,
+			z.node,
+			z.id,
+		);
+	});
 
 	const showingText = content?.kind === "text";
 	const notice = content && content.kind !== "text" ? describe(content, onForce) : null;
@@ -256,7 +514,7 @@ export function DiffPane({
 					<>
 						<span
 							style={{
-								flex: 1,
+								flex: "0 1 auto",
 								minWidth: 0,
 								overflow: "hidden",
 								textOverflow: "ellipsis",
@@ -270,6 +528,8 @@ export function DiffPane({
 						>
 							<bdi>{view.path}</bdi>
 						</span>
+						<CopyButton text={view.path} label={`Copy path ${view.path}`} iconOnly />
+						<span style={{ flex: 1 }} />
 						{loading && slow ? <span className="asyncy-btn-spinner" aria-label="Loading diff" /> : null}
 						<span style={{ fontSize: 11.5, color: T.textMute, flexShrink: 0 }}>
 							{view.staged ? `${STATUS_LABEL[view.status]} · Staged` : STATUS_LABEL[view.status]}
@@ -324,6 +584,7 @@ export function DiffPane({
 						<span>Empty file.</span>
 					</Notice>
 				) : null}
+				{portals}
 			</div>
 		</div>
 	);
