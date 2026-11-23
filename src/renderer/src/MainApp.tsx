@@ -11,8 +11,6 @@ import { useDockUnreadBadge } from "./features/claude-sessions/hooks/useDockUnre
 import { useQueuedMessageFlusher } from "./features/claude-sessions/hooks/useQueuedMessageFlusher";
 import { useUpdater } from "./features/updater/hooks/useUpdater";
 import { UpdateModal } from "./features/updater/components/UpdateModal";
-import { BackgroundTasksIndicator } from "./features/background-tasks/components/BackgroundTasksIndicator";
-import { AmbientStack } from "./components/AmbientStack";
 import { SessionsList } from "./features/claude-sessions/components/SessionsList";
 import { SessionChat } from "./features/claude-sessions/components/SessionChat";
 import { InboxSidebar } from "./features/claude-sessions/components/InboxSidebar";
@@ -102,9 +100,6 @@ export default function MainApp() {
 			<MainBody />
 			<UpdateModal />
 			<CommandPaletteModal />
-			<AmbientStack>
-				<BackgroundTasksIndicator />
-			</AmbientStack>
 		</div>
 	);
 }
