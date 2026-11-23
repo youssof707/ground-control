@@ -511,6 +511,12 @@ input::placeholder {
 }
 
 .md a { color: oklch(0.80 0.09 210); }
+.md a.file-link { text-decoration: none; cursor: pointer; }
+.md a.file-link:hover { text-decoration: underline; }
+.md a.file-link code { color: oklch(0.80 0.09 210); }
+
+.fv-line-highlight { background: oklch(0.76 0.10 250 / 0.14); }
+.fv-line-gutter { background: oklch(0.76 0.10 250); width: 3px !important; margin-left: 3px; }
 
 .md code {
 	font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;

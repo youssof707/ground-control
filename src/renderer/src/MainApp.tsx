@@ -17,6 +17,8 @@ import { InboxSidebar } from "./features/claude-sessions/components/InboxSidebar
 import { SidequestSidebarShell } from "./features/claude-sessions/components/sidequest/SidequestSidebarShell";
 import { AppNav } from "./features/claude-sessions/components/AppNav";
 import { SourceControlModalHost } from "./features/source-control/SourceControlModal";
+import { FileViewerModalHost } from "./features/file-viewer/FileViewerModal";
+import { FileLinkProvider } from "./features/file-viewer/FileLinkContext";
 import { BranchModalHost } from "./features/source-control/BranchModal";
 import { useSourceControlRefresh } from "./features/source-control/useSourceControlRefresh";
 import { SidebarFooter } from "./features/claude-sessions/components/SidebarFooter";
@@ -128,12 +130,15 @@ function MainBody() {
 			{rightPanel === "inbox" ? (
 				<InboxSidebar onClose={() => setInboxOpen(false)} />
 			) : rightPanel === "sidequest" && activeSessionId ? (
-				<SidequestSidebarShell
-					sessionId={activeSessionId}
-					onClose={() => setSessionPanel(activeSessionId, null)}
-				/>
+				<FileLinkProvider sessionId={activeSessionId}>
+					<SidequestSidebarShell
+						sessionId={activeSessionId}
+						onClose={() => setSessionPanel(activeSessionId, null)}
+					/>
+				</FileLinkProvider>
 			) : null}
 			<SourceControlModalHost />
+			<FileViewerModalHost />
 			<BranchModalHost />
 		</div>
 	);
@@ -251,5 +256,9 @@ function SessionsListSidebarShell() {
 
 function SessionRoute() {
 	const { id } = useParams<{ id: string }>();
-	return id ? <SessionChat sessionId={id} /> : null;
+	return id ? (
+		<FileLinkProvider sessionId={id}>
+			<SessionChat sessionId={id} />
+		</FileLinkProvider>
+	) : null;
 }

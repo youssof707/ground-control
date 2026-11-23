@@ -10,6 +10,9 @@ import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import rehypeHighlight from "rehype-highlight";
 import { T } from "../../../design/tokens";
+import { FileLink } from "../../file-viewer/FileLink";
+import { parseFileRef } from "../../file-viewer/fileRef";
+import { rehypeFileLinks } from "../../file-viewer/rehypeFileLinks";
 
 // Lifted to module scope so the plugin arrays aren't reallocated on every
 // render (which would defeat any memoization downstream in react-markdown).
@@ -23,7 +26,7 @@ const REMARK_PLUGINS = [remarkGfm];
 // also rendering markdown. Assistant/plan markdown keeps standard
 // soft-break behavior via REMARK_PLUGINS above.
 const REMARK_PLUGINS_BREAKS = [remarkGfm, remarkBreaks];
-const REHYPE_PLUGINS = [rehypeHighlight];
+const REHYPE_PLUGINS = [rehypeHighlight, rehypeFileLinks];
 
 // Custom <pre> renderer: wraps the syntax-highlighted block in a relative
 // container and overlays a copy button. The button:
@@ -150,16 +153,33 @@ function CodeBlock({
 // intercepted in main/index.ts (setWindowOpenHandler) and handed to
 // shell.openExternal — i.e. to Chrome via the OS default-browser handler.
 // Same component instance every render so memoization stays effective.
+function hrefFileRef(href: string | undefined) {
+	if (!href || href.startsWith("#")) return null;
+	let decoded = href;
+	try {
+		decoded = decodeURI(href);
+	} catch {
+		return null;
+	}
+	return parseFileRef(decoded, { allowSpaces: true });
+}
+
 const COMPONENTS = {
 	a: ({
 		href,
 		children,
 		...rest
-	}: AnchorHTMLAttributes<HTMLAnchorElement>) => (
-		<a {...rest} href={href} target="_blank" rel="noreferrer noopener">
-			{children}
-		</a>
-	),
+	}: AnchorHTMLAttributes<HTMLAnchorElement> & { node?: unknown; "data-file-ref"?: string }) => {
+		const { node: _node, "data-file-ref": marked, ...anchor } = rest;
+		void _node;
+		const fileRef = marked ? parseFileRef(marked) : hrefFileRef(href);
+		if (fileRef) return <FileLink fileRef={fileRef}>{children}</FileLink>;
+		return (
+			<a {...anchor} href={href} target="_blank" rel="noreferrer noopener">
+				{children}
+			</a>
+		);
+	},
 	pre: CodeBlock,
 };
 

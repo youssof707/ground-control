@@ -13,6 +13,7 @@ import type {
 } from "../shared/claude-sessions/undo";
 import type { BabysitConfig } from "../shared/claude-sessions/babysit";
 import type { GitFixRequest, GitFixResult, ScmCommitResult } from "../shared/schemas/source_control";
+import type { FileViewRequest, FileViewResult } from "../shared/schemas/file_view";
 import type {
 	ActivityLogSnapshot,
 	CaffeinateProcess,
@@ -115,6 +116,7 @@ declare global {
 			renameSession: (sessionId: string, title: string) => Promise<void>;
 			pickFolder: (opts?: { defaultPath?: string }) => Promise<string | null>;
 			revealPath: (path: string) => Promise<void>;
+			readFile: (request: FileViewRequest) => Promise<FileViewResult>;
 			openImageInPreview: (payload: {
 				mediaType?: string;
 				data: string;

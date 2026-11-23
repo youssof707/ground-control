@@ -53,6 +53,7 @@ import { registerUpdaterHandlers } from "./updaterHandlers";
 import { registerDictationHandlers } from "./dictationHandlers";
 import { registerTerminalsHandlers } from "./terminalsHandlers";
 import { registerImageHandlers } from "./imageHandlers";
+import { registerFileHandlers } from "./fileHandlers";
 import { registerMcpHandlers } from "./mcpHandlers";
 import { registerDeveloperHandlers } from "./developerHandlers";
 
@@ -229,6 +230,7 @@ export function registerSessionsHandlers(): SessionManager {
 	registerDictationHandlers();
 	registerTerminalsHandlers();
 	registerImageHandlers();
+	registerFileHandlers();
 	registerMcpHandlers(manager);
 	registerDeveloperHandlers(keepAwake, (runtimeId) => {
 		const id = manager.getSidequestParentId(runtimeId) ?? runtimeId;

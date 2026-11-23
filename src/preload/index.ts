@@ -10,6 +10,7 @@ import type { DeletedSessionSnapshot } from "../shared/claude-sessions/undo";
 import type { BabysitConfig } from "../shared/claude-sessions/babysit";
 import type { CreateWorktreeInput } from "../shared/schemas/worktrees";
 import type { GitFixRequest } from "../shared/schemas/source_control";
+import type { FileViewRequest } from "../shared/schemas/file_view";
 import type { CreateSessionGroupInput } from "../shared/schemas/session_groups";
 import type {
 	CreateShortcutInput,
@@ -88,6 +89,7 @@ const claude = {
 	pickFolder: (opts?: { defaultPath?: string }) =>
 		ipcRenderer.invoke("dialog:pickFolder", opts ?? {}),
 	revealPath: (path: string) => ipcRenderer.invoke("shell:revealPath", path),
+	readFile: (request: FileViewRequest) => ipcRenderer.invoke("file:read", request),
 	openImageInPreview: (payload: { mediaType?: string; data: string }) =>
 		ipcRenderer.invoke("shell:openImage", payload),
 	copyImage: (payload: { mediaType?: string; data: string }) =>
