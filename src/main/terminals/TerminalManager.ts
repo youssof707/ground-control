@@ -33,6 +33,8 @@ interface TerminalEntry {
 	lastLine: LastLineTracker;
 	screen: HeadlessTerminal;
 	startup: { command: string; quiet: NodeJS.Timeout | null; deadline: NodeJS.Timeout } | null;
+	stopSent: boolean;
+	restartPending: boolean;
 }
 
 const { Terminal: HeadlessTerminal } = xtermHeadless;
@@ -177,6 +179,8 @@ export class TerminalManager {
 				allowProposedApi: true,
 			}),
 			startup: null,
+			stopSent: false,
+			restartPending: false,
 		};
 		this.entries.set(entry.info.id, entry);
 		pty.onData((data) => this.handleData(entry, data));
@@ -291,15 +295,32 @@ export class TerminalManager {
 		for (const entry of this.groupEntries(groupId)) this.rerunEntry(entry);
 	}
 
+	restartGroup(groupId: string): void {
+		for (const entry of this.groupEntries(groupId)) this.restartEntry(entry);
+	}
+
 	private stopEntry(entry: TerminalEntry): void {
 		if (!isAlive(entry) || entry.info.status !== "running") return;
+		entry.stopSent = true;
 		entry.pty.write("\x03");
 	}
 
 	private rerunEntry(entry: TerminalEntry): void {
 		const command = entry.info.lastCommand;
 		if (!command || !isAlive(entry) || entry.info.status !== "idle") return;
+		entry.stopSent = false;
+		entry.restartPending = false;
 		this.write(entry.info.id, `${command}\r`);
+	}
+
+	private restartEntry(entry: TerminalEntry): void {
+		if (!entry.info.lastCommand || !isAlive(entry)) return;
+		if (entry.info.status === "idle") {
+			if (entry.stopSent) this.rerunEntry(entry);
+			return;
+		}
+		entry.restartPending = true;
+		if (!entry.stopSent) this.stopEntry(entry);
 	}
 
 	private groupOf(id: string): TerminalEntry[] {
@@ -427,6 +448,8 @@ export class TerminalManager {
 			if (entry.lastLine.setForegroundRunning(status === "running")) {
 				this.syncLastLine(entry);
 			}
+			if (status === "running") entry.stopSent = false;
+			if (status === "idle" && entry.restartPending) this.rerunEntry(entry);
 			changed = true;
 		}
 		if (alive === 0) this.stopForegroundPolling();

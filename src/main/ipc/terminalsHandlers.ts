@@ -40,6 +40,9 @@ export function registerTerminalsHandlers(): void {
 	ipcMain.handle("terminals:rerunGroup", (_e, groupId: string) =>
 		manager.rerunGroup(groupId),
 	);
+	ipcMain.handle("terminals:restartGroup", (_e, groupId: string) =>
+		manager.restartGroup(groupId),
+	);
 	ipcMain.handle("terminals:renameGroup", (_e, groupId: string, name: unknown) => {
 		if (typeof name === "string") manager.renameGroup(groupId, name);
 	});
