@@ -303,7 +303,12 @@ function TerminalRow({
 					type="button"
 					className="terminal-row-control"
 					aria-label={`Stop terminal ${label}`}
-					onClick={() => void useTerminalsStore.getState().stopGroup(group.id)}
+					onClick={(e) => {
+						const store = useTerminalsStore.getState();
+						void (e.detail >= 2
+							? store.restartGroup(group.id)
+							: store.stopGroup(group.id));
+					}}
 					style={{ ...ROW_ICON_BUTTON, opacity: hovered ? 1 : 0 }}
 				>
 					<StopIcon />

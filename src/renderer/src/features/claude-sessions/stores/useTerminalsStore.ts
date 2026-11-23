@@ -32,6 +32,7 @@ interface State {
 	rerun: (id: string) => Promise<void>;
 	stopGroup: (groupId: string) => Promise<void>;
 	rerunGroup: (groupId: string) => Promise<void>;
+	restartGroup: (groupId: string) => Promise<void>;
 	renameGroup: (groupId: string, name: string) => Promise<void>;
 	saveConfig: (groupId: string, name: string) => Promise<boolean>;
 	loadConfig: (configId: string, groupId: string) => Promise<void>;
@@ -97,6 +98,9 @@ export const useTerminalsStore = create<State>((set, get) => ({
 	},
 	rerunGroup: async (groupId) => {
 		await window.claude.rerunTerminalGroup(groupId);
+	},
+	restartGroup: async (groupId) => {
+		await window.claude.restartTerminalGroup(groupId);
 	},
 	renameGroup: async (groupId, name) => {
 		await window.claude.renameTerminalGroup(groupId, name);

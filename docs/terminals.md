@@ -55,6 +55,11 @@ window.
   Ctrl+C to every running terminal in the group, with no confirmation. Start re-runs each
   idle terminal's last command (commands launched by Load Config count). Crashed terminals
   are skipped by both. Both hide while the `Delete?` confirm is showing.
+- Double-clicking **Stop** on a row restarts the group: the first click sends Ctrl+C as
+  usual, the second marks every running terminal with a last command for restart (sending
+  Ctrl+C only if it has not had one yet). Each re-runs its last command as soon as the
+  foreground poll sees it back at its prompt. A terminal already back at its prompt after
+  a Stop re-runs straight away.
 - Quitting kills every shell, without a quit confirmation, but first writes each group's
   name, directory and per-terminal last command to `saved_terminals.json` in the data dir.
   On the next launch every saved group comes back as fresh idle shells in the same
