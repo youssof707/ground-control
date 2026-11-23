@@ -74,6 +74,19 @@ export type ScmPick = "all" | string[];
 
 export type ScmRemoteOp = "fetch" | "pull" | "push";
 
+export interface GitFixRequest {
+	checkout: string;
+	op: "pull" | "push";
+	branch: string | null;
+	upstream: string | null;
+	error: string;
+}
+
+export interface GitFixResult {
+	fixed: boolean;
+	reason: string;
+}
+
 export type ScmRequest =
 	| { t: "scan"; id: number; checkout: string }
 	| {

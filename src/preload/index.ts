@@ -9,6 +9,7 @@ import type {
 import type { DeletedSessionSnapshot } from "../shared/claude-sessions/undo";
 import type { BabysitConfig } from "../shared/claude-sessions/babysit";
 import type { CreateWorktreeInput } from "../shared/schemas/worktrees";
+import type { GitFixRequest } from "../shared/schemas/source_control";
 import type { CreateSessionGroupInput } from "../shared/schemas/session_groups";
 import type {
 	CreateShortcutInput,
@@ -136,6 +137,7 @@ const claude = {
 		ipcRenderer.invoke("worktrees:create", input),
 	deleteWorktree: (id: string) => ipcRenderer.invoke("worktrees:delete", id),
 	connectSourceControl: () => ipcRenderer.send("scm:connect"),
+	autoFixGit: (request: GitFixRequest) => ipcRenderer.invoke("scm:autoFix", request),
 	listGroups: () => ipcRenderer.invoke("groups:list"),
 	createGroup: (input: CreateSessionGroupInput) =>
 		ipcRenderer.invoke("groups:create", input),
