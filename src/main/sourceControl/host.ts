@@ -8,6 +8,7 @@ import {
 import { join } from "node:path";
 import type { GitFixRequest } from "../../shared/schemas/source_control";
 import { broadcast } from "../windows";
+import { abortAllCommitMessages, runCommit } from "./commit";
 import { abortAllGitFixes, runGitAutoFix } from "./gitAutoFix";
 
 let worker: UtilityProcess | null = null;
@@ -37,8 +38,20 @@ function killWorker(): void {
 export function registerSourceControlHost(): void {
 	app.on("will-quit", killWorker);
 	app.on("will-quit", abortAllGitFixes);
+	app.on("will-quit", abortAllCommitMessages);
 
 	ipcMain.handle("scm:autoFix", (_event, request: GitFixRequest) => runGitAutoFix(request));
+	ipcMain.handle("scm:commit", (_event, checkout: unknown, message: unknown, all: unknown) => {
+		if (
+			typeof checkout !== "string" ||
+			!checkout.startsWith("/") ||
+			typeof message !== "string" ||
+			typeof all !== "boolean"
+		) {
+			return { ok: false, error: "Invalid commit request." };
+		}
+		return runCommit(checkout, message, all);
+	});
 
 	ipcMain.on("scm:connect", (event) => {
 		try {

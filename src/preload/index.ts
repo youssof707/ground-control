@@ -138,6 +138,8 @@ const claude = {
 	deleteWorktree: (id: string) => ipcRenderer.invoke("worktrees:delete", id),
 	connectSourceControl: () => ipcRenderer.send("scm:connect"),
 	autoFixGit: (request: GitFixRequest) => ipcRenderer.invoke("scm:autoFix", request),
+	commitStaged: (checkout: string, message: string, all: boolean) =>
+		ipcRenderer.invoke("scm:commit", checkout, message, all),
 	listGroups: () => ipcRenderer.invoke("groups:list"),
 	createGroup: (input: CreateSessionGroupInput) =>
 		ipcRenderer.invoke("groups:create", input),

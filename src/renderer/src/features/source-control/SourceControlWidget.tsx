@@ -80,6 +80,7 @@ export function SourceControlWidget({
 	const busy = useSourceControlStore((s) => (checkout ? s.remote[checkout]?.busy ?? null : null));
 	const remoteError = useSourceControlStore((s) => (checkout ? s.remote[checkout]?.error ?? null : null));
 	const fixing = useSourceControlStore((s) => (checkout ? s.remote[checkout]?.fixing ?? false : false));
+	const committing = useSourceControlStore((s) => (checkout ? (s.commits[checkout]?.busy ?? null) !== null : false));
 	const openModal = useSourceControlStore((s) => s.openModal);
 	const openBranches = useSourceControlStore((s) => s.openBranches);
 	const dismissRemoteError = useSourceControlStore((s) => s.dismissRemoteError);
@@ -127,7 +128,7 @@ export function SourceControlWidget({
 						<button
 							type="button"
 							className="repo-card-sync-btn is-pull"
-							disabled={busy !== null}
+							disabled={busy !== null || committing}
 							onClick={() => run("pull")}
 							aria-label={`Pull ${plural(behind, "commit", "commits")} from ${upstream}`}
 						>
@@ -135,20 +136,26 @@ export function SourceControlWidget({
 							<span>{compactCount(behind)}</span>
 						</button>
 					) : null}
-					{showPush ? (
+					{showPush || committing ? (
 						<button
 							type="button"
 							className={`repo-card-sync-btn ${ahead > 0 ? "is-push" : "is-idle"}`}
-							disabled={busy !== null}
+							disabled={busy !== null || committing}
 							onClick={() => run("push")}
 							aria-label={
-								upstream
-									? `Push ${plural(ahead, "commit", "commits")} to ${upstream}`
-									: `Publish ${branch} to origin with ${plural(ahead, "commit", "commits")}`
+								committing
+									? "Committing"
+									: upstream
+										? `Push ${plural(ahead, "commit", "commits")} to ${upstream}`
+										: `Publish ${branch} to origin with ${plural(ahead, "commit", "commits")}`
 							}
 						>
-							{busy === "push" ? <span className="repo-card-spinner" aria-hidden="true" /> : <Arrow up />}
-							<span>{compactCount(ahead)}</span>
+							{busy === "push" || committing ? (
+								<span className="repo-card-spinner" aria-hidden="true" />
+							) : (
+								<Arrow up />
+							)}
+							{committing && ahead === 0 ? null : <span>{compactCount(ahead)}</span>}
 						</button>
 					) : null}
 				</div>

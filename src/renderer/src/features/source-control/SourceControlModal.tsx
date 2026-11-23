@@ -16,6 +16,7 @@ import { useWorktreesStore } from "../claude-sessions/stores/useWorktreesStore";
 import { CloseIcon } from "../claude-sessions/components/TerminalModal";
 import { appendPromptBlock, focusComposer } from "../claude-sessions/lib/composerActions";
 import { CheckoutPicker, type PickerOption } from "./CheckoutPicker";
+import { CommitModal } from "./CommitModal";
 import { DiffPane, type DiffView } from "./DiffPane";
 import { FileList, type FileListHandle, type FileListRows } from "./FileList";
 import type { RowPointer } from "./FileRow";
@@ -36,6 +37,7 @@ import {
 } from "./rowBuffer";
 import { call, cancel, retryConnection } from "./scmClient";
 import {
+	commitStaged,
 	isHardFailure,
 	requestRefresh,
 	useSourceControlStore,
@@ -273,6 +275,8 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 	const viewed = useSourceControlStore((s) => s.viewed[checkout]);
 	const composer = useSourceControlStore((s) => s.modalComposer);
 	const comments = useSourceControlStore((s) => s.comments[checkout]);
+	const commitState = useSourceControlStore((s) => s.commits[checkout]);
+	const committing = (commitState?.busy ?? null) !== null;
 	const reviewCount = comments?.length ?? 0;
 	const commentedKeys = useMemo(() => new Set(comments?.map((c) => c.fileKey)), [comments]);
 	const summary = entry?.summary;
@@ -295,8 +299,9 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 	const [actionError, setActionError] = useState<string | null>(null);
 	const [pendingDiscard, setPendingDiscard] = useState<PendingDiscard | null>(null);
 	const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+	const [commitOpen, setCommitOpen] = useState<{ all: boolean } | null>(null);
 	const confirmOpenRef = useRef(false);
-	confirmOpenRef.current = pendingDiscard !== null;
+	confirmOpenRef.current = pendingDiscard !== null || commitOpen !== null;
 	const [contentToken, setContentToken] = useState(0);
 	const [forcePath, setForcePath] = useState<string | null>(null);
 	const [view, setView] = useState<DiffView | null>(null);
@@ -689,6 +694,25 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 		listRef.current?.focus();
 	}, []);
 
+	const openCommit = useCallback((all: boolean) => {
+		if (!useSourceControlStore.getState().commits[checkout]?.busy) setCommitOpen({ all });
+	}, [checkout]);
+
+	const cancelCommit = useCallback(() => {
+		setCommitOpen(null);
+		listRef.current?.focus();
+	}, []);
+
+	const confirmCommit = useCallback(
+		(message: string) => {
+			const all = commitOpen?.all ?? false;
+			setCommitOpen(null);
+			listRef.current?.focus();
+			void commitStaged(checkout, message, all);
+		},
+		[checkout, commitOpen],
+	);
+
 	const onViewed = useCallback(
 		(index: number) => {
 			const buffer = bufferRef.current;
@@ -745,7 +769,6 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 	const selectedCount = selection.size;
 
 	const failure = failureText(entry);
-	const changed = summary?.changed ?? 0;
 	const listed = summary?.listed ?? 0;
 	const rowTotal = (summary?.staged ?? 0) + (summary?.unstaged ?? 0);
 	const conflicts = summary?.conflicts ?? 0;
@@ -765,6 +788,8 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 				onRowContext={onRowContext}
 				onGroupContext={onGroupContext}
 				onViewed={onViewed}
+				onCommit={openCommit}
+				committing={committing}
 			/>
 		);
 	} else if (summary) {
@@ -889,36 +914,57 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 							background: T.surfaceLow,
 						}}
 					>
-						<div
-							style={{
-								flexShrink: 0,
-								display: "flex",
-								alignItems: "center",
-								gap: 8,
-								height: 36,
-								padding: "0 14px",
-								borderBottom: `0.5px solid ${T.borderSoft}`,
-								fontSize: 12,
-								color: T.textDim,
-								fontVariantNumeric: "tabular-nums",
-							}}
-						>
-							{selectedCount > 1 ? (
-								<>
-									<span style={{ flex: 1 }}>{selectedCount.toLocaleString("en-US")} selected</span>
-									{busy ? <span className="asyncy-btn-spinner" aria-label="Working" /> : null}
-								</>
-							) : (
-								<>
-									<span>{summary ? plural(changed, "changed file", "changed files") : "Changes"}</span>
-									{conflicts > 0 ? (
-										<span style={{ color: T.danger }}>{plural(conflicts, "conflict", "conflicts")}</span>
-									) : null}
-									<span style={{ flex: 1 }} />
-									{busy ? <span className="asyncy-btn-spinner" aria-label="Working" /> : null}
-								</>
-							)}
-						</div>
+						{selectedCount > 1 || conflicts > 0 || busy ? (
+							<div
+								style={{
+									flexShrink: 0,
+									display: "flex",
+									alignItems: "center",
+									gap: 8,
+									height: 36,
+									padding: "0 14px",
+									borderBottom: `0.5px solid ${T.borderSoft}`,
+									fontSize: 12,
+									color: T.textDim,
+									fontVariantNumeric: "tabular-nums",
+								}}
+							>
+								{selectedCount > 1 ? <span>{selectedCount.toLocaleString("en-US")} selected</span> : null}
+								{conflicts > 0 ? (
+									<span style={{ color: T.danger }}>{plural(conflicts, "conflict", "conflicts")}</span>
+								) : null}
+								<span style={{ flex: 1 }} />
+								{busy ? <span className="asyncy-btn-spinner" aria-label="Working" /> : null}
+							</div>
+						) : null}
+						{commitState?.error ? (
+							<div
+								role="alert"
+								style={{
+									flexShrink: 0,
+									display: "flex",
+									alignItems: "flex-start",
+									gap: 8,
+									padding: "8px 10px 8px 14px",
+									borderBottom: `0.5px solid ${T.borderSoft}`,
+									fontSize: 12,
+									color: T.danger,
+									background: T.dangerSoft,
+								}}
+							>
+								<span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
+									{commitState.error}
+								</span>
+								<button
+									type="button"
+									className="scm-row-action"
+									aria-label="Dismiss error"
+									onClick={() => useSourceControlStore.getState().dismissCommitError(checkout)}
+								>
+									<CloseIcon />
+								</button>
+							</div>
+						) : null}
 						{actionError ? (
 							<div
 								role="alert"
@@ -967,6 +1013,9 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 				</div>
 				{menu ? <ScmContextMenu x={menu.x} y={menu.y} items={menu.items} disabled={busy} onClose={closeMenu} /> : null}
 			</div>
+			{commitOpen ? (
+				<CommitModal all={commitOpen.all} count={commitOpen.all ? (summary?.changed ?? 0) : (summary?.staged ?? 0)} onConfirm={confirmCommit} onCancel={cancelCommit} />
+			) : null}
 			<ConfirmModal
 				open={pendingDiscard !== null}
 				title={pendingDiscard?.title ?? ""}

@@ -35,20 +35,28 @@ export interface FileListHandle {
 export interface Layout {
 	stagedHeader: boolean;
 	changesHeader: boolean;
+	spacer: boolean;
 	total: number;
 }
 
 export function layoutOf(count: number, stagedCount: number): Layout {
 	const stagedHeader = stagedCount > 0;
 	const changesHeader = count > stagedCount;
-	return { stagedHeader, changesHeader, total: count + (stagedHeader ? 1 : 0) + (changesHeader ? 1 : 0) };
+	const spacer = stagedHeader && changesHeader;
+	return {
+		stagedHeader,
+		changesHeader,
+		spacer,
+		total: count + (stagedHeader ? 1 : 0) + (changesHeader ? 1 : 0) + (spacer ? 1 : 0),
+	};
 }
 
 export function slotOfRow(layout: Layout, stagedCount: number, row: number): number {
-	return row + (layout.stagedHeader ? 1 : 0) + (row >= stagedCount && layout.changesHeader ? 1 : 0);
+	const before = row >= stagedCount && layout.changesHeader ? (layout.spacer ? 2 : 1) : 0;
+	return row + (layout.stagedHeader ? 1 : 0) + before;
 }
 
-export type Slot = { kind: "header"; staged: boolean } | { kind: "row"; row: number };
+export type Slot = { kind: "header"; staged: boolean } | { kind: "spacer" } | { kind: "row"; row: number };
 
 export function rowOfSlot(layout: Layout, stagedCount: number, slot: number): Slot {
 	let rest = slot;
@@ -56,6 +64,10 @@ export function rowOfSlot(layout: Layout, stagedCount: number, slot: number): Sl
 		if (rest === 0) return { kind: "header", staged: true };
 		if (rest <= stagedCount) return { kind: "row", row: rest - 1 };
 		rest -= stagedCount + 1;
+	}
+	if (layout.spacer) {
+		if (rest === 0) return { kind: "spacer" };
+		rest -= 1;
 	}
 	if (rest === 0 && layout.changesHeader) return { kind: "header", staged: false };
 	return { kind: "row", row: stagedCount + rest - (layout.changesHeader ? 1 : 0) };
@@ -66,11 +78,17 @@ function GroupHeader({
 	total,
 	top,
 	onContext,
+	commitLabel,
+	onCommit,
+	committing,
 }: {
 	staged: boolean;
 	total: number;
 	top: number;
 	onContext: (staged: boolean, x: number, y: number) => void;
+	commitLabel?: string;
+	onCommit?: () => void;
+	committing: boolean;
 }) {
 	return (
 		<div
@@ -85,6 +103,18 @@ function GroupHeader({
 		>
 			<span className="scm-group-title">{staged ? "Staged Changes" : "Changes"}</span>
 			<span className="scm-group-count">{total.toLocaleString("en-US")}</span>
+			{onCommit ? (
+				<button
+					type="button"
+					className="scm-group-commit"
+					tabIndex={-1}
+					disabled={committing}
+					onClick={onCommit}
+				>
+					{committing ? <span className="asyncy-btn-spinner" aria-hidden="true" /> : null}
+					{committing ? "Committing" : commitLabel}
+				</button>
+			) : null}
 		</div>
 	);
 }
@@ -101,9 +131,11 @@ export const FileList = forwardRef<
 		onRowContext: (index: number, x: number, y: number) => void;
 		onGroupContext: (staged: boolean, x: number, y: number) => void;
 		onViewed: (index: number) => void;
+		onCommit: (all: boolean) => void;
+		committing: boolean;
 	}
 >(function FileList(
-	{ rows, focused, label, onPointer, onMove, onSelectAll, onRowContext, onGroupContext, onViewed },
+	{ rows, focused, label, onPointer, onMove, onSelectAll, onRowContext, onGroupContext, onViewed, onCommit, committing },
 	ref,
 ) {
 	const listRef = useRef<HTMLDivElement>(null);
@@ -143,7 +175,9 @@ export const FileList = forwardRef<
 
 	const focusedSlot = focused >= 0 && focused < rows.count ? slotOfRow(layout, rows.stagedCount, focused) : -1;
 	const headerAbove =
-		focusedSlot > 0 && (focused === 0 || focused === rows.stagedCount) ? ROW_HEIGHT : 0;
+		focusedSlot > 0 && (focused === 0 || focused === rows.stagedCount)
+			? ROW_HEIGHT * (focused === rows.stagedCount && layout.spacer ? 2 : 1)
+			: 0;
 
 	useLayoutEffect(() => {
 		const el = listRef.current;
@@ -185,6 +219,7 @@ export const FileList = forwardRef<
 	const items: ReactNode[] = [];
 	for (let slot = start; slot < end; slot++) {
 		const at = rowOfSlot(layout, rows.stagedCount, slot);
+		if (at.kind === "spacer") continue;
 		if (at.kind === "header") {
 			items.push(
 				<GroupHeader
@@ -193,6 +228,11 @@ export const FileList = forwardRef<
 					total={at.staged ? rows.stagedTotal : rows.unstagedTotal}
 					top={slot * ROW_HEIGHT}
 					onContext={onGroupContext}
+					commitLabel={at.staged ? "Commit" : "Commit All"}
+					onCommit={
+						at.staged ? () => onCommit(false) : rows.stagedTotal === 0 ? () => onCommit(true) : undefined
+					}
+					committing={committing}
 				/>,
 			);
 			continue;

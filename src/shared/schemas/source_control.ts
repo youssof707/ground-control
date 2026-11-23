@@ -82,6 +82,8 @@ export interface GitFixRequest {
 	error: string;
 }
 
+export type ScmCommitResult = { ok: true; message: string } | { ok: false; error: string };
+
 export interface GitFixResult {
 	fixed: boolean;
 	reason: string;

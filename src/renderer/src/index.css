@@ -916,17 +916,8 @@ input[type="number"]::-webkit-outer-spin-button {
 .scm-row:hover {
 	background: oklch(0.215 0.007 60);
 }
-.scm-row[data-focused] {
-	background: oklch(0.225 0.007 60);
-}
 .scm-row[aria-selected="true"] {
 	background: oklch(0.76 0.10 250 / 0.12);
-}
-.scm-list:focus .scm-row[aria-selected="true"] {
-	background: oklch(0.76 0.10 250 / 0.20);
-}
-.scm-list:focus .scm-row[aria-selected="true"][data-focused] {
-	background: oklch(0.76 0.10 250 / 0.28);
 }
 .scm-row-name {
 	color: oklch(0.94 0.005 80);
@@ -1161,7 +1152,10 @@ input[type="number"]::-webkit-outer-spin-button {
 	font-weight: 600;
 	letter-spacing: 0.02em;
 	text-transform: uppercase;
-	color: oklch(0.56 0.010 70);
+	color: oklch(0.72 0.010 70);
+	background: oklch(0.235 0.007 60);
+	border-bottom: 0.5px solid oklch(0.30 0.008 60);
+	box-sizing: border-box;
 	user-select: none;
 	white-space: nowrap;
 }
@@ -1175,6 +1169,37 @@ input[type="number"]::-webkit-outer-spin-button {
 	font-weight: 500;
 	font-variant-numeric: tabular-nums;
 	color: oklch(0.56 0.010 70);
+}
+.scm-group-commit {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 19px;
+	padding: 0;
+	border: none;
+	background: none;
+	color: oklch(0.76 0.10 250);
+	font: inherit;
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0;
+	text-transform: none;
+	cursor: pointer;
+}
+.scm-group-commit:hover:not(:disabled) {
+	color: oklch(0.85 0.10 250);
+}
+.scm-group-commit:disabled {
+	cursor: default;
+	opacity: 0.6;
+}
+.scm-group-commit .asyncy-btn-spinner {
+	box-sizing: border-box;
+	width: 10px;
+	height: 10px;
+	border-width: 1.5px;
+	border-color: oklch(0.76 0.10 250 / 0.3);
+	border-top-color: oklch(0.76 0.10 250);
 }
 .scm-ctx-menu {
 	position: fixed;

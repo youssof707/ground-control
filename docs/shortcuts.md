@@ -13,6 +13,7 @@ Source of truth for app shortcuts. Update when one is added, changed, or removed
 - `Cmd+Shift+B` — Babysitter modal for the active session
 - `Cmd+Enter` — save in the Babysitter modal
 - `Cmd+Enter` — send review comments to the composer in the source control modal (no comment box or text field focused)
+- `Enter` — commit from the source control commit dialog; `Cmd+Enter` adds a new line to the message
 - `Cmd+Shift+S` — Tasks modal
 - `Cmd+M` — model picker (if the composer has text, the pick applies to the next message; while Claude is asking a question or waiting on plan approval, it applies once you respond)
 - Letter keys in the model picker — pick the model with that badge letter

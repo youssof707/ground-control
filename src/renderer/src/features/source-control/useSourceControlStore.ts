@@ -35,6 +35,13 @@ interface State {
 	clearComments: (checkout: string) => void;
 	remote: Record<string, RemoteState>;
 	dismissRemoteError: (checkout: string) => void;
+	commits: Record<string, CommitState>;
+	dismissCommitError: (checkout: string) => void;
+}
+
+export interface CommitState {
+	busy: "generating" | "committing" | null;
+	error: string | null;
 }
 
 export interface ReviewComment {
@@ -138,7 +145,29 @@ export const useSourceControlStore = create<State>((set) => ({
 	remote: {},
 	dismissRemoteError: (checkout) =>
 		set((s) => ({ remote: { ...s.remote, [checkout]: { busy: s.remote[checkout]?.busy ?? null, error: null } } })),
+	commits: {},
+	dismissCommitError: (checkout) =>
+		set((s) => ({ commits: { ...s.commits, [checkout]: { busy: s.commits[checkout]?.busy ?? null, error: null } } })),
 }));
+
+function patchCommit(checkout: string, next: CommitState): void {
+	useSourceControlStore.setState((s) => ({ commits: { ...s.commits, [checkout]: next } }));
+}
+
+export async function commitStaged(checkout: string, message: string, all: boolean): Promise<void> {
+	if (useSourceControlStore.getState().commits[checkout]?.busy) return;
+	patchCommit(checkout, { busy: message.trim() ? "committing" : "generating", error: null });
+	let error: string | null = null;
+	try {
+		const result = await window.claude.commitStaged(checkout, message, all);
+		if (!result.ok) error = result.error;
+	} catch (err) {
+		const text = err instanceof Error ? err.message : String(err);
+		error = text.replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
+	}
+	patchCommit(checkout, { busy: null, error: error ? `Couldn't commit: ${error}` : null });
+	requestRefresh(checkout, true);
+}
 
 function patchRemote(checkout: string, next: Partial<RemoteState>): void {
 	useSourceControlStore.setState((s) => {
