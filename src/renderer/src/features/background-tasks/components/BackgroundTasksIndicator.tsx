@@ -8,8 +8,6 @@ export function BackgroundTasksIndicator() {
 	const dismissAll = useBackgroundTasksStore((s) => s.dismissAll);
 	const [expanded, setExpanded] = useState(false);
 
-	// Derive in the component rather than in a zustand selector — a selector
-	// returning a fresh array every call re-renders on unrelated store writes.
 	const running = useMemo(
 		() => tasks.filter((t) => t.status === "running"),
 		[tasks],
@@ -19,14 +17,10 @@ export function BackgroundTasksIndicator() {
 		[tasks],
 	);
 
-	// Dismissing the last error must not leave an empty card floating.
 	useEffect(() => {
 		if (errors.length === 0 && expanded) setExpanded(false);
 	}, [errors.length, expanded]);
 
-	// Escape collapses the panel — same window-level keydown pattern as
-	// ConfirmModal / UpdateModal. No click-outside handler: this panel is
-	// non-modal and blocks nothing.
 	useEffect(() => {
 		if (!expanded) return;
 		const onKey = (e: KeyboardEvent) => {
@@ -38,210 +32,197 @@ export function BackgroundTasksIndicator() {
 
 	if (tasks.length === 0) return null;
 
-	const hasErrors = errors.length > 0;
-	const runningLabel =
-		running.length === 1
-			? running[0].label
-			: `${running.length} tasks running`;
+	const visible = running.filter((t) => !t.quiet);
+	const visibleLabel =
+		visible.length === 0
+			? null
+			: visible.length === 1
+				? visible[0].label
+				: `${visible.length} tasks running`;
+	const statusLabel = running.map((t) => t.label).join(", ");
 
 	return (
 		<div
+			className="bg-task-indicator"
 			style={{
+				flex: 1,
+				minWidth: 0,
 				display: "flex",
-				flexDirection: "column",
-				alignItems: "flex-start",
-				gap: 8,
-				// AmbientStack disables pointer events on the column so its
-				// empty space never swallows clicks; re-enable them here,
-				// where there's something real to click.
-				pointerEvents: "auto",
+				alignItems: "center",
+				justifyContent: "flex-end",
+				gap: 7,
 			}}
 		>
-			{expanded && hasErrors ? (
-				<div
-					role="region"
-					aria-label="Failed background tasks"
-					style={{
-						width: "min(360px, calc(100vw - 40px))",
-						maxHeight: 260,
-						overflowY: "auto",
-						background: T.surface,
-						border: `0.5px solid ${T.border}`,
-						borderRadius: 10,
-						boxShadow: "0 16px 40px rgba(0, 0, 0, 0.5)",
-						padding: 10,
-						display: "flex",
-						flexDirection: "column",
-						gap: 8,
-					}}
-				>
-					{errors.map((t) => (
-						<div
-							key={t.id}
-							style={{
-								display: "flex",
-								flexDirection: "column",
-								gap: 4,
-								padding: "8px 9px",
-								background: T.surfaceLow,
-								border: `0.5px solid ${T.borderSoft}`,
-								borderRadius: 7,
-							}}
-						>
-							<div
-								style={{
-									display: "flex",
-									alignItems: "baseline",
-									gap: 8,
-								}}
-							>
-								<span
-									style={{
-										flex: 1,
-										fontSize: 12,
-										fontWeight: 500,
-										color: T.text,
-									}}
-								>
-									{t.label}
-								</span>
-								<button
-									type="button"
-									onClick={() => dismiss(t.id)}
-									style={{
-										flexShrink: 0,
-										border: "none",
-										background: "transparent",
-										color: T.textMute,
-										fontSize: 11,
-										cursor: "pointer",
-										padding: "1px 3px",
-									}}
-								>
-									Dismiss
-								</button>
-							</div>
-							{/* The main-process "partially failed" error is
-							    deliberately multi-line (one line per git step),
-							    so preserve the breaks. */}
-							<span
-								style={{
-									fontSize: 11,
-									lineHeight: 1.45,
-									color: T.textMute,
-									fontFamily: T.mono,
-									whiteSpace: "pre-wrap",
-									wordBreak: "break-word",
-								}}
-							>
-								{t.error}
-							</span>
-						</div>
-					))}
-					{errors.length > 1 ? (
-						<button
-							type="button"
-							onClick={dismissAll}
-							style={{
-								alignSelf: "flex-end",
-								border: "none",
-								background: "transparent",
-								color: T.textDim,
-								fontSize: 11,
-								cursor: "pointer",
-								padding: "1px 3px",
-							}}
-						>
-							Dismiss all
-						</button>
-					) : null}
-				</div>
+			{expanded && errors.length > 0 ? (
+				<FailedTasksPanel
+					errors={errors}
+					onDismiss={dismiss}
+					onDismissAll={dismissAll}
+				/>
 			) : null}
 
-			<PillShell
-				hasErrors={hasErrors}
-				expanded={expanded}
-				onToggle={hasErrors ? () => setExpanded((v) => !v) : undefined}
-			>
-				{running.length > 0 ? (
-					<span
-						role="status"
-						aria-live="polite"
-						style={{ display: "inline-flex", alignItems: "center", gap: 7 }}
-					>
-						<span
-							className="asyncy-btn-spinner bg-task-spinner"
-							aria-hidden
-						/>
-						<span>{runningLabel}</span>
-					</span>
-				) : null}
-				{running.length > 0 && hasErrors ? (
-					<span aria-hidden style={{ color: T.textFaint }}>·</span>
-				) : null}
-				{hasErrors ? (
-					<span style={{ color: T.danger, fontWeight: 500 }}>
-						{errors.length === 1
-							? "1 task failed"
-							: `${errors.length} tasks failed`}
-					</span>
-				) : null}
-			</PillShell>
+			{visibleLabel ? (
+				<span
+					aria-hidden
+					style={{
+						minWidth: 0,
+						overflow: "hidden",
+						textOverflow: "ellipsis",
+						whiteSpace: "nowrap",
+						fontSize: 10,
+						fontFamily: T.mono,
+						color: T.textMute,
+						letterSpacing: 0.2,
+					}}
+				>
+					{visibleLabel}
+				</span>
+			) : null}
+
+			{errors.length > 0 ? (
+				<button
+					type="button"
+					onClick={() => setExpanded((v) => !v)}
+					aria-expanded={expanded}
+					aria-label={
+						errors.length === 1
+							? "1 background task failed"
+							: `${errors.length} background tasks failed`
+					}
+					className="bg-task-failed"
+					style={{
+						flexShrink: 0,
+						border: "none",
+						background: "transparent",
+						padding: 0,
+						fontSize: 10,
+						fontFamily: T.mono,
+						letterSpacing: 0.2,
+						color: T.danger,
+						cursor: "pointer",
+					}}
+				>
+					{errors.length === 1 ? "1 failed" : `${errors.length} failed`}
+				</button>
+			) : null}
+
+			{running.length > 0 ? (
+				<span
+					role="status"
+					aria-live="polite"
+					aria-label={statusLabel}
+					style={{ flexShrink: 0, display: "inline-flex" }}
+				>
+					<span className="asyncy-btn-spinner bg-task-spinner" aria-hidden />
+				</span>
+			) : null}
 		</div>
 	);
 }
 
-/**
- * The chip itself. Renders as a real `<button>` only when there's something
- * to expand, so a purely-running indicator isn't a fake interactive element.
- */
-function PillShell({
-	hasErrors,
-	expanded,
-	onToggle,
+function FailedTasksPanel({
+	errors,
+	onDismiss,
+	onDismissAll,
+}: {
+	errors: { id: string; label: string; error: string | null }[];
+	onDismiss: (id: string) => void;
+	onDismissAll: () => void;
+}) {
+	return (
+		<div
+			role="region"
+			aria-label="Failed background tasks"
+			style={{
+				position: "absolute",
+				left: 0,
+				right: 0,
+				bottom: "calc(100% + 8px)",
+				maxHeight: 260,
+				overflowY: "auto",
+				background: T.surface,
+				border: `0.5px solid ${T.border}`,
+				borderRadius: 10,
+				boxShadow: "0 16px 40px rgba(0, 0, 0, 0.5)",
+				padding: 8,
+				display: "flex",
+				flexDirection: "column",
+				gap: 6,
+				userSelect: "text",
+			}}
+		>
+			{errors.map((t) => (
+				<div
+					key={t.id}
+					style={{
+						display: "flex",
+						flexDirection: "column",
+						gap: 4,
+						padding: "7px 8px",
+						background: T.surfaceLow,
+						border: `0.5px solid ${T.borderSoft}`,
+						borderRadius: 7,
+					}}
+				>
+					<div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+						<span
+							style={{
+								flex: 1,
+								minWidth: 0,
+								fontSize: 12,
+								fontWeight: 500,
+								color: T.text,
+								wordBreak: "break-word",
+							}}
+						>
+							{t.label}
+						</span>
+						<TextButton onClick={() => onDismiss(t.id)}>Dismiss</TextButton>
+					</div>
+					<span
+						style={{
+							fontSize: 11,
+							lineHeight: 1.45,
+							color: T.textMute,
+							fontFamily: T.mono,
+							whiteSpace: "pre-wrap",
+							wordBreak: "break-word",
+						}}
+					>
+						{t.error}
+					</span>
+				</div>
+			))}
+			{errors.length > 1 ? (
+				<div style={{ alignSelf: "flex-end" }}>
+					<TextButton onClick={onDismissAll}>Dismiss all</TextButton>
+				</div>
+			) : null}
+		</div>
+	);
+}
+
+function TextButton({
+	onClick,
 	children,
 }: {
-	hasErrors: boolean;
-	expanded: boolean;
-	onToggle?: () => void;
+	onClick: () => void;
 	children: React.ReactNode;
 }) {
-	const style: React.CSSProperties = {
-		display: "inline-flex",
-		alignItems: "center",
-		gap: 7,
-		padding: "6px 12px",
-		borderRadius: 999,
-		fontSize: 12,
-		fontFamily: T.sans,
-		color: T.textDim,
-		background: hasErrors ? T.dangerSoft : T.surface,
-		border: `0.5px solid ${hasErrors ? T.dangerBorder : T.border}`,
-		boxShadow: "0 6px 20px rgba(0, 0, 0, 0.35)",
-		textAlign: "left",
-	};
-
-	if (!onToggle) return <div style={style}>{children}</div>;
-
-	// Hover feedback is applied by mutating `currentTarget.style` rather than
-	// via a CSS class — inline styles always win on specificity, so a `:hover`
-	// rule wouldn't apply. Same workaround as design/Atoms.tsx and
-	// design/WorktreeChip.tsx.
-	const base = hasErrors ? T.dangerSoft : T.surface;
-	const hover = hasErrors ? T.dangerBorder : T.surfaceHi;
-
 	return (
 		<button
 			type="button"
-			onClick={onToggle}
-			aria-expanded={expanded}
-			onMouseEnter={(e) => {
-				e.currentTarget.style.background = hover;
+			onClick={onClick}
+			className="bg-task-text-btn"
+			style={{
+				flexShrink: 0,
+				border: "none",
+				background: "transparent",
+				color: T.textMute,
+				fontSize: 11,
+				cursor: "pointer",
+				padding: "1px 3px",
 			}}
-			onMouseLeave={(e) => {
-				e.currentTarget.style.background = base;
-			}}
-			style={{ ...style, cursor: "pointer" }}
 		>
 			{children}
 		</button>

@@ -27,6 +27,7 @@ export interface BackgroundTask {
 	 * write it for a reader, not as a debug string.
 	 */
 	label: string;
+	quiet: boolean;
 	status: BackgroundTaskStatus;
 	error: string | null;
 }
@@ -66,6 +67,7 @@ let seq = 0;
  */
 export function runBackgroundTask(opts: {
 	label: string;
+	quiet?: boolean;
 	run: () => Promise<unknown>;
 	onSuccess?: () => void;
 }): void {
@@ -73,7 +75,13 @@ export function runBackgroundTask(opts: {
 	useBackgroundTasksStore.setState((s) => ({
 		tasks: [
 			...s.tasks,
-			{ id, label: opts.label, status: "running", error: null },
+			{
+				id,
+				label: opts.label,
+				quiet: opts.quiet ?? false,
+				status: "running",
+				error: null,
+			},
 		],
 	}));
 

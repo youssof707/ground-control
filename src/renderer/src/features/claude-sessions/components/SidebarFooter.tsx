@@ -2,22 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { T } from "../../../design/tokens";
 import { RateLimitMeter } from "./RateLimitMeter";
 import { TerminalsCard } from "./TerminalsCard";
+import { BackgroundTasksIndicator } from "../../background-tasks/components/BackgroundTasksIndicator";
 
-/**
- * Pinned to the bottom of the sessions sidebar pane (its parent supplies
- * `position: relative`). Houses the version/env chip and the rate-limit
- * meter as a single stacked footer with an opaque `T.win` background so
- * the sessions list scrolls *behind* it rather than colliding with two
- * free-floating fixed badges.
- *
- * Owns the `appInfo` fetch that previously lived in `MainApp` — moved here
- * because it's the only consumer.
- */
 export function SidebarFooter() {
-	const [appInfo, setAppInfo] = useState<{
-		env: "dev" | "prod";
-		storeFolder: string;
-	} | null>(null);
+	const [appInfo, setAppInfo] = useState<{ env: "dev" | "prod" } | null>(
+		null,
+	);
 
 	useEffect(() => {
 		let alive = true;
@@ -65,20 +55,32 @@ export function SidebarFooter() {
 		>
 			<TerminalsCard />
 			<RateLimitMeter />
-			<span
-				onDoubleClick={() => {
-					void window.claude.toggleDevTools();
-				}}
+			<div
 				style={{
-					fontSize: 10,
-					fontFamily: T.mono,
-					color: T.textFaint,
-					letterSpacing: 0.2,
+					position: "relative",
+					display: "flex",
+					alignItems: "center",
+					gap: 12,
+					minHeight: 14,
 				}}
 			>
-				v{__APP_VERSION__}
-				{appInfo ? ` · ${appInfo.env} · ${appInfo.storeFolder}` : ""}
-			</span>
+				<span
+					onDoubleClick={() => {
+						void window.claude.toggleDevTools();
+					}}
+					style={{
+						flexShrink: 0,
+						fontSize: 10,
+						fontFamily: T.mono,
+						color: T.textFaint,
+						letterSpacing: 0.2,
+					}}
+				>
+					v{__APP_VERSION__}
+					{appInfo ? ` · ${appInfo.env}` : ""}
+				</span>
+				<BackgroundTasksIndicator />
+			</div>
 		</div>
 	);
 }

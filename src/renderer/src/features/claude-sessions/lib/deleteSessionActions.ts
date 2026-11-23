@@ -12,6 +12,7 @@ export async function deleteSessionOnMain(
 	if (hookRunning) {
 		runBackgroundTask({
 			label: `Distilling ${title}`,
+			quiet: true,
 			run: () => window.claude.awaitDeleteHook(sessionId),
 		});
 	}
