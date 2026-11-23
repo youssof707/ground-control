@@ -27,7 +27,9 @@ Whenever a new status replaces a green one with yellow or red (a report or a set
 in `scheduleStatus.ts`), `alwaysShowStatus` is turned on automatically so the regression
 stays visible; it is never turned off automatically.
 
-A scheduled session's header replaces the worktree row with `ScheduleHeaderStrip`:
+A scheduled session's header replaces the worktree row with `ScheduleHeaderStrip`, which spans
+the full header width; the Source Control widget sits below it, beside the title row.
+The strip shows
 cadence, next run (omitted when off or none), last run, skip reason or error, plus labeled Always show
 and On switches, Run now / Stop, and Edit, which opens the Scheduler directly on that
 schedule's form (Save or Cancel closes it). Delete and Clear status stay in the modal.

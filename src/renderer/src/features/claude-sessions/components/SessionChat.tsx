@@ -230,244 +230,252 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 					flexShrink: 0,
 					borderBottom: `0.5px solid ${T.border}`,
 					display: "flex",
-					alignItems: "center",
-					gap: 16,
+					flexDirection: "column",
+					gap: 8,
 					padding: "10px 18px",
 					background: T.win,
 				}}
 			>
+				{schedule ? <ScheduleHeaderStrip schedule={schedule} /> : null}
 				<div
 					style={{
-						flex: 1,
-						minWidth: 0,
 						display: "flex",
-						flexDirection: "column",
-						gap: 8,
+						alignItems: "center",
+						gap: 16,
+						minWidth: 0,
 					}}
 				>
-					{/* Row 0: worktree badge (only when this session is bound to
-				    one). Sits ABOVE the title row per product decision so it
-				    reads as a scope marker rather than a peer status chip. */}
-					{schedule ? (
-						<ScheduleHeaderStrip schedule={schedule} />
-					) : attachedWorktree ? (
+					<div
+						style={{
+							flex: 1,
+							minWidth: 0,
+							display: "flex",
+							flexDirection: "column",
+							gap: 8,
+						}}
+					>
+						{/* Row 0: worktree badge (only when this session is bound to
+					    one). Sits ABOVE the title row per product decision so it
+					    reads as a scope marker rather than a peer status chip. */}
+						{schedule ? null : attachedWorktree ? (
+							<div
+								style={{
+									display: "flex",
+									alignItems: "center",
+									gap: 8,
+									minWidth: 0,
+								}}
+							>
+								<WorktreeChip
+									displayName={attachedWorktree.displayName}
+									color={attachedWorktree.color}
+									variant="readonly"
+								/>
+							</div>
+						) : null}
+						{/* Row 1: title, filepath, action buttons */}
 						<div
 							style={{
 								display: "flex",
 								alignItems: "center",
-								gap: 8,
+								gap: 14,
 								minWidth: 0,
 							}}
 						>
-							<WorktreeChip
-								displayName={attachedWorktree.displayName}
-								color={attachedWorktree.color}
-								variant="readonly"
-							/>
-						</div>
-					) : null}
-					{/* Row 1: title, filepath, action buttons */}
-					<div
-						style={{
-							display: "flex",
-							alignItems: "center",
-							gap: 14,
-							minWidth: 0,
-						}}
-					>
-						{editingTitle ? (
-							<input
-								ref={titleInputRef}
-								value={titleDraft}
-								onChange={(e) => setTitleDraft(e.target.value)}
-								onBlur={() => {
-									void commitTitle();
-								}}
-								onKeyDown={(e) => {
-									if (e.key === "Enter") {
-										e.preventDefault();
+							{editingTitle ? (
+								<input
+									ref={titleInputRef}
+									value={titleDraft}
+									onChange={(e) => setTitleDraft(e.target.value)}
+									onBlur={() => {
 										void commitTitle();
-									} else if (e.key === "Escape") {
-										e.preventDefault();
-										setEditingTitle(false);
-									}
-								}}
-								maxLength={200}
-								style={{
-									fontSize: 14,
-									fontWeight: 600,
-									color: T.text,
-									background: T.surface,
-									border: `0.5px solid ${T.border}`,
-									borderRadius: 6,
-									padding: "3px 7px",
-									outline: "none",
-									maxWidth: 320,
-									minWidth: 120,
-									flexShrink: 0,
-									fontFamily: "inherit",
-								}}
-							/>
-						) : (
-							<div
-								className="session-title"
-								style={{
-									display: "inline-flex",
-									alignItems: "center",
-									gap: 6,
-									fontSize: 14,
-									fontWeight: 600,
-									color: T.text,
-									maxWidth: 360,
-									flexShrink: 0,
-									minWidth: 0,
-								}}
-							>
-								<span
-									onClick={schedule ? undefined : beginEditTitle}
+									}}
+									onKeyDown={(e) => {
+										if (e.key === "Enter") {
+											e.preventDefault();
+											void commitTitle();
+										} else if (e.key === "Escape") {
+											e.preventDefault();
+											setEditingTitle(false);
+										}
+									}}
+									maxLength={200}
 									style={{
+										fontSize: 14,
+										fontWeight: 600,
+										color: T.text,
+										background: T.surface,
+										border: `0.5px solid ${T.border}`,
+										borderRadius: 6,
+										padding: "3px 7px",
+										outline: "none",
+										maxWidth: 320,
+										minWidth: 120,
+										flexShrink: 0,
+										fontFamily: "inherit",
+									}}
+								/>
+							) : (
+								<div
+									className="session-title"
+									style={{
+										display: "inline-flex",
+										alignItems: "center",
+										gap: 6,
+										fontSize: 14,
+										fontWeight: 600,
+										color: T.text,
+										maxWidth: 360,
+										flexShrink: 0,
+										minWidth: 0,
+									}}
+								>
+									<span
+										onClick={schedule ? undefined : beginEditTitle}
+										style={{
+											overflow: "hidden",
+											textOverflow: "ellipsis",
+											whiteSpace: "nowrap",
+											cursor: schedule ? "default" : "pointer",
+										}}
+									>
+										{session.title}
+									</span>
+									{schedule ? null : (
+										<button
+											type="button"
+											onClick={beginEditTitle}
+											aria-label="Rename session"
+											className="session-title-edit"
+											style={{
+												display: "inline-flex",
+												alignItems: "center",
+												justifyContent: "center",
+												width: 22,
+												height: 22,
+												padding: 0,
+												borderRadius: 5,
+												border: "none",
+												background: "transparent",
+												color: T.textFaint,
+												cursor: "pointer",
+												flexShrink: 0,
+											}}
+											onMouseEnter={(e) => {
+												e.currentTarget.style.background = T.surfaceHi;
+												e.currentTarget.style.color = T.text;
+											}}
+											onMouseLeave={(e) => {
+												e.currentTarget.style.background = "transparent";
+												e.currentTarget.style.color = T.textFaint;
+											}}
+										>
+											<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+												<path
+													d="M8.2 1.8a1.1 1.1 0 011.6 1.6L4.3 8.9 2 9.5l.6-2.3 5.6-5.4z"
+													stroke="currentColor"
+													strokeWidth="1.2"
+													strokeLinecap="round"
+													strokeLinejoin="round"
+												/>
+											</svg>
+										</button>
+									)}
+								</div>
+							)}
+							{session.cwd ? (
+								<button
+									type="button"
+									aria-label={`${session.cwd} — click to open in Finder`}
+									onClick={() => setOpenFolderModal(true)}
+									style={{
+										fontFamily: T.mono,
+										fontSize: 11.5,
+										color: T.textFaint,
 										overflow: "hidden",
 										textOverflow: "ellipsis",
 										whiteSpace: "nowrap",
-										cursor: schedule ? "default" : "pointer",
+										minWidth: 0,
+										flex: 1,
+										textAlign: "left",
+										background: "transparent",
+										border: "none",
+										padding: 0,
+										margin: 0,
+										cursor: "pointer",
+									}}
+									onMouseEnter={(e) => {
+										e.currentTarget.style.color = T.text;
+										e.currentTarget.style.textDecoration = "underline";
+									}}
+									onMouseLeave={(e) => {
+										e.currentTarget.style.color = T.textFaint;
+										e.currentTarget.style.textDecoration = "none";
 									}}
 								>
-									{session.title}
-								</span>
-								{schedule ? null : (
-									<button
-										type="button"
-										onClick={beginEditTitle}
-										aria-label="Rename session"
-										className="session-title-edit"
-										style={{
-											display: "inline-flex",
-											alignItems: "center",
-											justifyContent: "center",
-											width: 22,
-											height: 22,
-											padding: 0,
-											borderRadius: 5,
-											border: "none",
-											background: "transparent",
-											color: T.textFaint,
-											cursor: "pointer",
-											flexShrink: 0,
-										}}
-										onMouseEnter={(e) => {
-											e.currentTarget.style.background = T.surfaceHi;
-											e.currentTarget.style.color = T.text;
-										}}
-										onMouseLeave={(e) => {
-											e.currentTarget.style.background = "transparent";
-											e.currentTarget.style.color = T.textFaint;
-										}}
-									>
-										<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-											<path
-												d="M8.2 1.8a1.1 1.1 0 011.6 1.6L4.3 8.9 2 9.5l.6-2.3 5.6-5.4z"
-												stroke="currentColor"
-												strokeWidth="1.2"
-												strokeLinecap="round"
-												strokeLinejoin="round"
-											/>
-										</svg>
-									</button>
-								)}
-							</div>
-						)}
-						{session.cwd ? (
-							<button
-								type="button"
-								aria-label={`${session.cwd} — click to open in Finder`}
-								onClick={() => setOpenFolderModal(true)}
-								style={{
-									fontFamily: T.mono,
-									fontSize: 11.5,
-									color: T.textFaint,
-									overflow: "hidden",
-									textOverflow: "ellipsis",
-									whiteSpace: "nowrap",
-									minWidth: 0,
-									flex: 1,
-									textAlign: "left",
-									background: "transparent",
-									border: "none",
-									padding: 0,
-									margin: 0,
-									cursor: "pointer",
-								}}
-								onMouseEnter={(e) => {
-									e.currentTarget.style.color = T.text;
-									e.currentTarget.style.textDecoration = "underline";
-								}}
-								onMouseLeave={(e) => {
-									e.currentTarget.style.color = T.textFaint;
-									e.currentTarget.style.textDecoration = "none";
-								}}
-							>
-								{session.cwd.replace(/[\/\\]+$/, "").split(/[\/\\]/).pop() || session.cwd}
-							</button>
-						) : (
-							<div style={{ flex: 1 }} />
-						)}
-					</div>
+									{session.cwd.replace(/[\/\\]+$/, "").split(/[\/\\]/).pop() || session.cwd}
+								</button>
+							) : (
+								<div style={{ flex: 1 }} />
+							)}
+						</div>
 
-					{/* Row 2: status chips */}
-					<div
-						style={{
-							display: "flex",
-							alignItems: "center",
-							gap: 10,
-							flexWrap: "wrap",
-						}}
-					>
-						<StatusPill
-							status={effectiveStatus}
-							mode={session.mode}
-							pendingToolName={pending[0]?.toolName}
-							detail={
-								effectiveStatus === "usage_limit" && resumeAt
-									? formatResumeLabel(resumeAt)
-									: undefined
-							}
-							onClick={
-								effectiveStatus === "usage_limit"
-									? () => {
-									// No <Link> ancestor here (unlike the
-									// sidebar row), so no propagation to swallow.
-										void window.claude
-											.retryUsageLimit(sessionId)
-											.catch((err) => {
-											// See the sidebar row's identical
-											// catch — composer send is always a
-											// working fallback.
-												console.error(
-													"[ccw] retryUsageLimit failed:",
-													err,
-												);
-											});
-									}
-									: effectiveStatus === "errored"
-										? () => setErrorOpen(true)
+						{/* Row 2: status chips */}
+						<div
+							style={{
+								display: "flex",
+								alignItems: "center",
+								gap: 10,
+								flexWrap: "wrap",
+							}}
+						>
+							<StatusPill
+								status={effectiveStatus}
+								mode={session.mode}
+								pendingToolName={pending[0]?.toolName}
+								detail={
+									effectiveStatus === "usage_limit" && resumeAt
+										? formatResumeLabel(resumeAt)
 										: undefined
-							}
-						/>
-						{scmCheckout ? null : (
-							<BranchChipWithDelta
-								branch={session.branch}
-								lastUserMessageBranch={session.lastUserMessageBranch}
-								showCurrentHint={false}
+								}
+								onClick={
+									effectiveStatus === "usage_limit"
+										? () => {
+										// No <Link> ancestor here (unlike the
+										// sidebar row), so no propagation to swallow.
+											void window.claude
+												.retryUsageLimit(sessionId)
+												.catch((err) => {
+												// See the sidebar row's identical
+												// catch — composer send is always a
+												// working fallback.
+													console.error(
+														"[ccw] retryUsageLimit failed:",
+														err,
+													);
+												});
+										}
+										: effectiveStatus === "errored"
+											? () => setErrorOpen(true)
+											: undefined
+								}
 							/>
-						)}
+							{scmCheckout ? null : (
+								<BranchChipWithDelta
+									branch={session.branch}
+									lastUserMessageBranch={session.lastUserMessageBranch}
+									showCurrentHint={false}
+								/>
+							)}
+						</div>
 					</div>
+					<SourceControlWidget
+						checkout={scmCheckout}
+						sessionId={sessionId}
+						branch={session.branch}
+						lastUserMessageBranch={session.lastUserMessageBranch}
+					/>
 				</div>
-				<SourceControlWidget
-					checkout={scmCheckout}
-					sessionId={sessionId}
-					branch={session.branch}
-					lastUserMessageBranch={session.lastUserMessageBranch}
-				/>
 			</div>
 
 			{/* Transcript (with floating chip overlay) */}
