@@ -6,7 +6,9 @@ import {
 	type UtilityProcess,
 } from "electron";
 import { join } from "node:path";
+import type { GitFixRequest } from "../../shared/schemas/source_control";
 import { broadcast } from "../windows";
+import { abortAllGitFixes, runGitAutoFix } from "./gitAutoFix";
 
 let worker: UtilityProcess | null = null;
 let quitting = false;
@@ -34,6 +36,9 @@ function killWorker(): void {
 
 export function registerSourceControlHost(): void {
 	app.on("will-quit", killWorker);
+	app.on("will-quit", abortAllGitFixes);
+
+	ipcMain.handle("scm:autoFix", (_event, request: GitFixRequest) => runGitAutoFix(request));
 
 	ipcMain.on("scm:connect", (event) => {
 		try {

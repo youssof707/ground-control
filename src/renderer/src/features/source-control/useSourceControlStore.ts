@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ScmFailure, ScmRemoteOp, ScmSummary } from "@shared/schemas/source_control";
+import type { GitFixResult, ScmFailure, ScmRemoteOp, ScmSummary } from "@shared/schemas/source_control";
 import {
 	call,
 	cancel,
@@ -34,6 +34,7 @@ interface State {
 export interface RemoteState {
 	busy: ScmRemoteOp | null;
 	error: string | null;
+	fixing?: boolean;
 }
 
 export interface BranchModalTarget {
@@ -113,12 +114,33 @@ export async function runRemoteOp(checkout: string, op: ScmRemoteOp, sessionId?:
 	if (useSourceControlStore.getState().remote[checkout]?.busy) return;
 	patchRemote(checkout, { busy: op, error: null });
 	const reply = await call<"remote">({ t: "remote", checkout, op }).promise;
-	patchRemote(checkout, {
-		busy: null,
-		error: reply.ok || reply.reason === "cancelled" ? null : reply.message || REMOTE_ERRORS[op],
-	});
+	let ok = reply.ok;
+	let error = reply.ok || reply.reason === "cancelled" ? null : reply.message || REMOTE_ERRORS[op];
+	if (error && op !== "fetch" && !reply.ok && reply.reason === "failed") {
+		patchRemote(checkout, { fixing: true });
+		const fix = await autoFix(checkout, op, error);
+		ok = fix.fixed;
+		error = fix.fixed ? null : `${error}\n\nClaude couldn't fix it: ${fix.reason}`;
+	}
+	patchRemote(checkout, { busy: null, error, fixing: false });
 	requestRefresh(checkout, true);
-	if (reply.ok && sessionId) await window.claude.refreshBranch(sessionId).catch(() => undefined);
+	if (ok && sessionId) await window.claude.refreshBranch(sessionId).catch(() => undefined);
+}
+
+async function autoFix(checkout: string, op: "pull" | "push", error: string): Promise<GitFixResult> {
+	const summary = useSourceControlStore.getState().byCheckout[checkout]?.summary;
+	try {
+		return await window.claude.autoFixGit({
+			checkout,
+			op,
+			branch: summary?.branch ?? null,
+			upstream: summary?.upstream ?? null,
+			error,
+		});
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		return { fixed: false, reason: message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") };
+	}
 }
 
 onConnectionChange((connection) => useSourceControlStore.setState({ connection }));

@@ -77,6 +77,7 @@ export function SourceControlWidget({
 	const error = useSourceControlStore((s) => (checkout ? s.byCheckout[checkout]?.error : undefined));
 	const busy = useSourceControlStore((s) => (checkout ? s.remote[checkout]?.busy ?? null : null));
 	const remoteError = useSourceControlStore((s) => (checkout ? s.remote[checkout]?.error ?? null : null));
+	const fixing = useSourceControlStore((s) => (checkout ? s.remote[checkout]?.fixing ?? false : false));
 	const openModal = useSourceControlStore((s) => s.openModal);
 	const openBranches = useSourceControlStore((s) => s.openBranches);
 	const dismissRemoteError = useSourceControlStore((s) => s.dismissRemoteError);
@@ -173,6 +174,12 @@ export function SourceControlWidget({
 					) : null}
 				</button>
 			</div>
+			{fixing && busy ? (
+				<div className="repo-card-fixing" role="status">
+					<span className="repo-card-spinner" aria-hidden="true" />
+					<span>{busy === "pull" ? "Pull failed, Claude is fixing it…" : "Push failed, Claude is fixing it…"}</span>
+				</div>
+			) : null}
 			{remoteError ? (
 				<div className="repo-card-error" role="alert">
 					<span>{remoteError}</span>

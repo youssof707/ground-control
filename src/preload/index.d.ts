@@ -12,6 +12,7 @@ import type {
 	DeletedSessionSnapshot,
 } from "../shared/claude-sessions/undo";
 import type { BabysitConfig } from "../shared/claude-sessions/babysit";
+import type { GitFixRequest, GitFixResult } from "../shared/schemas/source_control";
 import type {
 	ActivityLogSnapshot,
 	CaffeinateProcess,
@@ -159,6 +160,7 @@ declare global {
 			createWorktree: (input: CreateWorktreeInput) => Promise<Worktree>;
 			deleteWorktree: (id: string) => Promise<void>;
 			connectSourceControl: () => void;
+			autoFixGit: (request: GitFixRequest) => Promise<GitFixResult>;
 			listGroups: () => Promise<SessionGroup[]>;
 			createGroup: (input: CreateSessionGroupInput) => Promise<SessionGroup>;
 			setSessionGroup: (
