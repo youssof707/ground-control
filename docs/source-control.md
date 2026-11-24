@@ -17,6 +17,8 @@ The meta row opens a near-full-screen modal. It has the changed-file list on the
 
 Confirming a commit closes the source control modal right away. The commit runs in the background, with a spinner on the card's push button. If it fails, the modal reopens (unless another one is already open) and shows the error.
 
+When `git commit` itself fails (a hook rejected it, a formatter rewrote files, a stale `index.lock`), the same hidden Sonnet session as pull/push tries to fix it before any error shows. The card says "Commit failed, Claude is fixing it…". It gets git's error and the commit message, fixes the cause and stages the fixes, but may not commit itself, skip hooks, or change `core.hooksPath` / `commit.gpgsign`. When it reports success, the app runs `git commit` again with the same message. Only when it reports failure, or the retry fails, does the error show, followed by Claude's reason. Failures before `git commit` (nothing staged, message generation) never trigger it.
+
 ## The file list
 
 - Two groups, like VS Code: **Staged Changes** (HEAD vs index) on top, then **Changes** (index vs working tree, plus untracked files and conflicts). A path with both kinds appears in both groups.

@@ -18,6 +18,15 @@ export function abortAllCommitMessages(): void {
 
 class CommitError extends Error {}
 
+class GitCommitFailed extends CommitError {
+	constructor(
+		error: string,
+		readonly failedMessage: string,
+	) {
+		super(error);
+	}
+}
+
 function lastLines(stderr: string, fallback: string): string {
 	const lines = stderr
 		.split("\n")
@@ -85,7 +94,7 @@ async function commit(checkout: string, message: string): Promise<void> {
 		env: { GIT_EDITOR: "true" },
 	});
 	if (result.code !== 0) {
-		throw new CommitError(lastLines(result.stderr || result.stdout.toString("utf8"), "git commit failed"));
+		throw new GitCommitFailed(lastLines(result.stderr || result.stdout.toString("utf8"), "git commit failed"), message);
 	}
 }
 
@@ -101,6 +110,7 @@ export async function runCommit(checkout: string, message: string, all: boolean)
 		await commit(checkout, final);
 		return { ok: true, message: final };
 	} catch (err) {
+		if (err instanceof GitCommitFailed) return { ok: false, error: err.message, failedMessage: err.failedMessage };
 		return { ok: false, error: err instanceof Error ? err.message : String(err) };
 	}
 }
