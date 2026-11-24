@@ -707,10 +707,15 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 		(message: string) => {
 			const all = commitOpen?.all ?? false;
 			setCommitOpen(null);
-			listRef.current?.focus();
-			void commitStaged(checkout, message, all);
+			onClose();
+			void commitStaged(checkout, message, all).then((ok) => {
+				const state = useSourceControlStore.getState();
+				if (!ok && state.commits[checkout]?.error && state.modalCheckout === null) {
+					state.openModal(checkout, composer ?? undefined);
+				}
+			});
 		},
-		[checkout, commitOpen],
+		[checkout, commitOpen, composer, onClose],
 	);
 
 	const onViewed = useCallback(

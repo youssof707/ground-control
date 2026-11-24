@@ -161,8 +161,8 @@ function patchCommit(checkout: string, next: CommitState): void {
 	useSourceControlStore.setState((s) => ({ commits: { ...s.commits, [checkout]: next } }));
 }
 
-export async function commitStaged(checkout: string, message: string, all: boolean): Promise<void> {
-	if (useSourceControlStore.getState().commits[checkout]?.busy) return;
+export async function commitStaged(checkout: string, message: string, all: boolean): Promise<boolean> {
+	if (useSourceControlStore.getState().commits[checkout]?.busy) return false;
 	patchCommit(checkout, { busy: message.trim() ? "committing" : "generating", error: null });
 	let error: string | null = null;
 	try {
@@ -174,6 +174,7 @@ export async function commitStaged(checkout: string, message: string, all: boole
 	}
 	patchCommit(checkout, { busy: null, error: error ? `Couldn't commit: ${error}` : null });
 	requestRefresh(checkout, true);
+	return error === null;
 }
 
 function patchRemote(checkout: string, next: Partial<RemoteState>): void {
