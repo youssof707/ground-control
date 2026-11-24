@@ -19,6 +19,11 @@ export interface QueuedMessage {
 	handoffAfter?: true;
 }
 
+export interface QueueError {
+	message: string;
+	messageId?: string;
+}
+
 interface State {
 	/**
 	 * FIFO per session. Today's UI only ever lets one message be queued at a
@@ -38,7 +43,7 @@ interface State {
 	 */
 	heldSessions: Record<string, true>;
 	/** Last flush failure per session, surfaced on the chip. */
-	errorsBySession: Record<string, string>;
+	errorsBySession: Record<string, QueueError>;
 	pendingHandoff: Record<string, NextMessageModel>;
 
 	enqueue: (sessionId: string, msg: QueuedMessage) => void;
@@ -52,7 +57,7 @@ interface State {
 	moveSession: (fromSessionId: string, toSessionId: string) => void;
 	hold: (sessionId: string) => void;
 	release: (sessionId: string) => void;
-	setError: (sessionId: string, err: string | null) => void;
+	setError: (sessionId: string, err: string | null, messageId?: string) => void;
 	markHandoff: (sessionId: string, originalModel: NextMessageModel) => void;
 	clearHandoff: (sessionId: string) => void;
 }
@@ -163,12 +168,12 @@ export const useQueuedMessagesStore = create<State>((set, get) => ({
 			heldSessions: withoutKey(s.heldSessions, sessionId),
 		})),
 
-	setError: (sessionId, err) =>
+	setError: (sessionId, err, messageId) =>
 		set((s) => ({
 			errorsBySession:
 				err === null
 					? withoutKey(s.errorsBySession, sessionId)
-					: { ...s.errorsBySession, [sessionId]: err },
+					: { ...s.errorsBySession, [sessionId]: { message: err, messageId } },
 		})),
 
 	markHandoff: (sessionId, originalModel) =>

@@ -368,14 +368,14 @@ export function MessageComposer({
 		});
 	};
 
-	const takeFreshSoleQueuedMessage = (): QueuedMessage | undefined => {
+	const takeFreshLastQueuedMessage = (): QueuedMessage | undefined => {
 		if (text.trim() || images.length > 0) return undefined;
-		if (queuedMessages.length !== 1) return undefined;
-		const [only] = queuedMessages;
-		if (Date.now() - only.queuedAt > SEND_QUEUED_ON_ENTER_WINDOW_MS) {
+		const last = queuedMessages.at(-1);
+		if (!last) return undefined;
+		if (Date.now() - last.queuedAt > SEND_QUEUED_ON_ENTER_WINDOW_MS) {
 			return undefined;
 		}
-		return only;
+		return last;
 	};
 
 	const sendQueuedNow = async (msg: QueuedMessage) => {
@@ -394,8 +394,8 @@ export function MessageComposer({
 			if (isSidequestId(sessionId)) {
 				setError(message);
 			} else {
-				useQueuedMessagesStore.getState().unshift(sessionId, msg);
-				useQueuedMessagesStore.getState().setError(sessionId, message);
+				useQueuedMessagesStore.getState().enqueue(sessionId, msg);
+				useQueuedMessagesStore.getState().setError(sessionId, message, msg.id);
 			}
 		} finally {
 			setSending(false);
@@ -417,7 +417,7 @@ export function MessageComposer({
 			// half-finished message. A second Enter sends.
 			if (dictationRef.current?.commitIfRecording()) return;
 			if (target.isRunning) {
-				const queued = takeFreshSoleQueuedMessage();
+				const queued = takeFreshLastQueuedMessage();
 				if (queued) {
 					void sendQueuedNow(queued);
 					return;
@@ -615,10 +615,13 @@ export function MessageComposer({
 							<QueuedMessageChip
 								key={msg.id}
 								message={msg}
-								// A failed flush unshifts the message back to the head and
-								// holds the queue, so the error belongs to the first chip
-								// only — the rest are just waiting behind it.
-								error={i === 0 ? queueError : undefined}
+								error={
+									(queueError?.messageId
+										? queueError.messageId === msg.id
+										: i === 0)
+										? queueError?.message
+										: undefined
+								}
 								maxWidth={D.chipMaxWidth}
 								onCancel={() =>
 									useQueuedMessagesStore.getState().cancel(sessionId, msg.id)
