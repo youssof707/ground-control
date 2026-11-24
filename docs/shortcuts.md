@@ -8,7 +8,7 @@ Source of truth for app shortcuts. Update when one is added, changed, or removed
 - `Cmd+R` — quote selection into the composer
 - `Ctrl+C` — interrupt the running turn (side quest if focused there, else active session; denies a pending permission prompt)
 - `Cmd+P` — toggle plan ⇄ auto-edit (composer focused)
-- `Enter` — send when idle; mid-turn, queue. Enter again on an empty composer sends a single queued message (queued <30s ago) immediately
+- `Enter` — send when idle; mid-turn, queue. Enter again on an empty composer pops the last queued message (if queued <30s ago) and sends it immediately, leaving earlier queued messages in place
 - `Cmd+D` — start/stop dictation
 - `Cmd+Shift+B` — Babysitter modal for the active session
 - `Cmd+Enter` — save in the Babysitter modal
