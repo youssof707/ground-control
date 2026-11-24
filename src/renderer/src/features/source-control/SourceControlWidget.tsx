@@ -1,6 +1,6 @@
 import { BRANCH_PREFETCH_MAX_AGE_MS, refreshBranches } from "./branchCache";
 import { compactCount, plural } from "./format";
-import { isHardFailure, runRemoteOp, useSourceControlStore } from "./useSourceControlStore";
+import { branchSwitchKey, isHardFailure, runRemoteOp, useSourceControlStore } from "./useSourceControlStore";
 
 export function FilesIcon({ size = 12 }: { size?: number }) {
 	return (
@@ -84,12 +84,22 @@ export function SourceControlWidget({
 	const openModal = useSourceControlStore((s) => s.openModal);
 	const openBranches = useSourceControlStore((s) => s.openBranches);
 	const dismissRemoteError = useSourceControlStore((s) => s.dismissRemoteError);
+	const seenSwitch = useSourceControlStore((s) => (sessionId ? s.seenBranchSwitch[sessionId] : undefined));
+	const markBranchSwitchSeen = useSourceControlStore((s) => s.markBranchSwitchSeen);
 
 	if (!checkout || isHardFailure(error)) return null;
 
 	const branch = (sessionBranch && sessionBranch !== "HEAD" ? sessionBranch : null) ?? summary?.branch ?? null;
 	const branchText = branch ?? (summary?.head ? `Detached at ${summary.head}` : summary ? "Detached HEAD" : "…");
-	const stale = !!branch && !!lastUserMessageBranch && branch !== lastUserMessageBranch;
+	const switchKey =
+		branch && lastUserMessageBranch && branch !== lastUserMessageBranch
+			? branchSwitchKey(lastUserMessageBranch, branch)
+			: null;
+	const stale = switchKey !== null && seenSwitch !== switchKey;
+	const openBranchModal = (id: string): void => {
+		if (switchKey) markBranchSwitchSeen(id, switchKey);
+		openBranches({ checkout, sessionId: id });
+	};
 	const worktreeName = summary?.worktreeName ?? null;
 	let linked = 0;
 	for (const w of summary?.worktrees ?? []) if (!w.isMain) linked++;
@@ -115,7 +125,7 @@ export function SourceControlWidget({
 						type="button"
 						className={`repo-card-row repo-card-branch${stale ? " is-stale" : ""}`}
 						disabled={!sessionId}
-						onClick={sessionId ? () => openBranches({ checkout, sessionId }) : undefined}
+						onClick={sessionId ? () => openBranchModal(sessionId) : undefined}
 						onPointerEnter={() => void refreshBranches(checkout, BRANCH_PREFETCH_MAX_AGE_MS)}
 						aria-label={branchLabel}
 						aria-haspopup={sessionId ? "dialog" : undefined}
