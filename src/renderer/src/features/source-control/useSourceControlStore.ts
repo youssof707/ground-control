@@ -1,5 +1,12 @@
 import { create } from "zustand";
-import type { GitFixResult, ScmFailure, ScmRemoteOp, ScmSummary } from "@shared/schemas/source_control";
+import type {
+	GitFixRequest,
+	GitFixResult,
+	ScmCommitResult,
+	ScmFailure,
+	ScmRemoteOp,
+	ScmSummary,
+} from "@shared/schemas/source_control";
 import {
 	call,
 	cancel,
@@ -42,7 +49,7 @@ interface State {
 }
 
 export interface CommitState {
-	busy: "generating" | "committing" | null;
+	busy: "generating" | "committing" | "fixing" | null;
 	error: string | null;
 }
 
@@ -161,16 +168,29 @@ function patchCommit(checkout: string, next: CommitState): void {
 	useSourceControlStore.setState((s) => ({ commits: { ...s.commits, [checkout]: next } }));
 }
 
+async function tryCommit(checkout: string, message: string, all: boolean): Promise<ScmCommitResult> {
+	try {
+		return await window.claude.commitStaged(checkout, message, all);
+	} catch (err) {
+		const text = err instanceof Error ? err.message : String(err);
+		return { ok: false, error: text.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") };
+	}
+}
+
 export async function commitStaged(checkout: string, message: string, all: boolean): Promise<boolean> {
 	if (useSourceControlStore.getState().commits[checkout]?.busy) return false;
 	patchCommit(checkout, { busy: message.trim() ? "committing" : "generating", error: null });
-	let error: string | null = null;
-	try {
-		const result = await window.claude.commitStaged(checkout, message, all);
-		if (!result.ok) error = result.error;
-	} catch (err) {
-		const text = err instanceof Error ? err.message : String(err);
-		error = text.replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
+	const first = await tryCommit(checkout, message, all);
+	let error = first.ok ? null : first.error;
+	if (!first.ok && first.failedMessage !== undefined) {
+		patchCommit(checkout, { busy: "fixing", error: null });
+		const fix = await autoFix(checkout, "commit", first.error, first.failedMessage);
+		if (!fix.fixed) {
+			error = `${first.error}\n\nClaude couldn't fix it: ${fix.reason}`;
+		} else {
+			const retry = await tryCommit(checkout, first.failedMessage, false);
+			error = retry.ok ? null : `${retry.error}\n\nClaude tried: ${fix.reason}`;
+		}
 	}
 	patchCommit(checkout, { busy: null, error: error ? `Couldn't commit: ${error}` : null });
 	requestRefresh(checkout, true);
@@ -219,7 +239,12 @@ export async function runRemoteOp(checkout: string, op: ScmRemoteOp, sessionId?:
 	if (ok && sessionId) await window.claude.refreshBranch(sessionId).catch(() => undefined);
 }
 
-async function autoFix(checkout: string, op: "pull" | "push", error: string): Promise<GitFixResult> {
+async function autoFix(
+	checkout: string,
+	op: GitFixRequest["op"],
+	error: string,
+	message?: string,
+): Promise<GitFixResult> {
 	const summary = useSourceControlStore.getState().byCheckout[checkout]?.summary;
 	try {
 		return await window.claude.autoFixGit({
@@ -228,6 +253,7 @@ async function autoFix(checkout: string, op: "pull" | "push", error: string): Pr
 			branch: summary?.branch ?? null,
 			upstream: summary?.upstream ?? null,
 			error,
+			message,
 		});
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);

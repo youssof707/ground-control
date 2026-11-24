@@ -16,7 +16,37 @@ function describeTask(request: GitFixRequest): string {
 	return `Push my local branch ${branch} to the remote branch ${request.upstream} and resolve any issues you run into.`;
 }
 
+function buildCommitFixPrompt(request: GitFixRequest): string {
+	const branch = request.branch ?? "HEAD";
+	return `Ground Control tried to commit my staged changes on ${branch} in ${request.checkout} and \`git commit\` failed with:
+
+\`\`\`
+${request.error.trim()}
+\`\`\`
+
+The commit message was:
+
+\`\`\`
+${(request.message ?? "").trim()}
+\`\`\`
+
+Find out why the commit failed and fix the cause so the same commit succeeds. Ground Control will run \`git commit\` again with the same message after you report success, so don't commit yourself.
+
+You are a hidden background job. Nobody is watching and you can't ask questions.
+
+Rules:
+- Don't run \`git commit\`, and never bypass hooks or signing (no \`--no-verify\`, no changing \`core.hooksPath\` or \`commit.gpgsign\`).
+- If a hook (pre-commit, commit-msg, lint, format) rejected the commit, fix the reported problems in the staged files and stage the fixes with \`git add <path>\`. Only touch files that are part of the commit.
+- If a hook already rewrote files (a formatter), stage those changes.
+- If a stale \`index.lock\` blocks git and no other git process is running, remove that lock file.
+- Never lose work: no \`git reset --hard\`, \`git clean\`, \`git checkout -- <path>\`, or \`git stash drop\`, and don't unstage what I staged.
+- Missing identity (user.name / user.email), signing keys, nothing staged, and unresolved merge conflicts can't be fixed here: report failure right away.
+
+When you are done, call ${GIT_FIX_REPORT_TOOL} exactly once. Set success to true only if the cause is fixed and committing the staged changes with the same message should now work. The reason is one short sentence shown to the user.`;
+}
+
 export function buildGitFixPrompt(request: GitFixRequest): string {
+	if (request.op === "commit") return buildCommitFixPrompt(request);
 	return `${describeTask(request)}
 
 The repository is ${request.checkout}. Ground Control already tried \`git ${request.op}\` there and it failed with:
@@ -63,9 +93,15 @@ function hasShortFlag(args: string[], flag: string): boolean {
 	return args.some((a) => /^-[a-zA-Z]+$/.test(a) && a.includes(flag));
 }
 
-function gitDenial(sub: string, args: string[]): string | null {
+function gitDenial(sub: string, args: string[], op: GitFixRequest["op"] | undefined): string | null {
 	const has = (...names: string[]): boolean => args.some((a) => names.includes(a));
 	const resolvesConflict = has("--ours", "--theirs");
+	if (op === "commit") {
+		if (sub === "commit") return "Don't commit; Ground Control commits again after you report.";
+		if (sub === "config" && args.some((a) => /^(core\.hookspath|commit\.gpgsign)$/i.test(a))) {
+			return "Disabling hooks or signing is not allowed.";
+		}
+	}
 	switch (sub) {
 		case "push":
 			if (args.some((a) => a.startsWith("--force") || a.startsWith("+") || a.startsWith(":"))) return "Force-pushing is not allowed.";
@@ -125,7 +161,11 @@ function usesShellIndirection(command: string): boolean {
 	return />/.test(command.replace(/[0-9]?>&[0-9]/g, ""));
 }
 
-export function gitFixDenial(toolName: string, input: Record<string, unknown>): string | null {
+export function gitFixDenial(
+	toolName: string,
+	input: Record<string, unknown>,
+	op?: GitFixRequest["op"],
+): string | null {
 	if (toolName === GIT_FIX_REPORT_TOOL) return null;
 	if (!GIT_FIX_TOOLS.includes(toolName)) return `${toolName} is not available in this job.`;
 	if (toolName !== "Bash") return null;
@@ -142,7 +182,7 @@ export function gitFixDenial(toolName: string, input: Record<string, unknown>): 
 		}
 		const git = gitSubcommand(words);
 		if (!git) continue;
-		const denial = gitDenial(git.sub, git.args);
+		const denial = gitDenial(git.sub, git.args, op);
 		if (denial) return denial;
 	}
 	return null;

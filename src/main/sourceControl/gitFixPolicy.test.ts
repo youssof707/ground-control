@@ -88,3 +88,32 @@ describe("buildGitFixPrompt", () => {
 		expect(buildGitFixPrompt({ ...base, op: "push", upstream: null })).toContain("Publish my local branch feat to origin");
 	});
 });
+
+describe("commit fixes", () => {
+	const commitBash = (command: string): string | null => gitFixDenial("Bash", { command }, "commit");
+
+	it("blocks committing and disabling hooks or signing", () => {
+		expect(commitBash("git commit -m x")).not.toBeNull();
+		expect(commitBash("git config core.hooksPath /dev/null")).not.toBeNull();
+		expect(commitBash("git config commit.gpgsign false")).not.toBeNull();
+	});
+
+	it("allows staging fixes and leaves commit open for other ops", () => {
+		expect(commitBash("git add src/a.ts")).toBeNull();
+		expect(bash("git commit --no-edit")).toBeNull();
+	});
+
+	it("describes a commit with its message", () => {
+		const prompt = buildGitFixPrompt({
+			checkout: "/repo",
+			op: "commit",
+			branch: "feat",
+			upstream: null,
+			error: "husky - pre-commit hook exited with code 1",
+			message: "Add thing",
+		});
+		expect(prompt).toContain("husky - pre-commit hook exited with code 1");
+		expect(prompt).toContain("Add thing");
+		expect(prompt).toContain(GIT_FIX_REPORT_TOOL);
+	});
+});

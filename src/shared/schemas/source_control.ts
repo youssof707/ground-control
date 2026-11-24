@@ -76,13 +76,16 @@ export type ScmRemoteOp = "fetch" | "pull" | "push";
 
 export interface GitFixRequest {
 	checkout: string;
-	op: "pull" | "push";
+	op: "pull" | "push" | "commit";
 	branch: string | null;
 	upstream: string | null;
 	error: string;
+	message?: string;
 }
 
-export type ScmCommitResult = { ok: true; message: string } | { ok: false; error: string };
+export type ScmCommitResult =
+	| { ok: true; message: string }
+	| { ok: false; error: string; failedMessage?: string };
 
 export interface GitFixResult {
 	fixed: boolean;

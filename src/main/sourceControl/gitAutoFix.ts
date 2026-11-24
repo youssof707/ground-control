@@ -35,9 +35,9 @@ function reportServer(onReport: (result: GitFixResult) => void) {
 		tools: [
 			tool(
 				"report",
-				"Report whether the git operation now succeeds. Call exactly once when done.",
+				"Report whether the git operation now succeeds (or, for a commit, can now succeed). Call exactly once when done.",
 				{
-					success: z.boolean().describe("true only if the pull or push completed and the branch is in sync"),
+					success: z.boolean().describe("true only if the pull or push completed and the branch is in sync, or the commit failure is fixed"),
 					reason: z.string().min(1).max(300).describe("One short sentence for the user"),
 				},
 				async ({ success, reason }) => {
@@ -49,18 +49,20 @@ function reportServer(onReport: (result: GitFixResult) => void) {
 	});
 }
 
-const denyHook: HookCallback = async (input) => {
-	if (input.hook_event_name !== "PreToolUse") return {};
-	const denial = gitFixDenial(input.tool_name, (input.tool_input ?? {}) as Record<string, unknown>);
-	if (!denial) return {};
-	return {
-		hookSpecificOutput: {
-			hookEventName: "PreToolUse",
-			permissionDecision: "deny",
-			permissionDecisionReason: denial,
-		},
+function denyHook(op: GitFixRequest["op"]): HookCallback {
+	return async (input) => {
+		if (input.hook_event_name !== "PreToolUse") return {};
+		const denial = gitFixDenial(input.tool_name, (input.tool_input ?? {}) as Record<string, unknown>, op);
+		if (!denial) return {};
+		return {
+			hookSpecificOutput: {
+				hookEventName: "PreToolUse",
+				permissionDecision: "deny",
+				permissionDecisionReason: denial,
+			},
+		};
 	};
-};
+}
 
 export async function runGitAutoFix(request: GitFixRequest): Promise<GitFixResult> {
 	if (running.has(request.checkout)) {
@@ -115,9 +117,9 @@ export async function runGitAutoFix(request: GitFixRequest): Promise<GitFixResul
 						outcome.report ??= result;
 					}),
 				},
-				hooks: { PreToolUse: [{ hooks: [denyHook] }] },
+				hooks: { PreToolUse: [{ hooks: [denyHook(request.op)] }] },
 				canUseTool: async (toolName, input) => {
-					const denial = gitFixDenial(toolName, input);
+					const denial = gitFixDenial(toolName, input, request.op);
 					return denial
 						? { behavior: "deny", message: denial }
 						: { behavior: "allow", updatedInput: input };
