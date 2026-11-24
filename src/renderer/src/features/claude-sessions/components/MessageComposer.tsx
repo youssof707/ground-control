@@ -12,7 +12,11 @@ import {
 	type QueuedMessage,
 } from "../stores/useQueuedMessagesStore";
 import { useModelPickerStore } from "../stores/useModelPickerStore";
-import { applyModelForMessage } from "../lib/modelSwitchActions";
+import {
+	abandonHandoff,
+	applyHandoffModel,
+	applyModelForMessage,
+} from "../lib/modelSwitchActions";
 import { formatModelName } from "@shared/claude-sessions/sessionModel";
 import { buildUserBlocks, draftFromBlocks } from "../lib/composerImages";
 import { useComposerImages } from "../hooks/useComposerImages";
@@ -289,18 +293,19 @@ export function MessageComposer({
 			return;
 		}
 		const blocks = buildUserBlocks(isHandoff ? HANDOFF_PROMPT : text, images);
-		const queueStore = useQueuedMessagesStore.getState();
 
 		setSending(true);
 		setError(null);
 		const picker = useModelPickerStore.getState();
-		const nextModel = picker.takeNextMessageModel(sessionId);
+		const nextModel = isHandoff
+			? undefined
+			: picker.takeNextMessageModel(sessionId);
 		try {
-			await applyModelForMessage(sessionId, nextModel);
-			if (isHandoff) queueStore.markHandoff(sessionId);
+			if (isHandoff) await applyHandoffModel(sessionId);
+			else await applyModelForMessage(sessionId, nextModel);
 			await target.send(blocks);
 		} catch (err) {
-			if (isHandoff) queueStore.clearHandoff(sessionId);
+			if (isHandoff) abandonHandoff(sessionId);
 			if (nextModel && !useModelPickerStore.getState().nextMessageModel[sessionId]) {
 				picker.setNextMessageModel(sessionId, nextModel);
 			}
@@ -325,9 +330,9 @@ export function MessageComposer({
 			preview: trimmed,
 			imageCount: images.length,
 			queuedAt: Date.now(),
-			switchModel: useModelPickerStore
-				.getState()
-				.takeNextMessageModel(sessionId),
+			switchModel: isHandoff
+				? undefined
+				: useModelPickerStore.getState().takeNextMessageModel(sessionId),
 			...(isHandoff ? { handoffAfter: true as const } : {}),
 		});
 		useQueuedMessagesStore.getState().setError(sessionId, null);
@@ -380,11 +385,11 @@ export function MessageComposer({
 		setSending(true);
 		setError(null);
 		try {
-			await applyModelForMessage(sessionId, msg.switchModel);
-			if (msg.handoffAfter) queueStore.markHandoff(sessionId);
+			if (msg.handoffAfter) await applyHandoffModel(sessionId);
+			else await applyModelForMessage(sessionId, msg.switchModel);
 			await target.send(msg.blocks);
 		} catch (err) {
-			if (msg.handoffAfter) queueStore.clearHandoff(sessionId);
+			if (msg.handoffAfter) abandonHandoff(sessionId);
 			const message = err instanceof Error ? err.message : String(err);
 			if (isSidequestId(sessionId)) {
 				setError(message);

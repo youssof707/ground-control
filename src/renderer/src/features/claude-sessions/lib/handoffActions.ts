@@ -107,6 +107,7 @@ export function runHandoff(input: {
 	text: string;
 	navigate: (to: string) => void;
 	followIfViewing?: boolean;
+	model?: string;
 }): void {
 	const { session, text } = input;
 	const oldId = session.id;
@@ -152,7 +153,7 @@ export function runHandoff(input: {
 		worktreeId: session.worktreeId,
 		// Inherits the source's model, same rule as fork/sidequest/resume —
 		// deliberately NOT the app-wide default.
-		model: session.model,
+		model: "model" in input ? input.model : session.model,
 		groupId: session.groupId,
 		pendingActions: [],
 	};

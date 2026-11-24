@@ -12,6 +12,7 @@ import { useQueuedMessagesStore } from "../stores/useQueuedMessagesStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { useSidequestsStore } from "../stores/useSidequestsStore";
 import { blocksOf } from "./messageContent";
+import { HANDOFF_MODEL } from "./handoffCommand";
 import { sendToSidequest } from "./sidequestActions";
 import { sendTurn } from "./sendTurn";
 
@@ -36,6 +37,26 @@ export async function applyModelForMessage(
 	if (useModelPickerStore.getState().failed[sessionId]) {
 		throw new Error("Couldn't switch model");
 	}
+}
+
+export async function applyHandoffModel(sessionId: string): Promise<void> {
+	const originalModel = useSessionsStore.getState().sessions[sessionId]?.model;
+	await applyModelForMessage(sessionId, { model: HANDOFF_MODEL });
+	useQueuedMessagesStore
+		.getState()
+		.markHandoff(sessionId, { model: originalModel });
+}
+
+export function abandonHandoff(sessionId: string): void {
+	const queueStore = useQueuedMessagesStore.getState();
+	const pending = queueStore.pendingHandoff[sessionId];
+	queueStore.clearHandoff(sessionId);
+	if (!pending || pending.model === HANDOFF_MODEL) return;
+	void useModelPickerStore
+		.getState()
+		.runSwitch(sessionId, pending.model, () =>
+			window.claude.setSessionModel(sessionId, pending.model),
+		);
 }
 
 export async function switchModelAndResume(

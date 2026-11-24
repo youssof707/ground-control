@@ -9,7 +9,11 @@ import {
 import { isSidequestId, useSidequestsStore } from "../stores/useSidequestsStore";
 import { sendTurn } from "../lib/sendTurn";
 import { sendToSidequest } from "../lib/sidequestActions";
-import { applyModelForMessage } from "../lib/modelSwitchActions";
+import {
+	abandonHandoff,
+	applyHandoffModel,
+	applyModelForMessage,
+} from "../lib/modelSwitchActions";
 import { useModelPickerStore } from "../stores/useModelPickerStore";
 import { handoffReplyText } from "../lib/handoffCommand";
 import { runHandoff } from "../lib/handoffActions";
@@ -68,16 +72,12 @@ export function useQueuedMessageFlusher() {
 		// attached rather than swallowing the distinction.
 		const deliver = async (id: string, msg: QueuedMessage) => {
 			if (!isSidequestId(id)) {
-				await applyModelForMessage(id, msg.switchModel);
-				if (msg.handoffAfter) {
-					useQueuedMessagesStore.getState().markHandoff(id);
-				}
+				if (msg.handoffAfter) await applyHandoffModel(id);
+				else await applyModelForMessage(id, msg.switchModel);
 				try {
 					await sendTurn(id, msg.blocks);
 				} catch (err) {
-					if (msg.handoffAfter) {
-						useQueuedMessagesStore.getState().clearHandoff(id);
-					}
+					if (msg.handoffAfter) abandonHandoff(id);
 					throw err;
 				}
 				return;
@@ -106,17 +106,22 @@ export function useQueuedMessageFlusher() {
 		const tryHandoff = (id: string): boolean => {
 			const { pendingHandoff, heldSessions } =
 				useQueuedMessagesStore.getState();
-			if (!pendingHandoff[id] || heldSessions[id]) return false;
-			useQueuedMessagesStore.getState().clearHandoff(id);
+			const originalModel = pendingHandoff[id];
+			if (!originalModel) return false;
 			const session = useSessionsStore.getState().sessions[id];
-			if (!session) return false;
-			const text = handoffReplyText(session);
-			if (text === null) return false;
+			const text =
+				session && !heldSessions[id] ? handoffReplyText(session) : null;
+			if (!session || text === null) {
+				abandonHandoff(id);
+				return false;
+			}
+			useQueuedMessagesStore.getState().clearHandoff(id);
 			runHandoff({
 				session,
 				text,
 				navigate: (to) => navigateRef.current(to),
 				followIfViewing: true,
+				model: originalModel.model,
 			});
 			return true;
 		};
