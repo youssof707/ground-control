@@ -20,3 +20,4 @@ Source of truth for app shortcuts. Update when one is added, changed, or removed
 - `Cmd+Shift+T` — restore the last deleted / handed-off session
 - `Cmd+Shift+H` — hand off the active session using its last assistant message
 - `Cmd+Delete` — delete the active session (not while a text field is focused)
+- `Cmd+Q` — does nothing; quit from the app menu or the Dock instead
