@@ -26,6 +26,8 @@ interface State {
 	branchModal: BranchModalTarget | null;
 	openBranches: (target: BranchModalTarget) => void;
 	closeBranches: () => void;
+	seenBranchSwitch: Record<string, string>;
+	markBranchSwitchSeen: (sessionId: string, key: string) => void;
 	viewed: Record<string, ReadonlySet<string>>;
 	toggleViewed: (checkout: string, key: string) => void;
 	comments: Record<string, ReviewComment[]>;
@@ -109,6 +111,11 @@ export const useSourceControlStore = create<State>((set) => ({
 	branchModal: null,
 	openBranches: (target) => set({ branchModal: target }),
 	closeBranches: () => set({ branchModal: null }),
+	seenBranchSwitch: {},
+	markBranchSwitchSeen: (sessionId, key) =>
+		set((s) =>
+			s.seenBranchSwitch[sessionId] === key ? s : { seenBranchSwitch: { ...s.seenBranchSwitch, [sessionId]: key } },
+		),
 	viewed: {},
 	toggleViewed: (checkout, key) =>
 		set((s) => {
@@ -270,6 +277,10 @@ export function keepOnlyRefreshing(checkouts: Iterable<string | null | undefined
 
 export function lastScanDuration(checkout: string): number {
 	return scheduler.lastDuration(checkout);
+}
+
+export function branchSwitchKey(from: string, to: string): string {
+	return `${from}\u0000${to}`;
 }
 
 export function isSourceControlModalOpen(): boolean {

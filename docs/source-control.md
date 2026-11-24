@@ -2,7 +2,7 @@
 
 A repo card sits at the right end of every session header (and the draft header row). It replaces the old branch chip and change-count chip. It has two rows:
 
-- **Branch row**: branch icon plus the checked-out branch, or `Detached at <sha>`. Clicking it opens the branch modal (sessions only). When the branch differs from the one at your last message, the text turns red and gets a red dot. The "Previously working on X" line and its **Switch back** button live in the branch modal, not the header.
+- **Branch row**: branch icon plus the checked-out branch, or `Detached at <sha>`. Clicking it opens the branch modal (sessions only). When the branch differs from the one at your last message, the text turns red and gets a red dot. Opening the branch modal clears the red for that session until the branch or baseline changes again (in memory only). The "Previously working on X" line and its **Switch back** button live in the branch modal, not the header.
   - Sync counts sit at the right end of this row, only when nonzero: `↓N` pulls (`git pull --ff-only`) and `↑N` pushes (`git push`). In sync shows nothing.
   - A branch with no upstream always shows `↑N`, where N is commits not on any `origin/*` ref (`git rev-list --count HEAD --not --remotes=origin`). Clicking it publishes with `git push -u origin HEAD`. With no `origin` remote, nothing shows.
   - While one runs, it shows a spinner and the other is disabled. On success the checkout rescans and the session's branch refreshes.
