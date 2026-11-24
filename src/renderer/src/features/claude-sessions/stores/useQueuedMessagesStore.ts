@@ -39,7 +39,7 @@ interface State {
 	heldSessions: Record<string, true>;
 	/** Last flush failure per session, surfaced on the chip. */
 	errorsBySession: Record<string, string>;
-	pendingHandoff: Record<string, true>;
+	pendingHandoff: Record<string, NextMessageModel>;
 
 	enqueue: (sessionId: string, msg: QueuedMessage) => void;
 	/** Pop the head. Returns undefined if the queue is empty. */
@@ -53,7 +53,7 @@ interface State {
 	hold: (sessionId: string) => void;
 	release: (sessionId: string) => void;
 	setError: (sessionId: string, err: string | null) => void;
-	markHandoff: (sessionId: string) => void;
+	markHandoff: (sessionId: string, originalModel: NextMessageModel) => void;
 	clearHandoff: (sessionId: string) => void;
 }
 
@@ -171,9 +171,9 @@ export const useQueuedMessagesStore = create<State>((set, get) => ({
 					: { ...s.errorsBySession, [sessionId]: err },
 		})),
 
-	markHandoff: (sessionId) =>
+	markHandoff: (sessionId, originalModel) =>
 		set((s) => ({
-			pendingHandoff: { ...s.pendingHandoff, [sessionId]: true },
+			pendingHandoff: { ...s.pendingHandoff, [sessionId]: originalModel },
 		})),
 
 	clearHandoff: (sessionId) =>

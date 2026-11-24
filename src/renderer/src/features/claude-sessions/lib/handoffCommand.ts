@@ -7,6 +7,8 @@ import { blocksOf } from "./messageContent";
 
 export const HANDOFF_COMMAND = "/handoff";
 
+export const HANDOFF_MODEL = "sonnet";
+
 export const HANDOFF_PROMPT = [
 	"Give me a handoff for a fresh session: a self-contained brief that a new Claude session with none of this conversation's context can pick up and continue from without asking anything.",
 	"",
