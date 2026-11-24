@@ -15,6 +15,8 @@ The card is hidden when the folder isn't a git repo, the folder is missing, or g
 
 The meta row opens a near-full-screen modal. It has the changed-file list on the left and an inline Monaco diff on the right. A dropdown switches between the repo's checkouts.
 
+Confirming a commit closes the source control modal right away. The commit runs in the background, with a spinner on the card's push button. If it fails, the modal reopens (unless another one is already open) and shows the error.
+
 ## The file list
 
 - Two groups, like VS Code: **Staged Changes** (HEAD vs index) on top, then **Changes** (index vs working tree, plus untracked files and conflicts). A path with both kinds appears in both groups.
