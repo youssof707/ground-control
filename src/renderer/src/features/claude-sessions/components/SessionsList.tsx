@@ -1013,11 +1013,7 @@ export function SessionsList({
 					paddingBottom: "var(--sidebar-footer-h, 56px)",
 				}}
 			>
-				{visibleOrder.length === 0 && !draft ? (
-					<div className="message" style={{ margin: 12 }}>
-						No sessions yet. Click "New Session".
-					</div>
-				) : (
+				{visibleOrder.length === 0 && !draft ? null : (
 					<div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
 						{draftHost.kind === "top"
 							? renderDraftRow(sidebarRows.length === 0)
