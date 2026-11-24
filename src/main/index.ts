@@ -124,6 +124,10 @@ function createWindow(): BrowserWindow {
 
 function buildMenu(): Electron.Menu {
 	const isMac = process.platform === "darwin";
+	const quitItem: Electron.MenuItemConstructorOptions = {
+		label: `Quit ${app.name}`,
+		click: () => app.quit(),
+	};
 	// Custom app menu so we can insert "Check for Updates…" in the standard
 	// macOS location (right below "About"). Otherwise identical to the default
 	// `{ role: "appMenu" }` template.
@@ -148,7 +152,7 @@ function buildMenu(): Electron.Menu {
 			{ role: "hideOthers" },
 			{ role: "unhide" },
 			{ type: "separator" },
-			{ role: "quit" },
+			quitItem,
 		],
 	};
 	// Custom View menu (instead of `{ role: "viewMenu" }`) so we can drop plain
@@ -171,7 +175,7 @@ function buildMenu(): Electron.Menu {
 		...(isMac ? [appMenu] : []),
 		{
 			label: "File",
-			submenu: [isMac ? { role: "close" } : { role: "quit" }],
+			submenu: [isMac ? { role: "close" } : quitItem],
 		},
 		{ role: "editMenu" },
 		viewMenu,
