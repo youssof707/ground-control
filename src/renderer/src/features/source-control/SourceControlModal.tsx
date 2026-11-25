@@ -677,6 +677,8 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 		[perform],
 	);
 
+	const onStageAll = useCallback(() => perform("stage", [], "all"), [perform]);
+
 	const closeMenu = useCallback(() => {
 		setMenu(null);
 		listRef.current?.focus();
@@ -795,6 +797,8 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 				onViewed={onViewed}
 				onCommit={openCommit}
 				committing={committing}
+				onStageAll={onStageAll}
+				staging={busy}
 			/>
 		);
 	} else if (summary) {
