@@ -112,25 +112,20 @@ export async function setCollapsed(
 	});
 }
 
-/**
- * Rename a group. Missing group returns null (mirrors `setCollapsed`'s
- * silent no-op — a rename can race an auto-delete from another window,
- * and the modal already surfaces the error in that slot). No-op if the
- * name is unchanged so persistence is skipped on redundant saves.
- * The caller is responsible for trim + non-empty validation.
- */
-export async function setName(
+export async function update(
 	id: string,
-	name: string,
+	patch: Pick<SessionGroup, "name" | "color">,
 ): Promise<SessionGroup | null> {
 	assertInitialized();
 	return enqueue(async () => {
 		const current = db.items[id];
 		if (!current) return null;
-		if (current.name === name) return structuredClone(current);
+		if (current.name === patch.name && current.color === patch.color) {
+			return structuredClone(current);
+		}
 		const merged: SessionGroup = SessionGroupSchema.parse({
 			...current,
-			name,
+			...patch,
 		});
 		db.items[id] = merged;
 		await persist();

@@ -40,3 +40,12 @@ export const CreateSessionGroupInputSchema = z.object({
 export type CreateSessionGroupInput = z.infer<
 	typeof CreateSessionGroupInputSchema
 >;
+
+export const UpdateSessionGroupInputSchema = z.object({
+	groupId: z.string(),
+	name: z.string(),
+	color: WorktreeColorSchema,
+});
+export type UpdateSessionGroupInput = z.infer<
+	typeof UpdateSessionGroupInputSchema
+>;

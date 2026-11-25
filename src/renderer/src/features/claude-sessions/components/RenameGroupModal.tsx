@@ -1,20 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useBackdropDismiss } from "../../../components/useBackdropDismiss";
-import { LabeledInput } from "../../../design/FormControls";
+import { ColorPicker, LabeledInput } from "../../../design/FormControls";
+import {
+	DEFAULT_WORKTREE_COLOR,
+	type WorktreeColor,
+} from "@shared/schemas/worktrees";
 import { useSessionGroupsStore } from "../stores/useSessionGroupsStore";
 
-/**
- * Modal for renaming a sidebar session group. Mirrors AddToGroupModal's
- * shell (same `modal-backdrop` / `modal-card` / `modal-title` /
- * `modal-actions` / `modal-error` CSS classes, same Escape-to-close /
- * Enter-to-submit / reset-on-open behavior), just simpler — a single
- * name field, no color picker, no member list.
- *
- * Open ⇔ `groupId != null`, matching the pendingGroupSessionId /
- * pendingDeleteId pattern SessionsList uses for its other modals.
- * The current name is seeded from the groups store on open so the
- * input starts populated (edit-in-place feel rather than clear-first).
- */
 export function RenameGroupModal({
 	groupId,
 	onClose,
@@ -28,20 +20,18 @@ export function RenameGroupModal({
 	const group = groupId ? groups[groupId] : undefined;
 
 	const [name, setName] = useState("");
+	const [color, setColor] = useState<WorktreeColor>(DEFAULT_WORKTREE_COLOR);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	// Seed the input with the group's current name on every open — the
-	// modal is edit-in-place, not blank. Also clears busy/error carried
-	// over from a previous open (mirrors AddToGroupModal).
 	useEffect(() => {
 		if (!open) return;
 		setName(group?.name ?? "");
+		setColor(group?.color ?? DEFAULT_WORKTREE_COLOR);
 		setBusy(false);
 		setError(null);
-	}, [open, group?.name]);
+	}, [open, group?.name, group?.color]);
 
-	// Escape closes.
 	useEffect(() => {
 		if (!open) return;
 		const handler = (e: KeyboardEvent) => {
@@ -55,7 +45,9 @@ export function RenameGroupModal({
 	}, [open, onClose]);
 
 	const trimmed = name.trim();
-	const unchanged = group ? trimmed === group.name : false;
+	const unchanged = group
+		? trimmed === group.name && color === group.color
+		: false;
 	const canSave = !busy && trimmed.length > 0 && !unchanged;
 
 	const handleSave = useCallback(async () => {
@@ -63,17 +55,14 @@ export function RenameGroupModal({
 		setBusy(true);
 		setError(null);
 		try {
-			await window.claude.renameGroup(groupId, trimmed);
-			// Hydrate the local cache immediately: main's `state:changed`
-			// is skip-self, so without this upsert the originating window
-			// would keep rendering the stale name until the next refetch.
-			upsert({ ...group, name: trimmed });
+			await window.claude.updateGroup({ groupId, name: trimmed, color });
+			upsert({ ...group, name: trimmed, color });
 			onClose();
 		} catch (err) {
-			setError((err as Error).message || "Failed to rename group");
+			setError((err as Error).message || "Failed to update group");
 			setBusy(false);
 		}
-	}, [groupId, group, canSave, trimmed, upsert, onClose]);
+	}, [groupId, group, canSave, trimmed, color, upsert, onClose]);
 
 	const backdropProps = useBackdropDismiss(onClose);
 
@@ -89,10 +78,17 @@ export function RenameGroupModal({
 				style={{ width: "min(380px, calc(100vw - 32px))" }}
 			>
 				<h2 id="rename-group-title" className="modal-title">
-					Rename group
+					Edit group
 				</h2>
 
-				<div style={{ marginBottom: 16 }}>
+				<div
+					style={{
+						display: "flex",
+						flexDirection: "column",
+						gap: 10,
+						marginBottom: 16,
+					}}
+				>
 					<LabeledInput
 						label="Name"
 						value={name}
@@ -102,6 +98,12 @@ export function RenameGroupModal({
 						maxLength={60}
 						mono={false}
 						onEnter={handleSave}
+					/>
+					<ColorPicker
+						value={color}
+						onChange={setColor}
+						disabled={busy}
+						label="Color"
 					/>
 				</div>
 
@@ -116,7 +118,7 @@ export function RenameGroupModal({
 						disabled={!canSave}
 						onClick={() => void handleSave()}
 					>
-						{busy ? "…" : "Rename"}
+						{busy ? "…" : "Save"}
 					</button>
 				</div>
 			</div>

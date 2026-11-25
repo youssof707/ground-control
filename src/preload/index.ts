@@ -11,7 +11,10 @@ import type { BabysitConfig } from "../shared/claude-sessions/babysit";
 import type { CreateWorktreeInput } from "../shared/schemas/worktrees";
 import type { GitFixRequest } from "../shared/schemas/source_control";
 import type { FileViewRequest } from "../shared/schemas/file_view";
-import type { CreateSessionGroupInput } from "../shared/schemas/session_groups";
+import type {
+	CreateSessionGroupInput,
+	UpdateSessionGroupInput,
+} from "../shared/schemas/session_groups";
 import type {
 	CreateShortcutInput,
 	UpdateShortcutInput,
@@ -149,8 +152,8 @@ const claude = {
 		ipcRenderer.invoke("groups:setSessionGroup", { sessionId, groupId }),
 	setGroupCollapsed: (groupId: string, collapsed: boolean) =>
 		ipcRenderer.invoke("groups:setCollapsed", { groupId, collapsed }),
-	renameGroup: (groupId: string, name: string) =>
-		ipcRenderer.invoke("groups:rename", { groupId, name }),
+	updateGroup: (input: UpdateSessionGroupInput) =>
+		ipcRenderer.invoke("groups:update", input),
 	listShortcuts: () => ipcRenderer.invoke("shortcuts:list"),
 	createShortcut: (input: CreateShortcutInput) =>
 		ipcRenderer.invoke("shortcuts:create", input),

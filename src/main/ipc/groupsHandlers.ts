@@ -3,7 +3,10 @@ import { ulid } from "ulid";
 import * as groupsStore from "../core/store/session_groups";
 import * as sessionStore from "../core/store/claude_session";
 import { broadcast } from "../windows";
-import type { CreateSessionGroupInput } from "../../shared/schemas/session_groups";
+import {
+	UpdateSessionGroupInputSchema,
+	type CreateSessionGroupInput,
+} from "../../shared/schemas/session_groups";
 
 /**
  * IPC surface for sidebar session groups. Mirrors the worktreesHandlers
@@ -69,18 +72,13 @@ export function registerGroupsHandlers(): void {
 		},
 	);
 
-	ipcMain.handle(
-		"groups:rename",
-		async (e, payload: { groupId: string; name: string }) => {
-			const name = payload.name.trim();
-			if (!name) throw new Error("Group name is required");
-			// Silent no-op on missing group — mirrors setCollapsed: a rename
-			// can race an auto-delete from another window, and the modal's
-			// error slot handles the "group vanished" edge if we need it.
-			await groupsStore.setName(payload.groupId, name);
-			broadcast("state:changed", undefined, e.sender.id);
-		},
-	);
+	ipcMain.handle("groups:update", async (e, payload: unknown) => {
+		const input = UpdateSessionGroupInputSchema.parse(payload);
+		const name = input.name.trim();
+		if (!name) throw new Error("Group name is required");
+		await groupsStore.update(input.groupId, { name, color: input.color });
+		broadcast("state:changed", undefined, e.sender.id);
+	});
 
 	ipcMain.handle(
 		"groups:setSessionGroup",
