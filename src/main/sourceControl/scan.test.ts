@@ -184,6 +184,13 @@ describe("scanCheckout", () => {
 		expect(result.entries.map((e) => [e.path, e.status])).toEqual([["a.txt", "U"]]);
 	});
 
+	it("reports the branch name when a tag shares it", async () => {
+		const tagged = makeRepo("tagged");
+		git(tagged, "commit", "-q", "--allow-empty", "-m", "a");
+		git(tagged, "tag", "main");
+		expect((await scanOk(tagged)).header.branch).toBe("main");
+	});
+
 	it("handles a detached head", async () => {
 		const detached = makeRepo("detached");
 		write(path.join(detached, "a.txt"), "a\n");

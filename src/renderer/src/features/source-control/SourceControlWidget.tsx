@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { BRANCH_PREFETCH_MAX_AGE_MS, refreshBranches } from "./branchCache";
 import { compactCount, plural } from "./format";
 import { branchSwitchKey, isHardFailure, runRemoteOp, useSourceControlStore } from "./useSourceControlStore";
@@ -87,10 +88,19 @@ export function SourceControlWidget({
 	const dismissRemoteError = useSourceControlStore((s) => s.dismissRemoteError);
 	const seenSwitch = useSourceControlStore((s) => (sessionId ? s.seenBranchSwitch[sessionId] : undefined));
 	const markBranchSwitchSeen = useSourceControlStore((s) => s.markBranchSwitchSeen);
+	const liveBranch = summary?.branch ?? null;
+
+	useEffect(() => {
+		if (!sessionId || !summary) return;
+		const liveRef = summary.branch ?? (summary.head ? "HEAD" : null);
+		if (liveRef && liveRef !== sessionBranch) {
+			void window.claude.refreshBranch(sessionId).catch(() => undefined);
+		}
+	}, [sessionId, summary, sessionBranch]);
 
 	if (!checkout || isHardFailure(error)) return null;
 
-	const branch = (sessionBranch && sessionBranch !== "HEAD" ? sessionBranch : null) ?? summary?.branch ?? null;
+	const branch = summary ? liveBranch : sessionBranch && sessionBranch !== "HEAD" ? sessionBranch : null;
 	const branchText = branch ?? (summary?.head ? `Detached at ${summary.head}` : summary ? "Detached HEAD" : "…");
 	const switchKey =
 		branch && lastUserMessageBranch && branch !== lastUserMessageBranch

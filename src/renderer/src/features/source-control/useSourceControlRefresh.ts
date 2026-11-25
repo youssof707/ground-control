@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useSessionsStore } from "../claude-sessions/stores/useSessionsStore";
+import { call, cancel, type ScmCall } from "./scmClient";
 import { useSessionCheckout } from "./useSessionCheckout";
 import {
 	backgroundFetch,
@@ -24,6 +25,7 @@ function documentActive(): boolean {
 export function useSourceControlRefresh(activeSessionId: string | undefined): void {
 	const checkout = useSessionCheckout(activeSessionId);
 	const modalCheckout = useSourceControlStore((s) => s.modalCheckout);
+	const connection = useSourceControlStore((s) => s.connection);
 	const checkoutRef = useRef(checkout);
 	checkoutRef.current = checkout;
 
@@ -33,6 +35,28 @@ export function useSourceControlRefresh(activeSessionId: string | undefined): vo
 		keepOnlyRefreshing([checkout, modalCheckout]);
 		if (checkout) requestRefresh(checkout);
 	}, [checkout, modalCheckout]);
+
+	useEffect(() => {
+		if (!checkout || connection !== "ready") return;
+		let active: ScmCall<"watchHead"> | null = null;
+		const arm = (): void => {
+			const watch = call<"watchHead">({ t: "watchHead", checkout });
+			active = watch;
+			void watch.promise.then((reply) => {
+				if (active !== watch) return;
+				active = null;
+				if (!reply.ok) return;
+				requestRefresh(checkout);
+				arm();
+			});
+		};
+		arm();
+		return () => {
+			const current = active;
+			active = null;
+			if (current) cancel(current.id);
+		};
+	}, [checkout, connection]);
 
 	useEffect(() => {
 		const fetchIfStale = (minGap: number): void => {

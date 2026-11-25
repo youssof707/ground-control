@@ -123,6 +123,7 @@ export type ScmRequest =
 	| { t: "branches"; id: number; checkout: string }
 	| { t: "switch"; id: number; checkout: string; branch: string; remote: boolean }
 	| { t: "remote"; id: number; checkout: string; op: ScmRemoteOp }
+	| { t: "watchHead"; id: number; checkout: string }
 	| { t: "cancel"; id: number };
 
 export type ScmCallKind = Exclude<ScmRequest["t"], "cancel">;
@@ -162,6 +163,10 @@ export type ScmRemoteReply =
 	| { t: "remote"; id: number; ok: true }
 	| { t: "remote"; id: number; ok: false; reason: ScmFailure; message?: string };
 
+export type ScmWatchHeadReply =
+	| { t: "watchHead"; id: number; ok: true }
+	| { t: "watchHead"; id: number; ok: false; reason: ScmFailure };
+
 export type ScmReply =
 	| ScmScanReply
 	| ScmRowsReply
@@ -169,7 +174,8 @@ export type ScmReply =
 	| ScmApplyReply
 	| ScmBranchesReply
 	| ScmSwitchReply
-	| ScmRemoteReply;
+	| ScmRemoteReply
+	| ScmWatchHeadReply;
 
 export type ScmReplyFor<K extends ScmCallKind> = Extract<ScmReply, { t: K }>;
 
