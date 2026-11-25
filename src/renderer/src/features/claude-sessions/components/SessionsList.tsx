@@ -2251,7 +2251,7 @@ function GroupContextMenu({
 					e.currentTarget.style.background = "transparent";
 				}}
 			>
-				Rename…
+				Edit…
 			</button>
 		</div>
 	);

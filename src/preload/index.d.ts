@@ -29,6 +29,7 @@ import type {
 import type {
 	CreateSessionGroupInput,
 	SessionGroup,
+	UpdateSessionGroupInput,
 } from "../shared/schemas/session_groups";
 import type {
 	CreateShortcutInput,
@@ -174,7 +175,7 @@ declare global {
 				groupId: string,
 				collapsed: boolean,
 			) => Promise<void>;
-			renameGroup: (groupId: string, name: string) => Promise<void>;
+			updateGroup: (input: UpdateSessionGroupInput) => Promise<void>;
 			listShortcuts: () => Promise<Shortcut[]>;
 			createShortcut: (input: CreateShortcutInput) => Promise<Shortcut>;
 			updateShortcut: (input: UpdateShortcutInput) => Promise<Shortcut>;
