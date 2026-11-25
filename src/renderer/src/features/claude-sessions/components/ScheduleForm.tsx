@@ -21,13 +21,15 @@ import { folderName } from "../lib/folderName";
 import {
 	HOUR_MS,
 	MINUTE_MS,
+	WEEKDAYS_MONDAY_FIRST,
 	fromDatetimeLocalValue,
 	fromTimeValue,
 	toDatetimeLocalValue,
 	toTimeValue,
 } from "../lib/scheduleFormat";
 
-const DEFAULT_DAILY_TIME = "09:00";
+const DEFAULT_TIME_OF_DAY = "09:00";
+const DEFAULT_WEEKLY_DAYS: readonly number[] = [1, 3, 5];
 const SCHEDULE_OMITTED_RULES: readonly BabysitCardKey[] = ["plan", "keepAwake"];
 
 export interface ScheduleDraft {
@@ -38,7 +40,8 @@ export interface ScheduleDraft {
 	onceAt: string;
 	everyAmount: string;
 	everyUnit: "minutes" | "hours";
-	dailyTime: string;
+	timeOfDay: string;
+	weeklyDays: readonly number[];
 	babysit: BabysitDraft;
 	model: string | undefined;
 	alwaysShowStatus: boolean;
@@ -55,7 +58,8 @@ export function draftFromSchedule(s?: Schedule): ScheduleDraft {
 			onceAt: toDatetimeLocalValue(Date.now() + HOUR_MS),
 			everyAmount: "30",
 			everyUnit: "minutes",
-			dailyTime: DEFAULT_DAILY_TIME,
+			timeOfDay: DEFAULT_TIME_OF_DAY,
+			weeklyDays: DEFAULT_WEEKLY_DAYS,
 			babysit: draftFromConfig(defaultBabysit),
 			model: useSettingsStore.getState().defaultModel,
 			alwaysShowStatus: false,
@@ -80,8 +84,11 @@ export function draftFromSchedule(s?: Schedule): ScheduleDraft {
 				)
 				: "30",
 		everyUnit: wholeHours ? "hours" : "minutes",
-		dailyTime:
-			kind.type === "daily" ? toTimeValue(kind.minuteOfDay) : DEFAULT_DAILY_TIME,
+		timeOfDay:
+			kind.type === "daily" || kind.type === "weekly"
+				? toTimeValue(kind.minuteOfDay)
+				: DEFAULT_TIME_OF_DAY,
+		weeklyDays: kind.type === "weekly" ? kind.days : DEFAULT_WEEKLY_DAYS,
 		babysit: draftFromConfig(s.babysit ?? defaultBabysit),
 		model: s.model,
 		alwaysShowStatus: s.alwaysShowStatus ?? false,
@@ -106,9 +113,20 @@ export function validateDraft(
 		if (at <= now) return { ok: false, error: "Pick a time in the future" };
 		kind = { type: "once", at };
 	} else if (d.kind === "daily") {
-		const minuteOfDay = fromTimeValue(d.dailyTime);
+		const minuteOfDay = fromTimeValue(d.timeOfDay);
 		if (minuteOfDay === null) return { ok: false, error: "Pick a time of day" };
 		kind = { type: "daily", minuteOfDay };
+	} else if (d.kind === "weekly") {
+		if (d.weeklyDays.length === 0) {
+			return { ok: false, error: "Pick at least one day" };
+		}
+		const minuteOfDay = fromTimeValue(d.timeOfDay);
+		if (minuteOfDay === null) return { ok: false, error: "Pick a time of day" };
+		kind = {
+			type: "weekly",
+			days: [...d.weeklyDays].sort((a, b) => a - b),
+			minuteOfDay,
+		};
 	} else {
 		const amount = Number(d.everyAmount);
 		if (!Number.isInteger(amount) || amount < 1) {
@@ -160,6 +178,7 @@ const KIND_OPTIONS = [
 	{ value: "once", label: "Once", tone: T.text },
 	{ value: "repeat", label: "Every", tone: T.text },
 	{ value: "daily", label: "Daily", tone: T.text },
+	{ value: "weekly", label: "Weekly", tone: T.text },
 ] as const satisfies readonly {
 	value: ScheduleDraft["kind"];
 	label: string;
@@ -283,16 +302,23 @@ export function ScheduleFormFields({
 							onFocus={focusBorder}
 							onBlur={blurBorder}
 						/>
-					) : value.kind === "daily" ? (
+					) : value.kind === "daily" || value.kind === "weekly" ? (
 						<>
+							{value.kind === "weekly" && (
+								<WeekdayPicker
+									days={value.weeklyDays}
+									onChange={(weeklyDays) => onChange({ ...value, weeklyDays })}
+									disabled={disabled}
+								/>
+							)}
 							<span style={{ fontSize: 12.5, color: T.textDim }}>at</span>
 							<input
 								type="time"
 								aria-label="Time of day"
-								value={value.dailyTime}
+								value={value.timeOfDay}
 								step={60}
 								disabled={disabled}
-								onChange={(e) => onChange({ ...value, dailyTime: e.target.value })}
+								onChange={(e) => onChange({ ...value, timeOfDay: e.target.value })}
 								onKeyDown={blockNativePicker}
 								style={inputStyle}
 								onFocus={focusBorder}
@@ -358,6 +384,85 @@ export function ScheduleFormFields({
 				/>
 			</div>
 		</div>
+	);
+}
+
+function WeekdayPicker({
+	days,
+	onChange,
+	disabled,
+}: {
+	days: readonly number[];
+	onChange: (days: readonly number[]) => void;
+	disabled?: boolean;
+}) {
+	const toggle = (day: number) =>
+		onChange(days.includes(day) ? days.filter((d) => d !== day) : [...days, day]);
+	return (
+		<div
+			role="group"
+			aria-label="Days of the week"
+			style={{
+				display: "inline-flex",
+				flexShrink: 0,
+				background: T.bg,
+				border: `0.5px solid ${T.border}`,
+				borderRadius: 7,
+				padding: 2,
+				gap: 2,
+			}}
+		>
+			{WEEKDAYS_MONDAY_FIRST.map((w) => (
+				<WeekdayToggle
+					key={w.day}
+					label={w.short}
+					active={days.includes(w.day)}
+					onClick={() => toggle(w.day)}
+					disabled={disabled}
+				/>
+			))}
+		</div>
+	);
+}
+
+function WeekdayToggle({
+	label,
+	active,
+	onClick,
+	disabled,
+}: {
+	label: string;
+	active: boolean;
+	onClick: () => void;
+	disabled?: boolean;
+}) {
+	const [hover, setHover] = useState(false);
+	return (
+		<button
+			type="button"
+			aria-pressed={active}
+			onClick={onClick}
+			onMouseEnter={() => setHover(true)}
+			onMouseLeave={() => setHover(false)}
+			disabled={disabled}
+			style={{
+				appearance: "none",
+				border: "none",
+				background: active ? T.surfaceHi : hover ? T.surface : "transparent",
+				color: active ? T.text : T.textDim,
+				fontSize: 11.5,
+				fontFamily: "inherit",
+				fontWeight: active ? 600 : 500,
+				padding: "5px 8px",
+				borderRadius: 5,
+				whiteSpace: "nowrap",
+				cursor: disabled ? "not-allowed" : "pointer",
+				opacity: disabled ? 0.5 : 1,
+				transition: "background 80ms ease, color 80ms ease",
+			}}
+		>
+			{label}
+		</button>
 	);
 }
 

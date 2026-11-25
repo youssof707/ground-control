@@ -30,11 +30,38 @@ function formatMinuteOfDay(minuteOfDay: number): string {
 	return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
+export const WEEKDAYS_MONDAY_FIRST = [
+	{ day: 1, short: "Mon" },
+	{ day: 2, short: "Tue" },
+	{ day: 3, short: "Wed" },
+	{ day: 4, short: "Thu" },
+	{ day: 5, short: "Fri" },
+	{ day: 6, short: "Sat" },
+	{ day: 0, short: "Sun" },
+] as const;
+
+const WORKWEEK = [1, 2, 3, 4, 5];
+
+function formatWeekdays(days: readonly number[]): string {
+	const set = new Set(days);
+	if (set.size === 7) return "Daily";
+	if (set.size === WORKWEEK.length && WORKWEEK.every((d) => set.has(d))) {
+		return "Weekdays";
+	}
+	if (set.size === 2 && set.has(0) && set.has(6)) return "Weekends";
+	return WEEKDAYS_MONDAY_FIRST.filter((w) => set.has(w.day))
+		.map((w) => w.short)
+		.join(", ");
+}
+
 export function formatScheduleKind(
 	kind: ScheduleKind,
 	now = Date.now(),
 ): string {
 	if (kind.type === "daily") return `Daily at ${formatMinuteOfDay(kind.minuteOfDay)}`;
+	if (kind.type === "weekly") {
+		return `${formatWeekdays(kind.days)} at ${formatMinuteOfDay(kind.minuteOfDay)}`;
+	}
 	if (kind.type === "repeat") {
 		if (kind.everyMs % HOUR_MS === 0) {
 			const hours = kind.everyMs / HOUR_MS;

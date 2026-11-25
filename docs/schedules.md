@@ -2,6 +2,14 @@
 
 The UI calls these "Tasks" (sidebar widget, modal, shortcut label). Code, IPC and storage keep the `schedule` name.
 
+A schedule's `kind` is one of: `once` (a single date and time), `repeat` (every N minutes
+or hours), `daily` (one time every day), or `weekly` (one time on chosen weekdays, e.g. Mon,
+Wed, Fri at 9:00; `days` uses `Date.getDay()` numbers, Sunday = 0). `nextFireAfter` in
+`src/shared/schemas/schedules.ts` computes the next local-time run for each. The form's
+Weekly option shows Mon to Sun toggles plus one time field (shared with Daily) and
+requires at least one day. Cadence labels collapse all seven days to "Daily", Mon to Fri
+to "Weekdays", and Sat + Sun to "Weekends".
+
 Each schedule owns exactly one session. Every run deletes the schedule's previous
 session (`ScheduleRunner.prune`), and there is no option to keep past runs. Replying
 to a scheduled session never detaches it from its schedule.
