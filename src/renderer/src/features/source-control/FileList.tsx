@@ -81,6 +81,8 @@ function GroupHeader({
 	commitLabel,
 	onCommit,
 	committing,
+	onStageAll,
+	staging,
 }: {
 	staged: boolean;
 	total: number;
@@ -89,6 +91,8 @@ function GroupHeader({
 	commitLabel?: string;
 	onCommit?: () => void;
 	committing: boolean;
+	onStageAll?: () => void;
+	staging: boolean;
 }) {
 	return (
 		<div
@@ -103,6 +107,17 @@ function GroupHeader({
 		>
 			<span className="scm-group-title">{staged ? "Staged Changes" : "Changes"}</span>
 			<span className="scm-group-count">{total.toLocaleString("en-US")}</span>
+			{onStageAll ? (
+				<button
+					type="button"
+					className="scm-group-commit"
+					tabIndex={-1}
+					disabled={staging}
+					onClick={onStageAll}
+				>
+					Stage All
+				</button>
+			) : null}
 			{onCommit ? (
 				<button
 					type="button"
@@ -133,9 +148,25 @@ export const FileList = forwardRef<
 		onViewed: (index: number) => void;
 		onCommit: (all: boolean) => void;
 		committing: boolean;
+		onStageAll: () => void;
+		staging: boolean;
 	}
 >(function FileList(
-	{ rows, focused, label, onPointer, onMove, onSelectAll, onRowContext, onGroupContext, onViewed, onCommit, committing },
+	{
+		rows,
+		focused,
+		label,
+		onPointer,
+		onMove,
+		onSelectAll,
+		onRowContext,
+		onGroupContext,
+		onViewed,
+		onCommit,
+		committing,
+		onStageAll,
+		staging,
+	},
 	ref,
 ) {
 	const listRef = useRef<HTMLDivElement>(null);
@@ -233,6 +264,8 @@ export const FileList = forwardRef<
 						at.staged ? () => onCommit(false) : rows.stagedTotal === 0 ? () => onCommit(true) : undefined
 					}
 					committing={committing}
+					onStageAll={at.staged ? undefined : onStageAll}
+					staging={staging}
 				/>,
 			);
 			continue;

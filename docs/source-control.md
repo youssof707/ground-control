@@ -28,6 +28,7 @@ Sending the first message of a draft waits for its worktree to finish being crea
 - Selection: click selects one row, Cmd-click toggles a row, Shift-click and Shift+arrows select a range from the anchor, Cmd+A selects every row.
 - Actions live only in a right-click menu; rows have no buttons. Right-clicking a row selects it unless it is already part of the selection, then offers Stage (if any picked row is unstaged), Unstage (if any is staged) and Discard Changes for the whole selection. Right-clicking a group header offers Stage All or Unstage All, and Discard All Changes. The context-menu key or Shift+F10 opens the menu for the focused row.
 - Each row has an eye toggle at its right edge (shown on hover; a green check once viewed) that dims the row. Viewed state is kept in memory per checkout (staged and unstaged entries of a file are tracked separately), survives closing the modal, and is lost on reload.
+- The **Changes** header has a **Stage All** button that stages the whole group at once (same as the header's Stage All menu item, no confirm). It is disabled while another action runs. When nothing is staged, **Commit All** sits next to it.
 - Discard always asks once, then reverts everything picked with no exceptions:
   - staged rows and conflicts go back to HEAD in both index and working tree, and files that only exist in the index are deleted;
   - unstaged rows go back to the index;
