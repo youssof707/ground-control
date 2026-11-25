@@ -73,6 +73,9 @@ export function registerTerminalsHandlers(): void {
 	ipcMain.on("terminals:write", (_e, id: string, data: string) => {
 		if (typeof data === "string") manager.write(id, data);
 	});
+	ipcMain.on("terminals:markGroupUsed", (_e, groupId: unknown) => {
+		if (typeof groupId === "string") manager.markGroupUsed(groupId);
+	});
 	ipcMain.on("terminals:resize", (_e, id: string, cols: number, rows: number) =>
 		manager.resize(id, cols, rows),
 	);

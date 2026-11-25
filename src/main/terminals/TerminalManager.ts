@@ -124,6 +124,7 @@ export class TerminalManager {
 				name: group[0]?.info.name,
 				cwd: group[0]?.info.cwd ?? homedir(),
 				commands: group.map((entry) => entry.info.lastCommand ?? ""),
+				lastUsedAt: groupLastUsedAt(group),
 			};
 		});
 	}
@@ -135,9 +136,11 @@ export class TerminalManager {
 			const commands = group.commands.slice(0, MAX_TERMINAL_GROUP_SIZE);
 			for (const command of commands.length > 0 ? commands : [""]) {
 				const entry = this.spawnEntry(cwd, groupId, group.name);
-				if (command.trim()) {
-					entry.info = { ...entry.info, lastCommand: command.trim() };
-				}
+				entry.info = {
+					...entry.info,
+					lastCommand: command.trim() || undefined,
+					lastUsedAt: group.lastUsedAt ?? 0,
+				};
 			}
 		}
 		if (groups.length > 0) this.emitChanged();
@@ -156,6 +159,7 @@ export class TerminalManager {
 			cwd,
 			env: { ...process.env, TERM: "xterm-256color" },
 		});
+		const now = Date.now();
 		const entry: TerminalEntry = {
 			pty,
 			shellName: basename(shell),
@@ -167,7 +171,8 @@ export class TerminalManager {
 				status: "idle",
 				lastLine: "",
 				lastLineAt: 0,
-				createdAt: Date.now(),
+				createdAt: now,
+				lastUsedAt: now,
 			},
 			buffer: "",
 			seq: 0,
@@ -257,6 +262,20 @@ export class TerminalManager {
 		entry.lastLine.input(data);
 		this.recordCommand(entry, data);
 		entry.pty.write(data);
+		this.markGroupUsed(entry.info.groupId);
+	}
+
+	markGroupUsed(groupId: string): void {
+		const group = this.groupEntries(groupId);
+		const mostRecent = this.list().reduce<TerminalInfo | undefined>(
+			(latest, info) =>
+				!latest || info.lastUsedAt > latest.lastUsedAt ? info : latest,
+			undefined,
+		);
+		if (group.length === 0 || mostRecent?.groupId === groupId) return;
+		const now = Date.now();
+		for (const entry of group) entry.info = { ...entry.info, lastUsedAt: now };
+		this.scheduleChanged();
 	}
 
 	renameGroup(groupId: string, name: string): void {
@@ -303,6 +322,7 @@ export class TerminalManager {
 		if (!isAlive(entry) || entry.info.status !== "running") return;
 		entry.stopSent = true;
 		entry.pty.write("\x03");
+		this.markGroupUsed(entry.info.groupId);
 	}
 
 	private rerunEntry(entry: TerminalEntry): void {
@@ -469,6 +489,10 @@ export class TerminalManager {
 		this.changedTimer = null;
 		this.events.changed(this.list());
 	}
+}
+
+function groupLastUsedAt(group: TerminalEntry[]): number {
+	return Math.max(0, ...group.map((entry) => entry.info.lastUsedAt));
 }
 
 function isAlive(entry: TerminalEntry): boolean {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMatch } from "react-router-dom";
 import type { TerminalInfo } from "@shared/schemas/terminals";
 import { T } from "../../../design/tokens";
@@ -71,7 +71,27 @@ export function TerminalsCard() {
 	const activeSessionId = useMatch("/sessions/:id/*")?.params.id;
 	const terminals = useTerminalsStore((s) => s.terminals);
 	const openGroupId = useTerminalsStore((s) => s.openGroupId);
-	const groups = groupTerminals(terminals);
+	const [frozenOrder, setFrozenOrder] = useState<string[] | null>(null);
+	const pointerInList = useRef(false);
+	const pendingActions = useRef(0);
+	const sortedGroups = groupTerminals(terminals);
+	const groups = frozenOrder
+		? keepOrder(sortedGroups, frozenOrder)
+		: sortedGroups;
+
+	const releaseOrder = () => {
+		if (!pointerInList.current && pendingActions.current === 0) {
+			setFrozenOrder(null);
+		}
+	};
+
+	const runRowAction = (action: Promise<void>) => {
+		pendingActions.current += 1;
+		void action.finally(() => {
+			pendingActions.current -= 1;
+			releaseOrder();
+		});
+	};
 
 	useEffect(() => {
 		const { refresh, setTerminals } = useTerminalsStore.getState();
@@ -81,6 +101,13 @@ export function TerminalsCard() {
 		void refresh();
 		return off;
 	}, []);
+
+	const listEmpty = groups.length === 0;
+	useEffect(() => {
+		if (!listEmpty) return;
+		pointerInList.current = false;
+		setFrozenOrder(null);
+	}, [listEmpty]);
 
 	const openGroup = groups.find((g) => g.id === openGroupId);
 
@@ -175,6 +202,14 @@ export function TerminalsCard() {
 				</div>
 				{groups.length > 0 ? (
 					<div
+						onMouseEnter={() => {
+							pointerInList.current = true;
+							setFrozenOrder((order) => order ?? groups.map((g) => g.id));
+						}}
+						onMouseLeave={() => {
+							pointerInList.current = false;
+							releaseOrder();
+						}}
 						style={{
 							display: "flex",
 							flexDirection: "column",
@@ -190,6 +225,7 @@ export function TerminalsCard() {
 								key={group.id}
 								group={group}
 								active={group.id === openGroupId}
+								onAction={runRowAction}
 							/>
 						))}
 					</div>
@@ -200,12 +236,22 @@ export function TerminalsCard() {
 	);
 }
 
+function keepOrder(groups: TerminalGroup[], order: string[]): TerminalGroup[] {
+	const rank = (group: TerminalGroup) => {
+		const index = order.indexOf(group.id);
+		return index === -1 ? order.length : index;
+	};
+	return [...groups].sort((a, b) => rank(a) - rank(b));
+}
+
 function TerminalRow({
 	group,
 	active,
+	onAction,
 }: {
 	group: TerminalGroup;
 	active: boolean;
+	onAction: (action: Promise<void>) => void;
 }) {
 	const [hovered, setHovered] = useState(false);
 	const label = groupLabel(group);
@@ -292,7 +338,9 @@ function TerminalRow({
 					type="button"
 					className="terminal-row-control"
 					aria-label={`Start terminal ${label}`}
-					onClick={() => void useTerminalsStore.getState().rerunGroup(group.id)}
+					onClick={() =>
+						onAction(useTerminalsStore.getState().rerunGroup(group.id))
+					}
 					style={{ ...ROW_ICON_BUTTON, opacity: hovered ? 1 : 0 }}
 				>
 					<PlayIcon />
@@ -305,9 +353,11 @@ function TerminalRow({
 					aria-label={`Stop terminal ${label}`}
 					onClick={(e) => {
 						const store = useTerminalsStore.getState();
-						void (e.detail >= 2
-							? store.restartGroup(group.id)
-							: store.stopGroup(group.id));
+						onAction(
+							e.detail >= 2
+								? store.restartGroup(group.id)
+								: store.stopGroup(group.id),
+						);
 					}}
 					style={{ ...ROW_ICON_BUTTON, opacity: hovered ? 1 : 0 }}
 				>

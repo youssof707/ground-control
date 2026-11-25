@@ -78,7 +78,10 @@ export const useTerminalsStore = create<State>((set, get) => ({
 			focusId: created.id,
 		}));
 	},
-	open: (groupId) => set({ openGroupId: groupId, focusId: null }),
+	open: (groupId) => {
+		window.claude.markTerminalGroupUsed(groupId);
+		set({ openGroupId: groupId, focusId: null });
+	},
 	setFocus: (id) => set({ focusId: id }),
 	close: () => set({ openGroupId: null, focusId: null }),
 	kill: async (id) => {
@@ -125,10 +128,16 @@ export function groupTerminals(terminals: TerminalInfo[]): TerminalGroup[] {
 		members.push(terminal);
 		groups.set(terminal.groupId, members);
 	}
-	return [...groups.entries()].map(([id, members]) => ({
-		id,
-		terminals: members.sort((a, b) => a.createdAt - b.createdAt),
-	}));
+	return [...groups.entries()]
+		.map(([id, members]) => ({
+			id,
+			terminals: members.sort((a, b) => a.createdAt - b.createdAt),
+		}))
+		.sort((a, b) => groupLastUsedAt(b) - groupLastUsedAt(a));
+}
+
+function groupLastUsedAt(group: TerminalGroup): number {
+	return Math.max(0, ...group.terminals.map((t) => t.lastUsedAt));
 }
 
 export function groupStatus(group: TerminalGroup): TerminalStatus {

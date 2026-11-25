@@ -18,6 +18,12 @@ window.
   status dot, Start / Stop (see below) for just that terminal, and a `×` that deletes just
   that pane (second click needed while alive). Typing `exit` in a pane removes it too. Delete in the header and the
   row `×` delete the whole group.
+- Rows are sorted by last use, most recent on top. A group counts as used when it is
+  created, split, opened from its row, or gets input: typing in any pane, or Start, Stop
+  or restart (row or pane card), or Load Config running its commands. The order survives
+  a restart (see below). While the pointer is over the rows, or a row's Start / Stop is
+  still in flight, the order is frozen so rows never move under the pointer; the new order
+  applies once the pointer leaves the list (rows added meanwhile go at the bottom).
 - A row shows the group's dot, name, terminal count (when more than 1), and the most
   recent output line from any of its terminals. The dot is red if any terminal crashed,
   else green if any is running, else gray. Clicking the row reopens the modal with each
@@ -61,7 +67,8 @@ window.
   foreground poll sees it back at its prompt. A terminal already back at its prompt after
   a Stop re-runs straight away.
 - Quitting kills every shell, without a quit confirmation, but first writes each group's
-  name, directory and per-terminal last command to `saved_terminals.json` in the data dir.
+  name, directory, per-terminal last command and last-used time to `saved_terminals.json`
+  in the data dir.
   On the next launch every saved group comes back as fresh idle shells in the same
   directory (home if it no longer exists), with the same name and pane count, and each
   terminal's last command remembered but not run. **Start** on the row revives them.

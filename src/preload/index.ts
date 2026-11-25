@@ -219,6 +219,8 @@ const claude = {
 		ipcRenderer.invoke("terminals:restartGroup", groupId),
 	renameTerminalGroup: (groupId: string, name: string) =>
 		ipcRenderer.invoke("terminals:renameGroup", groupId, name),
+	markTerminalGroupUsed: (groupId: string) =>
+		ipcRenderer.send("terminals:markGroupUsed", groupId),
 	listTerminalConfigs: () => ipcRenderer.invoke("terminals:listConfigs"),
 	saveTerminalConfig: (groupId: string, name: string) =>
 		ipcRenderer.invoke("terminals:saveConfig", groupId, name),
