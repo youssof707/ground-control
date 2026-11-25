@@ -177,8 +177,53 @@ async function tryCommit(checkout: string, message: string, all: boolean): Promi
 	}
 }
 
-export async function commitStaged(checkout: string, message: string, all: boolean): Promise<boolean> {
-	if (useSourceControlStore.getState().commits[checkout]?.busy) return false;
+const branchOps = new Map<string, Set<Promise<unknown>>>();
+
+function trackBranchOp<T>(checkout: string, run: Promise<T>): Promise<T> {
+	const ops = branchOps.get(checkout) ?? new Set<Promise<unknown>>();
+	branchOps.set(checkout, ops);
+	ops.add(run);
+	void run
+		.catch(() => undefined)
+		.finally(() => {
+			ops.delete(run);
+			if (ops.size === 0 && branchOps.get(checkout) === ops) branchOps.delete(checkout);
+		});
+	return run;
+}
+
+function worktreeRoot(path: string): string {
+	let root: string | null = null;
+	for (const entry of Object.values(useSourceControlStore.getState().byCheckout)) {
+		for (const worktree of entry.summary?.worktrees ?? []) {
+			const inside = path === worktree.path || path.startsWith(`${worktree.path}/`);
+			if (inside && (root === null || worktree.path.length > root.length)) root = worktree.path;
+		}
+	}
+	return root ?? path;
+}
+
+function sameBranch(a: string, b: string): boolean {
+	return a === b || worktreeRoot(a) === worktreeRoot(b);
+}
+
+export async function awaitBranchOps(checkout: string): Promise<void> {
+	const target = checkout.length > 1 ? checkout.replace(/\/+$/, "") : checkout;
+	for (;;) {
+		const pending = [...branchOps]
+			.filter(([opCheckout]) => sameBranch(opCheckout, target))
+			.flatMap(([, ops]) => [...ops]);
+		if (pending.length === 0) return;
+		await Promise.allSettled(pending);
+	}
+}
+
+export function commitStaged(checkout: string, message: string, all: boolean): Promise<boolean> {
+	if (useSourceControlStore.getState().commits[checkout]?.busy) return Promise.resolve(false);
+	return trackBranchOp(checkout, runCommit(checkout, message, all));
+}
+
+async function runCommit(checkout: string, message: string, all: boolean): Promise<boolean> {
 	patchCommit(checkout, { busy: message.trim() ? "committing" : "generating", error: null });
 	const first = await tryCommit(checkout, message, all);
 	let error = first.ok ? null : first.error;
@@ -222,8 +267,13 @@ export function backgroundFetch(checkout: string): void {
 		.finally(() => fetching.delete(checkout));
 }
 
-export async function runRemoteOp(checkout: string, op: ScmRemoteOp, sessionId?: string): Promise<void> {
-	if (useSourceControlStore.getState().remote[checkout]?.busy) return;
+export function runRemoteOp(checkout: string, op: ScmRemoteOp, sessionId?: string): Promise<void> {
+	if (useSourceControlStore.getState().remote[checkout]?.busy) return Promise.resolve();
+	const run = remoteOp(checkout, op, sessionId);
+	return op === "fetch" ? run : trackBranchOp(checkout, run);
+}
+
+async function remoteOp(checkout: string, op: ScmRemoteOp, sessionId?: string): Promise<void> {
 	patchRemote(checkout, { busy: op, error: null });
 	const reply = await call<"remote">({ t: "remote", checkout, op }).promise;
 	let ok = reply.ok;
