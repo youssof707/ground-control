@@ -13,6 +13,7 @@ import {
 import { ApplyError, applyAction, type ApplyTarget } from "./apply";
 import { listBranches, RepoError, switchBranch } from "./branches";
 import { readDiff } from "./content";
+import { watchHead } from "./headWatch";
 import { GitAbortedError, GitMissingError } from "./gitProcess";
 import type { StatusEntry } from "./parseStatus";
 import { runRemote } from "./remote";
@@ -37,6 +38,7 @@ export interface ScmServerDeps {
 	branches: (checkout: string, signal: AbortSignal) => Promise<ScmBranchList>;
 	switchBranch: (checkout: string, branch: string, remote: boolean) => Promise<void>;
 	remote: (checkout: string, op: ScmRemoteOp, signal: AbortSignal) => Promise<void>;
+	watchHead: (checkout: string, signal: AbortSignal) => Promise<void>;
 	cap: number;
 }
 
@@ -150,6 +152,7 @@ function isRequest(value: unknown): value is ScmRequest {
 			return true;
 		case "scan":
 		case "branches":
+		case "watchHead":
 			return typeof msg.checkout === "string" && msg.checkout.startsWith("/");
 		case "switch":
 			return (
@@ -250,6 +253,9 @@ export class ScmServer {
 				return;
 			case "remote":
 				void this.remote(conn, message);
+				return;
+			case "watchHead":
+				void this.watchHead(conn, message);
 				return;
 		}
 	}
@@ -524,6 +530,29 @@ export class ScmServer {
 		}
 	}
 
+	private async watchHead(
+		conn: Conn,
+		message: Extract<ScmRequest, { t: "watchHead" }>,
+	): Promise<void> {
+		const { id } = message;
+		const controller = new AbortController();
+		conn.cancels.set(id, () => {
+			conn.cancels.delete(id);
+			controller.abort();
+		});
+		try {
+			await this.deps.watchHead(message.checkout, controller.signal);
+			this.reply(conn, { t: "watchHead", id, ok: true });
+		} catch (err) {
+			this.reply(conn, {
+				t: "watchHead",
+				id,
+				ok: false,
+				reason: controller.signal.aborted ? "cancelled" : failureOf(err),
+			});
+		}
+	}
+
 	private async diff(
 		conn: Conn,
 		message: Extract<ScmRequest, { t: "diff" }>,
@@ -580,6 +609,7 @@ export function createScmServer(): ScmServer {
 		branches: listBranches,
 		switchBranch,
 		remote: runRemote,
+		watchHead,
 		cap: SCM_LIST_CAP,
 	});
 }

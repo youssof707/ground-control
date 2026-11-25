@@ -7,13 +7,14 @@ export async function getCurrentBranch(cwd: string): Promise<string | undefined>
 	try {
 		const { stdout } = await execFileAsync(
 			"git",
-			["rev-parse", "--abbrev-ref", "HEAD"],
+			["symbolic-ref", "-q", "HEAD"],
 			{ cwd },
 		);
-		const branch = stdout.trim();
+		const ref = stdout.trim();
+		const branch = ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : ref;
 		return branch || undefined;
-	} catch {
-		return undefined;
+	} catch (err) {
+		return (err as { code?: number }).code === 1 ? "HEAD" : undefined;
 	}
 }
 

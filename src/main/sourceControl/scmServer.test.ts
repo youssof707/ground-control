@@ -56,6 +56,7 @@ function harness(options: {
 	scan?: (checkout: string, signal: AbortSignal) => Promise<ScanResult>;
 	diff?: (entry: StatusEntry, signal: AbortSignal) => Promise<ScmDiffContent>;
 	apply?: (action: ScmAction, target: ApplyTarget) => Promise<void>;
+	watchHead?: (checkout: string, signal: AbortSignal) => Promise<void>;
 }) {
 	const replies: ScmReply[] = [];
 	const scans: Array<{ checkout: string; signal: AbortSignal }> = [];
@@ -69,6 +70,8 @@ function harness(options: {
 		branches: () => Promise.resolve({ current: "main", worktreeName: null, branches: [], fetchedAt: 0 }),
 		remote: (checkout, op) =>
 			checkout === "/fail" ? Promise.reject(new Error(`${op} rejected`)) : Promise.resolve(),
+		watchHead: (checkout, signal) =>
+			options.watchHead ? options.watchHead(checkout, signal) : new Promise<void>(() => undefined),
 		switchBranch: (_checkout, branch) =>
 			branch === "missing" ? Promise.reject(new Error("invalid reference: missing")) : Promise.resolve(),
 		diff: (_checkout, e, { signal }) =>
@@ -262,5 +265,31 @@ describe("ScmServer", () => {
 			{ t: "switch", id: 2, ok: true },
 			{ t: "switch", id: 3, ok: false, reason: "failed", message: "invalid reference: missing" },
 		]);
+	});
+
+	it("replies when HEAD moves and when a head watch is cancelled", async () => {
+		const moved = deferred<void>();
+		const signals: AbortSignal[] = [];
+		const h = harness({
+			watchHead: (checkout, signal) => {
+				signals.push(signal);
+				if (checkout === "/repo") return moved.promise;
+				return new Promise<void>((_resolve, reject) => {
+					signal.addEventListener("abort", () => reject(new Error("aborted")));
+				});
+			},
+		});
+		h.conn.handle({ t: "watchHead", id: 1, checkout: "/repo" });
+		h.conn.handle({ t: "watchHead", id: 2, checkout: "/other" });
+		h.conn.handle({ t: "watchHead", id: 3, checkout: "relative" });
+		await flush();
+		expect(signals).toHaveLength(2);
+		moved.resolve();
+		h.conn.handle({ t: "cancel", id: 2 });
+		await flush();
+		expect(signals[1].aborted).toBe(true);
+		expect(h.replies).toHaveLength(2);
+		expect(h.replies).toContainEqual({ t: "watchHead", id: 1, ok: true });
+		expect(h.replies).toContainEqual({ t: "watchHead", id: 2, ok: false, reason: "cancelled" });
 	});
 });

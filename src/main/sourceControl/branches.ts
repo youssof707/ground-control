@@ -17,6 +17,7 @@ export class RepoError extends Error {
 
 export interface RepoInfo {
 	root: string;
+	gitDir: string;
 	worktreeName: string | null;
 }
 
@@ -38,7 +39,7 @@ export async function readRepoInfo(checkout: string, signal: AbortSignal | undef
 		throw new RepoError(isNotARepo(result.stderr) ? "not-a-repo" : "failed", result.stderr.trim());
 	}
 	const [root = "", gitDir = "", commonDir = ""] = result.stdout.toString("utf8").split("\n");
-	return { root: root || checkout, worktreeName: worktreeNameOf(gitDir, commonDir) };
+	return { root: root || checkout, gitDir, worktreeName: worktreeNameOf(gitDir, commonDir) };
 }
 
 export function parseRefs(stdout: string): { current: string | null; branches: ScmBranch[] } {

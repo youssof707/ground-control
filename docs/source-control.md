@@ -52,6 +52,7 @@ Changing it also resets `branch` and `lastUserMessageBranch` to that worktree's 
 
 ## Branch chip and branch modal
 
+- The branch row shows the branch from the latest scan. Only before the first scan does it fall back to the session's stored `branch`. When a scan's branch differs from the stored one, the card calls `refreshBranch` so the session record (sidebar chip, red stale state) catches up too.
 - The worktree name in the card's meta row comes from git (the last part of `git rev-parse --git-dir`, e.g. `.git/worktrees/<name>`), not from the app's worktree registry, and arrives with each scan as `ScmSummary.worktreeName`. 
 - Clicking the branch row opens the branch modal. The modal header shows the worktree and branch with a Copy button for the branch name. The inbox sidebar's chip still copies on click.
 - The modal searches local and remote branches. Results: the current branch first, then local branches newest first, then remote branches that have no local branch of the same name. Every typed word must match; whole-word and prefix matches rank above fuzzy ones. At most 300 rows render, with the full match count in the footer.
@@ -74,6 +75,7 @@ Protocol (`src/shared/schemas/source_control.ts`):
 | `diff` | Both sides of one row, or `binary` / `too-large` / `submodule` / `directory` / `gone` / `error`. |
 | `apply` | Stage, unstage or discard. Each group is either `"all"` or a list of paths. |
 | `remote` | `fetch`, `pull` or `push`; replies ok, or git's error message. |
+| `watchHead` | Replies once the checkout's `HEAD` file changes. Stays open until then or until cancelled. |
 | `cancel` | Kills the git process behind a request. |
 
 ## Scanning
@@ -99,13 +101,16 @@ The renderer's `RefreshScheduler` refreshes the active session's checkout on:
 - window focus;
 - an idle poll while the app is focused;
 - opening the modal (urgent);
-- the refresh button (urgent).
+- the refresh button (urgent);
+- the checkout's `HEAD` changing (see below).
 
 Pacing:
 
 - Non-urgent refreshes wait at least `max(2s, 2 × last scan time)` since the previous one.
 - The idle poll runs every `max(15s, 10 × last scan time)`.
-- There is no file watcher; on huge repos a recursive watch costs more than it saves.
+- There is no recursive file watcher; on huge repos it costs more than it saves.
+
+`HEAD` watch: while a checkout is active, the renderer keeps one `watchHead` request open for it. The worker resolves the checkout's own git dir (`git rev-parse --git-dir`, so a linked worktree whose `.git` is a file watches `.git/worktrees/<name>`) and puts a non-recursive `fs.watch` on that directory. Only events for the `HEAD` file count. When one fires the request replies, the renderer requests a refresh (normal pacing) and re-arms. So a `git switch` / `checkout` from any terminal, in the app or outside it, updates the card within a scan. Switching sessions or a worker restart cancels and re-arms it (`src/main/sourceControl/headWatch.ts`).
 
 ## Diffs
 
