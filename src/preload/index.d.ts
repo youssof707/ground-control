@@ -239,6 +239,7 @@ declare global {
 			rerunTerminalGroup: (groupId: string) => Promise<void>;
 			restartTerminalGroup: (groupId: string) => Promise<void>;
 			renameTerminalGroup: (groupId: string, name: string) => Promise<void>;
+			markTerminalGroupUsed: (groupId: string) => void;
 			listTerminalConfigs: () => Promise<TerminalConfig[]>;
 			saveTerminalConfig: (
 				groupId: string,

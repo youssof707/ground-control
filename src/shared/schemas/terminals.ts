@@ -15,6 +15,7 @@ export const TerminalInfoSchema = z.object({
 	exitCode: z.number().optional(),
 	lastCommand: z.string().optional(),
 	createdAt: z.number(),
+	lastUsedAt: z.number(),
 });
 
 export type TerminalStatus = z.infer<typeof TerminalStatusSchema>;
@@ -50,6 +51,7 @@ export const SavedTerminalGroupSchema = z.object({
 	name: z.string().optional(),
 	cwd: z.string(),
 	commands: z.array(z.string()),
+	lastUsedAt: z.number().optional(),
 });
 
 export const SavedTerminalsFileSchema = z.object({
