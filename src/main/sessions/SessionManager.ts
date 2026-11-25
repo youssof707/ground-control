@@ -611,7 +611,7 @@ export class SessionManager {
 		private broker: PermissionBroker,
 		private onSessionCreated: (
 			sessionId: string,
-			origin: { scheduleId?: string },
+			origin: { scheduleId?: string; forkedFrom?: string },
 		) => void,
 		private onBusyChange: (runtimeId: string, busy: boolean) => void = () => {},
 		private onUsageLimitChange: UsageLimitListener = () => {},
@@ -1070,6 +1070,8 @@ export class SessionManager {
 			console.error("[ccw] failed to persist forked session:", err);
 			throw err;
 		}
+
+		this.onSessionCreated(newWrapperId, { forkedFrom: parent.id });
 
 		// Reverse-index the fork on the shared worktree. Idempotent —
 		// safe under any concurrent fork/attach paths.

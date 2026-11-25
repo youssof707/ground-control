@@ -138,6 +138,13 @@ export function registerSessionsHandlers(): SessionManager {
 	manager = new SessionManager(
 		broker,
 		(sessionId, origin) => {
+			if (origin.forkedFrom) {
+				const source =
+					manager?.getSidequestParentId(origin.forkedFrom) ?? origin.forkedFrom;
+				const inherited = babysitter.get(source);
+				if (inherited) babysitter.set(sessionId, inherited);
+				return;
+			}
 			const { autoBabysitNewSessions, defaultBabysit } = appSettings.get();
 			if (origin.scheduleId) {
 				const scheduled =
