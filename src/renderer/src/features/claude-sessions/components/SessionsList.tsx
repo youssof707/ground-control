@@ -1491,7 +1491,7 @@ function SessionRowSidebar({
 						    and "idle" actively hides it — so the task pill
 						    REPLACES the idle pill. Every other status (running,
 						    waiting, errored…) outranks it and stays put. */}
-						{status === "idle" && bgTaskCount > 0 ? (
+						{(status === "idle" || status === "cancelled") && bgTaskCount > 0 ? (
 							<BackgroundTasksPill sessionId={session.id} />
 						) : (
 						/* `status` folds in sidequest activity (running / waiting)
