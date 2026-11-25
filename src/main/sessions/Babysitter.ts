@@ -70,6 +70,10 @@ export class Babysitter {
 		this.onChange(sessionId);
 	}
 
+	get(sessionId: string): BabysitConfig | undefined {
+		return this.configs.get(sessionId);
+	}
+
 	list(): Record<string, BabysitConfig> {
 		return Object.fromEntries(this.configs);
 	}
