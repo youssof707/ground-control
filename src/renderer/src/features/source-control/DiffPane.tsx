@@ -17,10 +17,12 @@ type EditorNs = typeof import("monaco-editor/editor/editor.api").editor;
 type DiffEditor = import("monaco-editor/editor/editor.api").editor.IStandaloneDiffEditor;
 type ViewZone = import("monaco-editor/editor/editor.api").editor.IViewZone;
 type MouseTarget = import("monaco-editor/editor/editor.api").editor.IMouseTarget;
+type CodeEditor = import("monaco-editor/editor/editor.api").editor.ICodeEditor;
 
 interface Zone {
 	id: string;
 	zoneId: string;
+	startLine: number;
 	zone: ViewZone;
 	node: HTMLDivElement;
 	margin: HTMLDivElement;
@@ -35,6 +37,33 @@ function paintZones(editor: DiffEditor, zones: Iterable<Zone>): void {
 		);
 		z.node.classList.toggle("is-inserted", inserted);
 		z.margin.classList.toggle("is-inserted", inserted);
+	}
+}
+
+function indentColumns(text: string, tabSize: number): number {
+	let columns = 0;
+	for (const ch of text) {
+		if (ch === "\t") columns += tabSize - (columns % tabSize);
+		else if (ch === " ") columns += 1;
+		else break;
+	}
+	return columns;
+}
+
+function alignZones(editor: CodeEditor, fontInfo: EditorNs["EditorOption"]["fontInfo"], zones: Iterable<Zone>): void {
+	const model = editor.getModel();
+	if (!model) return;
+	const spaceWidth = editor.getOption(fontInfo).spaceWidth;
+	const tabSize = model.getOptions().tabSize;
+	const lineCount = model.getLineCount();
+	for (const z of zones) {
+		let columns = Number.POSITIVE_INFINITY;
+		const last = Math.min(z.zone.afterLineNumber, lineCount);
+		for (let line = Math.min(z.startLine, last); line <= last; line++) {
+			if (model.getLineFirstNonWhitespaceColumn(line) === 0) continue;
+			columns = Math.min(columns, indentColumns(model.getLineContent(line), tabSize));
+		}
+		z.node.style.paddingLeft = `${Number.isFinite(columns) ? columns * spaceWidth : 0}px`;
 	}
 }
 
@@ -345,6 +374,10 @@ export function DiffPane({
 		const move = modified.onMouseMove((e) => setHover(commentableRef.current ? commentLine(types, e.target) : null));
 		const leave = modified.onMouseLeave(() => setHover(null));
 		const diffed = editor.onDidUpdateDiff(() => paintZones(editor, zonesRef.current.values()));
+		const fontInfo = mod.monaco.editor.EditorOption.fontInfo;
+		const remeasured = modified.onDidChangeConfiguration((e) => {
+			if (e.hasChanged(fontInfo)) alignZones(modified, fontInfo, zonesRef.current.values());
+		});
 		const swap = modified.onDidChangeModel(() => {
 			hover = [];
 			hoverLine = null;
@@ -367,6 +400,7 @@ export function DiffPane({
 			move.dispose();
 			leave.dispose();
 			diffed.dispose();
+			remeasured.dispose();
 			swap.dispose();
 			down.dispose();
 			modified.deltaDecorations(hover, []);
@@ -374,14 +408,15 @@ export function DiffPane({
 	}, [ready]);
 
 	useEffect(() => {
+		const mod = monacoRef.current;
 		const editor = editorRef.current;
-		if (!ready || !editor) return;
+		if (!ready || !mod || !editor) return;
 		const modified = editor.getModifiedEditor();
 		const lineCount = modified.getModel()?.getLineCount() ?? 0;
-		const wanted = new Map<string, number>();
+		const wanted = new Map<string, Draft>();
 		if (commentable && lineCount > 0) {
-			for (const c of fileComments) wanted.set(c.id, Math.min(c.endLine, lineCount));
-			if (draft) wanted.set(draftId(draft), Math.min(draft.endLine, lineCount));
+			for (const c of fileComments) wanted.set(c.id, { startLine: c.startLine, endLine: Math.min(c.endLine, lineCount) });
+			if (draft) wanted.set(draftId(draft), { startLine: draft.startLine, endLine: Math.min(draft.endLine, lineCount) });
 		}
 		const current = zonesRef.current;
 		let changed = false;
@@ -392,19 +427,20 @@ export function DiffPane({
 				current.delete(id);
 				changed = true;
 			}
-			for (const [id, after] of wanted) {
+			for (const [id, { startLine, endLine }] of wanted) {
 				if (current.has(id)) continue;
 				const node = document.createElement("div");
 				node.className = "scm-review-zone";
 				for (const type of ISOLATED_EVENTS) node.addEventListener(type, (e) => e.stopPropagation());
 				const margin = document.createElement("div");
 				margin.className = "scm-review-margin";
-				const zone: ViewZone = { afterLineNumber: after, heightInPx: 0, domNode: node, marginDomNode: margin };
-				current.set(id, { id, zoneId: acc.addZone(zone), zone, node, margin });
+				const zone: ViewZone = { afterLineNumber: endLine, heightInPx: 0, domNode: node, marginDomNode: margin };
+				current.set(id, { id, zoneId: acc.addZone(zone), startLine, zone, node, margin });
 				changed = true;
 			}
 		});
 		paintZones(editor, current.values());
+		alignZones(modified, mod.monaco.editor.EditorOption.fontInfo, current.values());
 		if (changed) setZones([...current.values()]);
 	}, [ready, modelVersion, commentable, fileComments, draft]);
 
