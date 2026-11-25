@@ -29,6 +29,8 @@ function kindKey(kind: ScheduleKind): string {
 			return `repeat:${kind.everyMs}`;
 		case "daily":
 			return `daily:${kind.minuteOfDay}`;
+		case "weekly":
+			return `weekly:${[...kind.days].sort((a, b) => a - b).join(",")}:${kind.minuteOfDay}`;
 	}
 }
 

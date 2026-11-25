@@ -14,6 +14,11 @@ export const ScheduleKindSchema = z.discriminatedUnion("type", [
 		type: z.literal("daily"),
 		minuteOfDay: z.number().int().min(0).max(MINUTES_PER_DAY - 1),
 	}),
+	z.object({
+		type: z.literal("weekly"),
+		days: z.array(z.number().int().min(0).max(6)).min(1).max(7),
+		minuteOfDay: z.number().int().min(0).max(MINUTES_PER_DAY - 1),
+	}),
 ]);
 export type ScheduleKind = z.infer<typeof ScheduleKindSchema>;
 
@@ -24,17 +29,32 @@ function atMinuteOfDay(dayOf: Date, minuteOfDay: number): Date {
 	return d;
 }
 
+function nextMatchingDay(
+	now: number,
+	minuteOfDay: number,
+	matches: (weekday: number) => boolean,
+): number | undefined {
+	for (let offset = 0; offset <= 7; offset++) {
+		const day = new Date(now);
+		day.setDate(day.getDate() + offset);
+		const at = atMinuteOfDay(day, minuteOfDay);
+		if (at.getTime() > now && matches(at.getDay())) return at.getTime();
+	}
+	return undefined;
+}
+
 export function nextFireAfter(
 	kind: ScheduleKind,
 	now: number,
 ): number | undefined {
 	if (kind.type === "once") return kind.at > now ? kind.at : undefined;
 	if (kind.type === "repeat") return now + kind.everyMs;
-	const today = atMinuteOfDay(new Date(now), kind.minuteOfDay);
-	if (today.getTime() > now) return today.getTime();
-	const tomorrow = new Date(now);
-	tomorrow.setDate(tomorrow.getDate() + 1);
-	return atMinuteOfDay(tomorrow, kind.minuteOfDay).getTime();
+	if (kind.type === "daily") {
+		return nextMatchingDay(now, kind.minuteOfDay, () => true);
+	}
+	return nextMatchingDay(now, kind.minuteOfDay, (weekday) =>
+		kind.days.includes(weekday),
+	);
 }
 
 export const ScheduleSkipReasonSchema = z.enum(["busy", "usageLimit"]);
