@@ -5,6 +5,7 @@ import {
 	type DraftAction,
 } from "../stores/useDraftSessionsStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
+import { awaitBranchOps } from "../../source-control/useSourceControlStore";
 
 const inFlight = new Map<string, Promise<void>>();
 let seq = 0;
@@ -68,6 +69,12 @@ export async function awaitDraftActions(draftId: string): Promise<void> {
 		(a) => a.status === "error",
 	);
 	if (failed) throw new Error(failed.error ?? "Background action failed");
+	const ready = currentDraft(draftId);
+	if (!ready) return;
+	const checkout = ready.worktreeId
+		? useWorktreesStore.getState().worktrees[ready.worktreeId]?.worktreePath
+		: ready.cwd;
+	if (checkout) await awaitBranchOps(checkout);
 }
 
 export function dismissDraftAction(draftId: string, actionId: string): void {
