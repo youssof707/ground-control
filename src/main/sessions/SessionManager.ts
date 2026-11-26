@@ -18,6 +18,12 @@ import {
 	type ScheduleReport,
 } from "./scheduleReportTool";
 import type { ScheduledRunOutcome } from "./scheduleStatus";
+import {
+	CONTROL_SERVER_NAME,
+	createScheduleControlServer,
+	LIST_SCHEDULES_TOOL_NAME,
+	type ScheduleControlDeps,
+} from "./scheduleControlTool";
 
 export interface ScheduleRunHooks {
 	onReport?: (report: ScheduleReport) => void;
@@ -606,6 +612,12 @@ export class SessionManager {
 	// on deletions that `discardSidequest` otherwise fires and forgets.
 	private pendingTranscriptDeletes = new Set<Promise<void>>();
 	private transcriptTaps = new Map<string, SessionMessage[]>();
+
+	private scheduleControl: ScheduleControlDeps | null = null;
+
+	setScheduleControl(deps: ScheduleControlDeps): void {
+		this.scheduleControl = deps;
+	}
 
 	constructor(
 		private broker: PermissionBroker,
@@ -1557,6 +1569,16 @@ export class SessionManager {
 		resumed.pushTurn(blocks);
 	}
 
+	private scheduleControlOptions(): Partial<Options> {
+		if (!this.scheduleControl) return {};
+		return {
+			mcpServers: {
+				[CONTROL_SERVER_NAME]: createScheduleControlServer(this.scheduleControl),
+			},
+			allowedTools: [LIST_SCHEDULES_TOOL_NAME],
+		};
+	}
+
 	private scheduledRunOptions(
 		session: ClaudeSession,
 		scheduleId: string,
@@ -1867,6 +1889,9 @@ export class SessionManager {
 				// we only pass the key when the user picked one explicitly.
 				...(session.model ? { model: session.model } : {}),
 				canUseTool: async (toolName, toolInput) => {
+					if (toolName === LIST_SCHEDULES_TOOL_NAME && !session.scheduleId) {
+						return { behavior: "allow", updatedInput: toolInput };
+					}
 					const result = await this.broker.ask({
 						sessionId: id,
 						toolName,
@@ -1913,7 +1938,7 @@ export class SessionManager {
 				...(cfg.ephemeral ? { forkSession: true } : {}),
 				...(session.scheduleId
 					? this.scheduledRunOptions(session, session.scheduleId)
-					: {}),
+					: this.scheduleControlOptions()),
 				...(persist
 					? {
 						hooks: {

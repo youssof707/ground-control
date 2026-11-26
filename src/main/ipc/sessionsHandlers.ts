@@ -16,6 +16,7 @@ import { UsageLimitResumer } from "../sessions/UsageLimitResumer";
 import { ScheduleRunner } from "../sessions/ScheduleRunner";
 import * as scheduleStatus from "../sessions/scheduleStatus";
 import { directoryExists } from "../sessions/fsUtils";
+import { createSchedule, updateSchedule } from "../sessions/scheduleMutations";
 import * as rateLimitTracker from "../sessions/RateLimitTracker";
 import { reconcileWakes, requestAuthorization } from "../sessions/wakeScheduler";
 import { NotificationManager } from "./notifications";
@@ -207,6 +208,16 @@ export function registerSessionsHandlers(): SessionManager {
 			await deleteSessionById(id);
 		},
 		directoryExists,
+	});
+	manager.setScheduleControl({
+		list: schedulesStore.list,
+		get: schedulesStore.get,
+		create: (input) =>
+			createSchedule(runner, {
+				...input,
+				babysit: appSettings.get().defaultBabysit,
+			}),
+		update: (input) => updateSchedule(runner, input),
 	});
 	powerMonitor.on("resume", runner.reconcile);
 	app.on("will-quit", () => runner.dispose());

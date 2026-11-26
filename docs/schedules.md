@@ -49,3 +49,14 @@ which resets `schedule.status`. While the session is running (or
 parked on a permission prompt), Run now becomes Stop, which interrupts the run
 (`SessionManager.stopScheduledRun`) and, unless Claude already reported, settles it as
 yellow `stopped`.
+
+## Claude tools
+
+Every normal (non-scheduled) session gets an in-process MCP server, also named `ground-control`
+(`src/main/sessions/scheduleControlTool.ts`), with `list_schedules`, `create_schedule` and
+`update_schedule`. Listing is pre-allowed. Create and update go through the usual permission
+prompt. Claude can set a task's name, prompt, folder, model and timing (`once` local ISO time,
+`repeat` minutes/hours, `daily` HH:MM, `weekly` weekday names + HH:MM). It cannot see or change
+babysit settings, enabled, or Always show, and it cannot delete or run tasks. New tasks copy the
+app's default babysit config, like the form does. Scheduled runs only get `report`. The UI and
+the tools share validation in `src/main/sessions/scheduleMutations.ts`.

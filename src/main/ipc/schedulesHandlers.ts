@@ -1,109 +1,28 @@
 import { ipcMain } from "electron";
-import { ulid } from "ulid";
 import * as schedulesStore from "../core/store/schedules";
-import { broadcast } from "../windows";
 import {
-	CreateScheduleInputSchema,
-	UpdateScheduleInputSchema,
 	nextFireAfter,
 	type CreateScheduleInput,
-	type ScheduleKind,
 	type UpdateScheduleInput,
 } from "../../shared/schemas/schedules";
 import type { ScheduleRunner } from "../sessions/ScheduleRunner";
-import { requestAuthorization } from "../sessions/wakeScheduler";
 import { clearStatus } from "../sessions/scheduleStatus";
-import { directoryExists } from "../sessions/fsUtils";
-
-function assertFuture(kind: ScheduleKind, now: number): void {
-	if (kind.type === "once" && kind.at <= now) {
-		throw new Error("Pick a time in the future");
-	}
-}
-
-function kindKey(kind: ScheduleKind): string {
-	switch (kind.type) {
-		case "once":
-			return `once:${kind.at}`;
-		case "repeat":
-			return `repeat:${kind.everyMs}`;
-		case "daily":
-			return `daily:${kind.minuteOfDay}`;
-		case "weekly":
-			return `weekly:${[...kind.days].sort((a, b) => a - b).join(",")}:${kind.minuteOfDay}`;
-	}
-}
+import {
+	createSchedule,
+	pushSchedules as push,
+	updateSchedule,
+} from "../sessions/scheduleMutations";
 
 export function registerSchedulesHandlers(runner: ScheduleRunner): void {
-	const push = () => broadcast("schedules:changed", schedulesStore.list());
-
 	ipcMain.handle("schedules:list", () => schedulesStore.list());
 
-	ipcMain.handle("schedules:create", async (_e, raw: CreateScheduleInput) => {
-		const input = CreateScheduleInputSchema.parse(raw);
-		const prompt = input.prompt.trim();
-		if (!prompt) throw new Error("Prompt is required");
-		if (!(await directoryExists(input.cwd))) {
-			throw new Error("Folder does not exist");
-		}
-		const now = Date.now();
-		assertFuture(input.kind, now);
-		const schedule = await schedulesStore.create({
-			id: ulid(),
-			title: (input.title ?? "").trim(),
-			prompt,
-			cwd: input.cwd,
-			model: input.model,
-			kind: input.kind,
-			babysit: input.babysit,
-			alwaysShowStatus: input.alwaysShowStatus ?? false,
-			enabled: true,
-			createdAt: now,
-			nextFireAt: nextFireAfter(input.kind, now),
-		});
-		void requestAuthorization();
-		runner.upsert(schedule);
-		push();
-		return schedule;
-	});
+	ipcMain.handle("schedules:create", (_e, raw: CreateScheduleInput) =>
+		createSchedule(runner, raw),
+	);
 
-	ipcMain.handle("schedules:update", async (_e, raw: UpdateScheduleInput) => {
-		const input = UpdateScheduleInputSchema.parse(raw);
-		const current = schedulesStore.get(input.id);
-		if (!current) throw new Error("Task not found");
-		const prompt = input.prompt.trim();
-		if (!prompt) throw new Error("Prompt is required");
-		if (!(await directoryExists(input.cwd))) {
-			throw new Error("Folder does not exist");
-		}
-		const now = Date.now();
-		const timingChanged = kindKey(current.kind) !== kindKey(input.kind);
-		const enabled =
-			current.enabled ||
-			(timingChanged && input.kind.type === "once" && input.kind.at > now);
-		if (enabled && timingChanged) assertFuture(input.kind, now);
-		const nextFireAt = !enabled
-			? undefined
-			: timingChanged
-				? nextFireAfter(input.kind, now)
-				: current.nextFireAt;
-		const updated = await schedulesStore.update(input.id, {
-			title: (input.title ?? "").trim(),
-			prompt,
-			cwd: input.cwd,
-			model: input.model,
-			kind: input.kind,
-			babysit: input.babysit ?? current.babysit,
-			alwaysShowStatus: input.alwaysShowStatus ?? current.alwaysShowStatus,
-			enabled,
-			nextFireAt,
-			lastError: undefined,
-		});
-		if (!updated) throw new Error("Task not found");
-		runner.upsert(updated);
-		push();
-		return updated;
-	});
+	ipcMain.handle("schedules:update", (_e, raw: UpdateScheduleInput) =>
+		updateSchedule(runner, raw),
+	);
 
 	ipcMain.handle(
 		"schedules:setEnabled",
