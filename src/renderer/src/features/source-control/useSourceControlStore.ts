@@ -289,6 +289,10 @@ async function remoteOp(checkout: string, op: ScmRemoteOp, sessionId?: string): 
 	if (ok && sessionId) await window.claude.refreshBranch(sessionId).catch(() => undefined);
 }
 
+export function stopAutoFix(checkout: string): void {
+	void window.claude.stopAutoFixGit(checkout).catch(() => undefined);
+}
+
 async function autoFix(
 	checkout: string,
 	op: GitFixRequest["op"],

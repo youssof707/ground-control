@@ -9,7 +9,7 @@ import { join } from "node:path";
 import type { GitFixRequest } from "../../shared/schemas/source_control";
 import { broadcast } from "../windows";
 import { abortAllCommitMessages, runCommit } from "./commit";
-import { abortAllGitFixes, runGitAutoFix } from "./gitAutoFix";
+import { abortAllGitFixes, runGitAutoFix, stopGitFix } from "./gitAutoFix";
 
 let worker: UtilityProcess | null = null;
 let quitting = false;
@@ -41,6 +41,9 @@ export function registerSourceControlHost(): void {
 	app.on("will-quit", abortAllCommitMessages);
 
 	ipcMain.handle("scm:autoFix", (_event, request: GitFixRequest) => runGitAutoFix(request));
+	ipcMain.handle("scm:stopAutoFix", (_event, checkout: unknown) => {
+		if (typeof checkout === "string") stopGitFix(checkout);
+	});
 	ipcMain.handle("scm:commit", (_event, checkout: unknown, message: unknown, all: unknown) => {
 		if (
 			typeof checkout !== "string" ||

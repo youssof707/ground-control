@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { BRANCH_PREFETCH_MAX_AGE_MS, refreshBranches } from "./branchCache";
 import { compactCount, plural } from "./format";
-import { branchSwitchKey, isHardFailure, runRemoteOp, useSourceControlStore } from "./useSourceControlStore";
+import { branchSwitchKey, isHardFailure, runRemoteOp, stopAutoFix, useSourceControlStore } from "./useSourceControlStore";
 
 export function FilesIcon({ size = 12 }: { size?: number }) {
 	return (
@@ -53,6 +53,16 @@ function Arrow({ up }: { up: boolean }) {
 				strokeLinejoin="round"
 			/>
 		</svg>
+	);
+}
+
+function StopFixButton({ onStop }: { onStop: () => void }) {
+	return (
+		<button type="button" className="repo-card-fixing-stop" aria-label="Stop Claude" onClick={onStop}>
+			<svg width={8} height={8} viewBox="0 0 8 8" aria-hidden="true">
+				<rect width="8" height="8" rx="1.5" fill="currentColor" />
+			</svg>
+		</button>
 	);
 }
 
@@ -208,11 +218,13 @@ export function SourceControlWidget({
 				<div className="repo-card-fixing" role="status">
 					<span className="repo-card-spinner" aria-hidden="true" />
 					<span>{busy === "pull" ? "Pull failed, Claude is fixing it…" : "Push failed, Claude is fixing it…"}</span>
+					<StopFixButton onStop={() => stopAutoFix(checkout)} />
 				</div>
 			) : commitBusy === "fixing" ? (
 				<div className="repo-card-fixing" role="status">
 					<span className="repo-card-spinner" aria-hidden="true" />
 					<span>Commit failed, Claude is fixing it…</span>
+					<StopFixButton onStop={() => stopAutoFix(checkout)} />
 				</div>
 			) : null}
 			{remoteError ? (

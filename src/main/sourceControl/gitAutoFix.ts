@@ -21,6 +21,14 @@ const FIX_TIMEOUT_MS = 5 * 60_000;
 const MAX_TURNS = 40;
 
 const running = new Map<string, AbortController>();
+const stoppedByUser = new WeakSet<AbortController>();
+
+export function stopGitFix(checkout: string): void {
+	const controller = running.get(checkout);
+	if (!controller) return;
+	stoppedByUser.add(controller);
+	controller.abort();
+}
 
 export function abortAllGitFixes(): void {
 	for (const controller of running.values()) controller.abort();
@@ -140,6 +148,7 @@ export async function runGitAutoFix(request: GitFixRequest): Promise<GitFixResul
 		if (running.get(request.checkout) === abort) running.delete(request.checkout);
 	}
 	if (outcome.report) return outcome.report;
+	if (stoppedByUser.has(abort)) return { fixed: false, reason: "You stopped it." };
 	if (timedOut) return { fixed: false, reason: "Claude ran out of time trying to fix it." };
 	return { fixed: false, reason: "Claude stopped without fixing it." };
 }
