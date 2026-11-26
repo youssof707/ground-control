@@ -808,7 +808,12 @@ input[type="number"]::-webkit-outer-spin-button {
 	opacity: 0.6;
 }
 .repo-card-sync-btn.is-pull {
+	padding-right: 0;
 	color: oklch(0.80 0.09 210);
+}
+.repo-card-sync-btn.is-pull + .repo-card-sync-btn {
+	padding-left: 0;
+	margin-left: 6px;
 }
 .repo-card-sync-btn.is-push {
 	color: oklch(0.76 0.10 250);
