@@ -472,6 +472,25 @@ input::placeholder {
 	margin-top: 3px;
 }
 
+.gc-sidebar-row + .gc-sidebar-row::before {
+	content: "";
+	position: absolute;
+	top: -2px;
+	left: 10px;
+	right: 10px;
+	height: 0.5px;
+	background: oklch(0.94 0.005 80 / 0.06);
+	pointer-events: none;
+	transition: opacity 120ms ease;
+}
+
+.gc-sidebar-row:hover::before,
+.gc-sidebar-row[data-active="true"]::before,
+.gc-sidebar-row:hover + .gc-sidebar-row::before,
+.gc-sidebar-row[data-active="true"] + .gc-sidebar-row::before {
+	opacity: 0;
+}
+
 .gc-sidebar-row:hover {
 	background: oklch(0.94 0.005 80 / 0.03);
 }
