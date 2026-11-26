@@ -112,27 +112,17 @@ export function TerminalsCard() {
 
 	return (
 		<>
-			<div
-				style={{
-					display: "flex",
-					flexDirection: "column",
-					gap: ROW_GAP,
-					padding: 4,
-					marginBottom: 4,
-					background: T.surface,
-					border: `0.5px solid ${T.border}`,
-					borderRadius: 8,
-				}}
-			>
+			<div style={{ display: "flex", flexDirection: "column", gap: ROW_GAP }}>
 				<div
 					style={{
 						display: "flex",
 						alignItems: "center",
 						gap: 8,
-						height: ROW_HEIGHT,
-						padding: "0 4px 0 8px",
+						height: 30,
+						padding: "0 6px 0 12px",
 						fontSize: 13,
 						fontWeight: 500,
+						color: T.textDim,
 					}}
 				>
 					<span
@@ -140,18 +130,17 @@ export function TerminalsCard() {
 							display: "inline-flex",
 							justifyContent: "center",
 							width: 14,
-							color: T.textDim,
+							color: T.textMute,
 							flexShrink: 0,
 						}}
 					>
 						<TerminalIcon />
 					</span>
-					<span style={{ color: T.text, flexShrink: 0 }}>Terminals</span>
+					<span style={{ flexShrink: 0 }}>Terminals</span>
 					{groups.length > 0 ? (
 						<span
 							style={{
-								marginLeft: -2,
-								color: T.textMute,
+								color: T.textFaint,
 								fontSize: 11,
 								fontFamily: T.mono,
 							}}
@@ -161,7 +150,8 @@ export function TerminalsCard() {
 					) : null}
 					<button
 						type="button"
-						className="sched-card-row"
+						className="gc-bare-icon-btn"
+						aria-label="Add terminal"
 						onClick={() =>
 							void useTerminalsStore
 								.getState()
@@ -172,19 +162,16 @@ export function TerminalsCard() {
 							marginLeft: "auto",
 							display: "inline-flex",
 							alignItems: "center",
-							gap: 5,
-							height: 22,
-							padding: "0 7px",
-							borderRadius: 5,
-							color: T.textDim,
-							fontSize: 11.5,
-							fontWeight: 500,
+							justifyContent: "center",
+							width: 24,
+							height: 24,
+							borderRadius: 6,
 							flexShrink: 0,
 						}}
 					>
 						<svg
-							width="11"
-							height="11"
+							width="13"
+							height="13"
 							viewBox="0 0 14 14"
 							fill="none"
 							aria-hidden
@@ -196,7 +183,6 @@ export function TerminalsCard() {
 								strokeLinecap="round"
 							/>
 						</svg>
-						Add Terminal
 					</button>
 				</div>
 				{groups.length > 0 ? (
@@ -235,6 +221,13 @@ export function TerminalsCard() {
 	);
 }
 
+function groupDot(group: TerminalGroup): "gray" | "green" | "red" {
+	const colors = group.terminals.map((t) => TERMINAL_DOT[t.status]);
+	if (colors.includes("red")) return "red";
+	if (colors.includes("green")) return "green";
+	return "gray";
+}
+
 function keepOrder(groups: TerminalGroup[], order: string[]): TerminalGroup[] {
 	const rank = (group: TerminalGroup) => {
 		const index = order.indexOf(group.id);
@@ -264,7 +257,8 @@ function TerminalRow({
 	);
 	return (
 		<div
-			className="sched-card-row"
+			className="gc-bare-row gc-bare-row-sub"
+			data-active={active}
 			onMouseEnter={() => setHovered(true)}
 			onMouseLeave={() => {
 				setHovered(false);
@@ -275,8 +269,6 @@ function TerminalRow({
 				alignItems: "center",
 				height: ROW_HEIGHT,
 				flexShrink: 0,
-				borderRadius: 5,
-				background: active ? T.surfaceHi : "transparent",
 			}}
 		>
 			<button
@@ -290,40 +282,46 @@ function TerminalRow({
 					flex: 1,
 					minWidth: 0,
 					height: "100%",
-					padding: "0 4px 0 8px",
+					padding: "0 4px 0 12px",
 					textAlign: "left",
 					fontSize: 12,
-					color: T.textMute,
+					color: "inherit",
 				}}
 			>
 				<span
 					style={{
 						display: "inline-flex",
 						alignItems: "center",
-						gap: 3,
-						minWidth: 14,
-						paddingLeft: 4,
-						boxSizing: "border-box",
+						justifyContent: "center",
+						width: 14,
 						flexShrink: 0,
 					}}
 				>
-					{group.terminals.map((terminal) => (
-						<StatusDot
-							key={terminal.id}
-							color={TERMINAL_DOT[terminal.status]}
-						/>
-					))}
+					<StatusDot color={groupDot(group)} />
 				</span>
 				<span
 					style={{
 						...ELLIPSIS,
 						color: active ? T.text : T.textDim,
 						flexShrink: 0,
-						maxWidth: "40%",
+						maxWidth: "45%",
 					}}
 				>
 					{label}
 				</span>
+				{group.terminals.length > 1 ? (
+					<span
+						style={{
+							marginLeft: -3,
+							color: T.textFaint,
+							fontSize: 10.5,
+							fontFamily: T.mono,
+							flexShrink: 0,
+						}}
+					>
+						×{group.terminals.length}
+					</span>
+				) : null}
 				<span style={{ ...ELLIPSIS, flex: 1 }}>{groupLastLine(group)}</span>
 			</button>
 			{!kill.confirming && canStart ? (
@@ -368,7 +366,7 @@ function TerminalRow({
 						alignItems: "center",
 						height: 20,
 						padding: "0 8px",
-						marginRight: 4,
+						marginRight: 6,
 						borderRadius: 5,
 						border: `0.5px solid ${T.dangerBorder}`,
 						background: T.dangerSoft,
@@ -388,7 +386,7 @@ function TerminalRow({
 					onClick={kill.click}
 					style={{
 						...ROW_ICON_BUTTON,
-						marginRight: 3,
+						marginRight: 7,
 						opacity: hovered ? 1 : 0,
 					}}
 				>

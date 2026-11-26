@@ -38,6 +38,7 @@ import { RenameGroupModal } from "./RenameGroupModal";
 import { SettingsModal } from "./SettingsModal";
 import { useSettingsModalStore } from "../stores/useSettingsModalStore";
 import { SchedulerWidget } from "./SchedulerWidget";
+import { InboxButton } from "./InboxButton";
 import { SchedulerModal } from "./SchedulerModal";
 import { useSchedulerModalStore } from "../stores/useSchedulerModalStore";
 import { isScheduledSession } from "../lib/scheduledSessions";
@@ -86,18 +87,11 @@ const SECTION_CARD: React.CSSProperties = {
 	borderRadius: 12,
 	paddingBottom: 4,
 	overflow: "hidden",
-	boxShadow: [
-		"inset 0 0.5px 0 oklch(1 0 0 / 0.06)",
-		"0 0 0 0.5px oklch(0 0 0 / 0.55)",
-		"0 1px 2px oklch(0 0 0 / 0.22)",
-		"0 4px 12px -6px oklch(0 0 0 / 0.35)",
-	].join(", "),
 };
 
 const HEADER_BUTTON_HOVER: React.CSSProperties = {
 	background: "oklch(0.25 0.008 60)",
-	boxShadow:
-		"inset 0 0.5px 0 oklch(1 0 0 / 0.07), 0 0 0 0.5px oklch(0 0 0 / 0.4), 0 1px 1.5px oklch(0 0 0 / 0.25)",
+	boxShadow: "none",
 };
 
 const ROW_SELECTED_TINT = `color-mix(in oklab, ${T.text} 99%, ${T.accent} 1%)`;
@@ -959,15 +953,12 @@ export function SessionsList({
 				minHeight: 0,
 			}}
 		>
-			{/* Compact header — drops the "Sessions" h1 + total Stat (the
-			    AppNav already shows global counts), uses a stacked layout
-			    instead of the wide page-header flexbox. */}
 			<div
 				style={{
-					padding: 12,
+					padding: "12px 10px 8px",
 					display: "flex",
 					flexDirection: "column",
-					gap: 12,
+					gap: 8,
 				}}
 			>
 				<div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -986,6 +977,7 @@ export function SessionsList({
 						</svg>
 						<span style={{ flexShrink: 0 }}>New Session</span>
 					</button>
+					<InboxButton />
 					<ShortcutsMenuButton
 						buttonClassName="btn"
 						buttonStyle={{ width: 32, padding: 0 }}
@@ -1036,7 +1028,21 @@ export function SessionsList({
 						}}
 					>
 						{draft && draftHost.kind === "top"
-							? <div style={SECTION_CARD}>{renderDraftRow()}</div>
+							? (
+								<div style={SECTION_CARD}>
+									<CwdHeaderRow
+										cwd={draft.cwd}
+										collapsed={false}
+										collapsible={false}
+										waiting={0}
+										running={0}
+										tasks={0}
+										onToggle={() => {}}
+										onNewSession={() => startInCwd(draft.cwd)}
+									/>
+									{renderDraftRow()}
+								</div>
+							)
 							: null}
 						{sidebarRows.map((row) => {
 							// Collapsed-header status counts. Computed here for
@@ -1611,7 +1617,7 @@ function GroupSection({
  * Renders nothing when both counts are zero, so a quiet collapsed section looks
  * exactly as it did before this existed.
  *
- * Geometry is the Inbox badge (`InboxToggle`, AppNav) one step down in scale,
+ * Geometry is the Inbox badge (`InboxNavRow`) one step down in scale,
  * to sit inside a 9px-padded header strip. Colors come from the canonical
  * status mapping in `STATUS_MAP` (design/Atoms): amber = waiting, green =
  * running; the third, neutral white badge is the total of live background
@@ -1718,6 +1724,7 @@ function CwdHeaderRow({
 	label,
 	color,
 	collapsed,
+	collapsible = true,
 	waiting,
 	running,
 	tasks,
@@ -1733,6 +1740,7 @@ function CwdHeaderRow({
 	 * neutral. */
 	color?: WorktreeColor;
 	collapsed: boolean;
+	collapsible?: boolean;
 	/** Members awaiting a permission decision — shown only while collapsed. */
 	waiting: number;
 	/** Members with a live turn — shown only while collapsed. */
@@ -1762,8 +1770,8 @@ function CwdHeaderRow({
 		>
 			<button
 				type="button"
-				onClick={onToggle}
-				aria-expanded={!collapsed}
+				onClick={collapsible ? onToggle : undefined}
+				aria-expanded={collapsible ? !collapsed : undefined}
 				style={{
 					appearance: "none",
 					flex: 1,
@@ -1777,7 +1785,7 @@ function CwdHeaderRow({
 					// hairline when expanded (GroupHeaderRow's move).
 					background: "transparent",
 					border: "none",
-					cursor: "pointer",
+					cursor: collapsible ? "pointer" : "default",
 					textAlign: "left",
 					outline: "none",
 				}}
@@ -1790,6 +1798,7 @@ function CwdHeaderRow({
 					aria-hidden
 					style={{
 						flexShrink: 0,
+						visibility: collapsible ? "visible" : "hidden",
 						color: T.textFaint,
 						// Points right when collapsed, down when open — same
 						// vocabulary as GroupHeaderRow's chevron.
@@ -2234,25 +2243,16 @@ function DraftRowSidebar({
 								minWidth: 0,
 								fontSize: 13.5,
 								fontWeight: 500,
-								fontStyle: "italic",
 								color: T.textDim,
 								overflow: "hidden",
 								textOverflow: "ellipsis",
 								whiteSpace: "nowrap",
 							}}
 						>
-							{/* An unnamed draft shows its `Session N` placeholder;
-							    once the user types a name in the draft header it
-							    appears here live. Styling is identical either way —
-							    the Draft pill already signals "provisional", and
-							    toggling italic mid-typing would make the row jitter. */}
 							{draft.title.trim() || draft.defaultTitle}
 						</span>
 						<DraftRowMenu onDiscard={onDiscard} />
 					</div>
-					{/* Pill row — Draft badge only. No worktree chip: the
-					    sidebar never shows one; the bucket header already
-					    names the worktree. */}
 					<div
 						style={{
 							display: "flex",
@@ -2266,32 +2266,29 @@ function DraftRowSidebar({
 							style={{
 								display: "inline-flex",
 								alignItems: "center",
-								height: 18,
-								padding: "0 7px",
-								borderRadius: 9,
+								gap: 6,
+								height: 22,
+								padding: "0 9px",
+								borderRadius: 11,
 								border: `0.5px solid ${T.border}`,
-								background: T.surface,
-								color: T.textMute,
-								fontSize: 10.5,
-								fontWeight: 600,
-								letterSpacing: 0.5,
-								textTransform: "uppercase",
+								color: T.textDim,
+								fontSize: 11.5,
+								fontWeight: 500,
+								letterSpacing: "0.1px",
+								whiteSpace: "nowrap",
 							}}
 						>
-							Draft
+							<span
+								style={{
+									width: 6,
+									height: 6,
+									borderRadius: "50%",
+									border: `1px solid ${T.textMute}`,
+									boxSizing: "border-box",
+								}}
+							/>
+							draft
 						</span>
-					</div>
-					<div
-						style={{
-							fontSize: 11,
-							color: T.textFaint,
-							fontFamily: T.mono,
-							overflow: "hidden",
-							textOverflow: "ellipsis",
-							whiteSpace: "nowrap",
-						}}
-					>
-						{folderName(draft.cwd)}
 					</div>
 				</div>
 			</Link>

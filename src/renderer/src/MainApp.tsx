@@ -15,7 +15,6 @@ import { SessionsList } from "./features/claude-sessions/components/SessionsList
 import { SessionChat } from "./features/claude-sessions/components/SessionChat";
 import { InboxSidebar } from "./features/claude-sessions/components/InboxSidebar";
 import { SidequestSidebarShell } from "./features/claude-sessions/components/sidequest/SidequestSidebarShell";
-import { AppNav } from "./features/claude-sessions/components/AppNav";
 import { SourceControlModalHost } from "./features/source-control/SourceControlModal";
 import { FileViewerModalHost } from "./features/file-viewer/FileViewerModal";
 import { FileLinkProvider } from "./features/file-viewer/FileLinkContext";
@@ -95,10 +94,6 @@ export default function MainApp() {
 				fontFamily: T.sans,
 			}}
 		>
-			{/* The version chip + rate-limit meter now live inside
-			    `SidebarFooter`, pinned to the bottom of the sessions sidebar
-			    rather than floating fixed over the window corner. */}
-			<AppNav />
 			<MainBody />
 			<UpdateModal />
 			<CommandPaletteModal />
@@ -216,7 +211,7 @@ function SessionsListSidebarShell() {
 					minHeight: 0,
 					display: "flex",
 					flexDirection: "column",
-					background: "oklch(0.16 0.005 60)",
+					background: T.bg,
 					// Positioning context for `SidebarFooter`, which anchors itself
 					// `position: absolute` to the bottom of this pane.
 					position: "relative",

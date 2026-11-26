@@ -44,11 +44,11 @@ export function SidebarFooter() {
 				left: 0,
 				right: 0,
 				bottom: 0,
-				background: T.win,
-				padding: "8px 14px 10px",
+				background: T.bg,
+				padding: "6px 10px 10px",
 				display: "flex",
 				flexDirection: "column",
-				gap: 4,
+				gap: 6,
 				zIndex: 2,
 				userSelect: "none",
 			}}
@@ -62,6 +62,7 @@ export function SidebarFooter() {
 					alignItems: "center",
 					gap: 12,
 					minHeight: 14,
+					padding: "0 12px",
 				}}
 			>
 				<span

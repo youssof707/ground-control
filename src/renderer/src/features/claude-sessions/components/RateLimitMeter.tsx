@@ -61,6 +61,7 @@ export function RateLimitMeter() {
 				display: "inline-flex",
 				alignItems: "center",
 				gap: 6,
+				padding: "0 12px",
 			}}
 		>
 			{isClose ? (

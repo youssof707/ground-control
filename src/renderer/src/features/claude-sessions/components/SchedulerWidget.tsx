@@ -109,73 +109,45 @@ export function SchedulerWidget({
 
 
 	return (
-		<div
-			style={{
-				display: "flex",
-				flexDirection: "column",
-				gap: 2,
-				padding: 4,
-				background: T.surface,
-				border: `0.5px solid ${T.border}`,
-				borderRadius: 8,
-			}}
-		>
-			<div
-				className="sched-card-header"
+		<div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+			<button
+				type="button"
+				className="gc-bare-row"
+				aria-haspopup="dialog"
+				aria-expanded={open}
+				data-active={open}
+				onClick={onOpen}
 				style={{
-					display: "flex",
-					alignItems: "center",
-					height: 28,
-					borderRadius: 5,
+					...ROW_STYLE,
+					height: 30,
+					fontSize: 13,
+					fontWeight: 500,
 				}}
 			>
-				<button
-					type="button"
-					aria-haspopup="dialog"
-					aria-expanded={open}
-					onClick={onOpen}
-					style={{
-						...ROW_STYLE,
-						flex: 1,
-						height: "100%",
-						paddingRight: 4,
-						background: "transparent",
-						color: open ? T.text : T.textDim,
-						fontSize: 13,
-						fontWeight: 500,
-					}}
-				>
-					<IconSlot>
+				<IconSlot>
+					<span style={{ display: "inline-flex", color: T.textMute }}>
 						<ClockIcon />
-					</IconSlot>
-					<span style={{ color: T.text, flexShrink: 0 }}>Tasks</span>
-					{counts.armed > 0 ? (
-						<span
-							style={{
-								marginLeft: -2,
-								color: T.textMute,
-								fontSize: 11,
-								fontFamily: T.mono,
-								flexShrink: 0,
-							}}
-						>
-							{counts.armed}
-						</span>
-					) : null}
+					</span>
+				</IconSlot>
+				<span style={{ flexShrink: 0 }}>Tasks</span>
+				{counts.armed > 0 ? (
 					<span
 						style={{
-							marginLeft: "auto",
-							display: "inline-flex",
-							alignItems: "center",
-							gap: 5,
+							color: T.textFaint,
+							fontSize: 11,
+							fontFamily: T.mono,
+							flexShrink: 0,
 						}}
 					>
-						{counts.waiting > 0 ? (
-							<CountPill n={counts.waiting} fg={T.warn} bg={T.warnSoft} />
-						) : null}
+						{counts.armed}
 					</span>
-				</button>
-			</div>
+				) : null}
+				{counts.waiting > 0 ? (
+					<span style={{ marginLeft: "auto", display: "inline-flex" }}>
+						<CountPill n={counts.waiting} fg={T.warn} bg={T.warnSoft} />
+					</span>
+				) : null}
+			</button>
 			{rows.map((s) => (
 				<StatusRow
 					key={s.id}
@@ -199,8 +171,7 @@ const ROW_STYLE = {
 	width: "100%",
 	minWidth: 0,
 	height: 28,
-	padding: "0 8px",
-	borderRadius: 5,
+	padding: "0 12px",
 	border: "none",
 	cursor: "pointer",
 	textAlign: "left",
@@ -233,14 +204,11 @@ function StatusRow({
 	return (
 		<button
 			type="button"
-			className="sched-card-row"
+			className="gc-bare-row gc-bare-row-sub"
 			aria-current={active ? "page" : undefined}
+			data-active={active}
 			onClick={onClick}
-			style={{
-				...ROW_STYLE,
-				background: active ? T.surfaceHi : "transparent",
-				color: active ? T.textDim : T.textMute,
-			}}
+			style={ROW_STYLE}
 		>
 			<IconSlot>
 				{running ? (
@@ -258,7 +226,7 @@ function StatusRow({
 					...ELLIPSIS,
 					color: active ? T.text : T.textDim,
 					flexShrink: 0,
-					maxWidth: "40%",
+					maxWidth: "45%",
 				}}
 			>
 				{scheduleLabel(schedule)}
