@@ -228,7 +228,6 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 			<div
 				style={{
 					flexShrink: 0,
-					borderBottom: `0.5px solid ${T.border}`,
 					display: "flex",
 					flexDirection: "column",
 					gap: 8,
@@ -487,6 +486,7 @@ export function SessionChat({ sessionId }: { sessionId: string }) {
 						height: "100%",
 						overflow: "auto",
 						padding: "28px 32px 14px",
+						maskImage: "linear-gradient(to bottom, transparent 0, #000 10px)",
 					}}
 				>
 					<div style={{ maxWidth: 760, margin: "0 auto" }}>

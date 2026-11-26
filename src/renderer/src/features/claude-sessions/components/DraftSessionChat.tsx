@@ -211,7 +211,6 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 			<div
 				style={{
 					flexShrink: 0,
-					borderBottom: `0.5px solid ${T.border}`,
 					display: "flex",
 					flexDirection: "column",
 					gap: 8,
