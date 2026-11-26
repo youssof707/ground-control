@@ -153,7 +153,6 @@ export function SchedulerWidget({
 					schedule={s}
 					now={now}
 					running={runningScheduleIds.has(s.id)}
-					unread={unreadByScheduleId[s.id]?.length ?? 0}
 					active={s.id === activeScheduleId}
 					onClick={() => openSchedule(s)}
 				/>
@@ -188,14 +187,12 @@ function StatusRow({
 	schedule,
 	now,
 	running,
-	unread,
 	active,
 	onClick,
 }: {
 	schedule: Schedule;
 	now: number;
 	running: boolean;
-	unread: number;
 	active: boolean;
 	onClick: () => void;
 }) {
@@ -234,18 +231,6 @@ function StatusRow({
 			<span style={{ ...ELLIPSIS, flex: 1, color: T.textMute }}>
 				{status?.line}
 			</span>
-			{unread > 0 ? (
-				<span
-					style={{
-						color: T.textFaint,
-						fontSize: 10.5,
-						fontFamily: T.mono,
-						flexShrink: 0,
-					}}
-				>
-					{unread}
-				</span>
-			) : null}
 			<span
 				style={{
 					color: T.textFaint,

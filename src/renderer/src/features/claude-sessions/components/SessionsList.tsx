@@ -83,15 +83,15 @@ function sectionLabelColor(color: WorktreeColor): string {
  * whisper-tinted grey is then laid down at 4% opacity for the lift.
  */
 const SECTION_CARD: React.CSSProperties = {
-	background: "oklch(0.205 0.007 60)",
-	borderTop: `1px solid ${T.borderSoft}`,
-	borderBottom: `1px solid ${T.borderSoft}`,
+	background: "oklch(0.19 0.002 60)",
+	borderTop: "1px solid oklch(1 0 0 / 0.06)",
+	borderBottom: "1px solid oklch(1 0 0 / 0.06)",
 	paddingBottom: 4,
 	overflow: "hidden",
 };
 
 const HEADER_BUTTON_HOVER: React.CSSProperties = {
-	background: "oklch(0.25 0.008 60)",
+	background: "oklch(0.235 0.002 60)",
 	boxShadow: "none",
 };
 

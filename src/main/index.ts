@@ -64,7 +64,7 @@ function createWindow(): BrowserWindow {
 		},
 	});
 
-	win.on("ready-to-show", () => {
+	win.once("ready-to-show", () => {
 		if (initial.isMaximized) win.maximize();
 		win.show();
 		if (initial.isFullScreen) win.setFullScreen(true);

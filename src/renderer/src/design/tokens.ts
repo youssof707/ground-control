@@ -4,7 +4,7 @@
 export const T = {
 	bg: "oklch(0.16 0.005 60)",
 	win: "oklch(0.19 0.006 60)",
-	sidebar: "oklch(0.175 0.006 60)",
+	sidebar: "oklch(0.165 0.002 60)",
 	surface: "oklch(0.215 0.007 60)",
 	surfaceHi: "oklch(0.245 0.008 60)",
 	surfaceLow: "oklch(0.20 0.006 60)",
