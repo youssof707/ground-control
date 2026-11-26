@@ -119,7 +119,6 @@ export function SchedulerWidget({
 				onClick={onOpen}
 				style={{
 					...ROW_STYLE,
-					height: 30,
 					fontSize: 13,
 					fontWeight: 500,
 				}}
@@ -170,12 +169,12 @@ const ROW_STYLE = {
 	gap: 8,
 	width: "100%",
 	minWidth: 0,
-	height: 28,
-	padding: "0 4px",
+	height: 30,
+	padding: "0 8px",
 	border: "none",
 	cursor: "pointer",
 	textAlign: "left",
-	fontSize: 12,
+	fontSize: 12.5,
 } as const;
 
 const ELLIPSIS = {
@@ -225,13 +224,16 @@ function StatusRow({
 				style={{
 					...ELLIPSIS,
 					color: active ? T.text : T.textDim,
+					fontWeight: 500,
 					flexShrink: 0,
 					maxWidth: "45%",
 				}}
 			>
 				{scheduleLabel(schedule)}
 			</span>
-			<span style={{ ...ELLIPSIS, flex: 1 }}>{status?.line}</span>
+			<span style={{ ...ELLIPSIS, flex: 1, color: T.textMute }}>
+				{status?.line}
+			</span>
 			{unread > 0 ? (
 				<span
 					style={{
