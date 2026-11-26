@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useDraftSessionsStore } from "../stores/useDraftSessionsStore";
 import { useDraftStore } from "../stores/useDraftStore";
+import { useSessionsStore } from "../stores/useSessionsStore";
 import { useModelPickerStore } from "../stores/useModelPickerStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
 import { useWorktreesStore } from "../stores/useWorktreesStore";
@@ -75,6 +76,20 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 	// session is still a draft — once promoted to a real session by the first
 	// send, the header comes from `SessionChat`, which has no such affordance
 	// (cwd is immutable post-creation).
+	const applyFolder = useCallback(
+		(path: string) => {
+			const stillOurs = useDraftSessionsStore.getState().draft;
+			if (!stillOurs || stillOurs.id !== draftId) return;
+			useDraftSessionsStore.getState().updateDraft({
+				cwd: path,
+				worktreeId: undefined,
+				pendingActions: [],
+			});
+			useSettingsStore.getState().setLastUsedWorkspace(path);
+		},
+		[draftId],
+	);
+
 	const changeFolder = useCallback(async () => {
 		if (pickingFolder) return;
 		const current = useDraftSessionsStore.getState().draft;
@@ -85,26 +100,28 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 				defaultPath: current.cwd,
 			});
 			if (!picked) return;
-			// Re-check the draft is still ours — the dialog was async, the
-			// user could have discarded / promoted / navigated in the interim.
-			const stillOurs = useDraftSessionsStore.getState().draft;
-			if (!stillOurs || stillOurs.id !== draftId) return;
-			// Clear any attached worktree along with the cwd change: a worktree
-			// is bound to a specific baseDir, so changing folder invalidates
-			// the pairing. The user can attach a new one (or an existing one
-			// matching the new baseDir) after the change.
-			useDraftSessionsStore.getState().updateDraft({
-				cwd: picked,
-				worktreeId: undefined,
-				pendingActions: [],
-			});
-			// Match the New Session flow so the next click of the sidebar
-			// button pre-fills this folder too.
-			useSettingsStore.getState().setLastUsedWorkspace(picked);
+			applyFolder(picked);
 		} finally {
 			setPickingFolder(false);
 		}
-	}, [draftId, pickingFolder]);
+	}, [draftId, pickingFolder, applyFolder]);
+
+	const sessions = useSessionsStore((s) => s.sessions);
+	const draftCwd = draft?.cwd;
+	const recentFolders = useMemo(() => {
+		const seen = new Set<string>();
+		const out: string[] = [];
+		const sorted = Object.values(sessions).sort(
+			(a, b) => b.createdAt - a.createdAt,
+		);
+		for (const s of sorted) {
+			if (!s.cwd || s.cwd === draftCwd || seen.has(s.cwd)) continue;
+			seen.add(s.cwd);
+			out.push(s.cwd);
+			if (out.length === 5) break;
+		}
+		return out;
+	}, [sessions, draftCwd]);
 
 	// Reprobe git-repo status when the draft's cwd changes. Gates the
 	// "Add worktree" button — we hide it entirely for non-git folders
@@ -433,26 +450,24 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 				onClose={() => setWorktreeModalOpen(false)}
 			/>
 
-			{/* Empty body — placeholder until the first send creates the session. */}
 			<div style={{ flex: 1, minHeight: 0, position: "relative" }}>
 				<div
 					style={{
 						height: "100%",
 						overflow: "auto",
 						padding: "28px 32px 14px",
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "center",
 					}}
 				>
-					<div style={{ maxWidth: 760, margin: "0 auto" }}>
-						<div
-							className="message"
-							style={{
-								textAlign: "center",
-								color: T.textFaint,
-							}}
-						>
-							Your first message will create this session.
-						</div>
-					</div>
+					{recentFolders.length > 0 ? (
+						<RecentFolders
+							folders={recentFolders}
+							disabled={sending}
+							onPick={applyFolder}
+						/>
+					) : null}
 				</div>
 			</div>
 
@@ -546,6 +561,97 @@ function folderName(path: string): string {
 	const trimmed = path.replace(/\/+$/, "");
 	const idx = trimmed.lastIndexOf("/");
 	return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
+function RecentFolders({
+	folders,
+	disabled,
+	onPick,
+}: {
+	folders: string[];
+	disabled: boolean;
+	onPick: (path: string) => void;
+}) {
+	return (
+		<div
+			style={{
+				display: "flex",
+				flexDirection: "column",
+				gap: 4,
+				width: "100%",
+				maxWidth: 420,
+			}}
+		>
+			<div
+				style={{
+					fontSize: 11,
+					fontWeight: 500,
+					color: T.textFaint,
+					padding: "0 10px 4px",
+				}}
+			>
+				Recent folders
+			</div>
+			{folders.map((path) => (
+				<RecentFolderButton
+					key={path}
+					path={path}
+					disabled={disabled}
+					onPick={onPick}
+				/>
+			))}
+		</div>
+	);
+}
+
+function RecentFolderButton({
+	path,
+	disabled,
+	onPick,
+}: {
+	path: string;
+	disabled: boolean;
+	onPick: (path: string) => void;
+}) {
+	const [hover, setHover] = useState(false);
+	return (
+		<button
+			type="button"
+			disabled={disabled}
+			onClick={() => onPick(path)}
+			onMouseEnter={() => setHover(true)}
+			onMouseLeave={() => setHover(false)}
+			aria-label={`Use folder ${path}`}
+			style={{
+				appearance: "none",
+				border: "none",
+				display: "flex",
+				alignItems: "center",
+				width: "100%",
+				minWidth: 0,
+				padding: "7px 10px",
+				borderRadius: 6,
+				background: hover && !disabled ? T.surfaceLow : "transparent",
+				cursor: disabled ? "default" : "pointer",
+				textAlign: "left",
+				transition: "background 80ms ease",
+			}}
+		>
+			<span
+				style={{
+					fontSize: 12.5,
+					fontWeight: 400,
+					color: hover ? T.textDim : T.textMute,
+					maxWidth: "100%",
+					overflow: "hidden",
+					textOverflow: "ellipsis",
+					whiteSpace: "nowrap",
+				}}
+			>
+				{folderName(path)}
+			</span>
+		</button>
+	);
 }
 
 // Ghost pill styled to sit next to WorktreeChip's readonly variant so the

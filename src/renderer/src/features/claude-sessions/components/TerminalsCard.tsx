@@ -9,7 +9,6 @@ import {
 	type TerminalGroup,
 	groupLabel,
 	groupLastLine,
-	groupStatus,
 	groupTerminals,
 	useTerminalsStore,
 } from "../stores/useTerminalsStore";
@@ -255,7 +254,6 @@ function TerminalRow({
 }) {
 	const [hovered, setHovered] = useState(false);
 	const label = groupLabel(group);
-	const count = group.terminals.length;
 	const canStop = group.terminals.some((t) => t.status === "running");
 	const canStart = group.terminals.some(
 		(t) => t.status === "idle" && Boolean(t.lastCommand),
@@ -301,12 +299,20 @@ function TerminalRow({
 				<span
 					style={{
 						display: "inline-flex",
-						justifyContent: "center",
-						width: 14,
+						alignItems: "center",
+						gap: 3,
+						minWidth: 14,
+						paddingLeft: 4,
+						boxSizing: "border-box",
 						flexShrink: 0,
 					}}
 				>
-					<StatusDot color={TERMINAL_DOT[groupStatus(group)]} />
+					{group.terminals.map((terminal) => (
+						<StatusDot
+							key={terminal.id}
+							color={TERMINAL_DOT[terminal.status]}
+						/>
+					))}
 				</span>
 				<span
 					style={{
@@ -318,19 +324,6 @@ function TerminalRow({
 				>
 					{label}
 				</span>
-				{count > 1 ? (
-					<span
-						style={{
-							marginLeft: -4,
-							color: T.textMute,
-							fontSize: 11,
-							fontFamily: T.mono,
-							flexShrink: 0,
-						}}
-					>
-						{count}
-					</span>
-				) : null}
 				<span style={{ ...ELLIPSIS, flex: 1 }}>{groupLastLine(group)}</span>
 			</button>
 			{!kill.confirming && canStart ? (
