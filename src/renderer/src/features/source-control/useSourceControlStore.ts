@@ -270,10 +270,20 @@ export function backgroundFetch(checkout: string): void {
 export function runRemoteOp(checkout: string, op: ScmRemoteOp, sessionId?: string): Promise<void> {
 	if (useSourceControlStore.getState().remote[checkout]?.busy) return Promise.resolve();
 	const run = remoteOp(checkout, op, sessionId);
-	return op === "fetch" ? run : trackBranchOp(checkout, run);
+	return op === "fetch" ? run.then(() => undefined) : trackBranchOp(checkout, run).then(() => undefined);
 }
 
-async function remoteOp(checkout: string, op: ScmRemoteOp, sessionId?: string): Promise<void> {
+export function runSync(checkout: string, steps: { pull: boolean; push: boolean }, sessionId?: string): Promise<void> {
+	if (useSourceControlStore.getState().remote[checkout]?.busy) return Promise.resolve();
+	return trackBranchOp(checkout, sync(checkout, steps, sessionId));
+}
+
+async function sync(checkout: string, steps: { pull: boolean; push: boolean }, sessionId?: string): Promise<void> {
+	if (steps.pull && !(await remoteOp(checkout, "pull", sessionId))) return;
+	if (steps.push) await remoteOp(checkout, "push", sessionId);
+}
+
+async function remoteOp(checkout: string, op: ScmRemoteOp, sessionId?: string): Promise<boolean> {
 	patchRemote(checkout, { busy: op, error: null });
 	const reply = await call<"remote">({ t: "remote", checkout, op }).promise;
 	let ok = reply.ok;
@@ -287,6 +297,7 @@ async function remoteOp(checkout: string, op: ScmRemoteOp, sessionId?: string): 
 	patchRemote(checkout, { busy: null, error, fixing: false });
 	requestRefresh(checkout, true);
 	if (ok && sessionId) await window.claude.refreshBranch(sessionId).catch(() => undefined);
+	return ok;
 }
 
 export function stopAutoFix(checkout: string): void {

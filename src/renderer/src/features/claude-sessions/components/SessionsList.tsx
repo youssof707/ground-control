@@ -50,12 +50,8 @@ import { WORKTREE_COLOR_MAP } from "../../../design/WorktreeChip";
 import type {
 	ClaudeSessionFull,
 	PermissionRequest,
-	SessionMessage,
 } from "@shared/claude-sessions/types";
-import {
-	interruptMarkerText,
-	isConversationSkipped,
-} from "@shared/claude-sessions/transcript";
+import { isConversationSkipped } from "@shared/claude-sessions/transcript";
 import type { SessionGroup } from "@shared/schemas/session_groups";
 import type { Shortcut } from "@shared/schemas/shortcuts";
 import type { Skill } from "@shared/schemas/skills";
@@ -1273,7 +1269,6 @@ function useRowDerived(
 	pending: PermissionRequest[],
 ) {
 	const hasPending = pending.length > 0;
-	const summary = deriveSummary(session);
 	const lastReadAt = useReadStore((s) => s.lastReadAt[session.id] ?? 0);
 	const lastIncomingTs = lastIncomingMessageTs(session);
 	const unread =
@@ -1307,7 +1302,6 @@ function useRowDerived(
 
 	return {
 		hasPending,
-		summary,
 		unread,
 		status,
 	};
@@ -1343,10 +1337,7 @@ function SessionRowSidebar({
 	const resumeAt = useAutoResumeStore(
 		(s) => s.resumeAtBySession[session.id],
 	);
-	const { summary, unread, status } = useRowDerived(
-		session,
-		pending,
-	);
+	const { unread, status } = useRowDerived(session, pending);
 	const markUnread = useReadStore((s) => s.markUnread);
 	// Live CLI background tasks (dev servers, background shells). Primitive
 	// selector so a row re-renders only when the COUNT moves — these rows sit
@@ -1409,7 +1400,7 @@ function SessionRowSidebar({
 						display: "flex",
 						flexDirection: "column",
 						gap: 6,
-						padding: "12px 14px",
+						padding: "10px 14px",
 						minWidth: 0,
 					}}
 				>
@@ -1462,20 +1453,6 @@ function SessionRowSidebar({
 								useBabysitStore.getState().openModal(session.id)
 							}
 						/>
-					</div>
-					{/* Summary — two-line clamp */}
-					<div
-						style={{
-							fontSize: 12,
-							color: T.textMute,
-							lineHeight: 1.35,
-							display: "-webkit-box",
-							WebkitLineClamp: 2,
-							WebkitBoxOrient: "vertical",
-							overflow: "hidden",
-						}}
-					>
-						{summary}
 					</div>
 					<div
 						style={{
@@ -2916,67 +2893,4 @@ function lastIncomingMessageTs(session: ClaudeSessionFull): number {
 		return m.ts;
 	}
 	return 0;
-}
-
-function lastConversationMessage(
-	session: ClaudeSessionFull,
-): SessionMessage | undefined {
-	for (let i = session.messages.length - 1; i >= 0; i--) {
-		const m = session.messages[i];
-		if (m.role !== "user" && m.role !== "assistant") continue;
-		// Skip messages hidden from the transcript — subagent traffic and
-		// user turns that render nothing (e.g. <local-command-stdout>) —
-		// so the summary never attributes them to the conversation.
-		if (isConversationSkipped(m.role, m.content)) continue;
-		return m;
-	}
-	return undefined;
-}
-
-function deriveSummary(session: ClaudeSessionFull): string {
-	if (session.error) return `Error: ${session.error}`;
-	const last = lastConversationMessage(session);
-	if (!last) {
-		return session.status === "idle"
-			? "Waiting for first message…"
-			: "No messages yet.";
-	}
-	if (last.role === "assistant") {
-		const text = extractAssistantText(last.content);
-		if (text) return text.slice(0, 140);
-		return "Working…";
-	}
-	// Interrupt markers are visible transcript rows, so they legitimately end
-	// up here — but they're state, not speech, so no "You:" prefix.
-	const interrupt = interruptMarkerText(last.content);
-	if (interrupt) return interrupt;
-	const userText = extractUserText(last.content);
-	if (userText) return `You: ${userText.slice(0, 140)}`;
-	return "You sent a message.";
-}
-
-function extractAssistantText(content: unknown): string {
-	const blocks = (
-		content as { message?: { content?: { type?: string; text?: string }[] } }
-	)?.message?.content;
-	if (!Array.isArray(blocks)) return "";
-	for (const b of blocks) {
-		if (b.type === "text" && typeof b.text === "string" && b.text.trim()) {
-			return b.text.replace(/\s+/g, " ").trim();
-		}
-	}
-	return "";
-}
-
-function extractUserText(content: unknown): string {
-	const blocks = (
-		content as { message?: { content?: { type?: string; text?: string }[] } }
-	)?.message?.content;
-	if (!Array.isArray(blocks)) return "";
-	for (const b of blocks) {
-		if (b.type === "text" && typeof b.text === "string" && b.text.trim()) {
-			return b.text.replace(/\s+/g, " ").trim();
-		}
-	}
-	return "";
 }

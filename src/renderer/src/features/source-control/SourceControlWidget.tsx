@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { BRANCH_PREFETCH_MAX_AGE_MS, refreshBranches } from "./branchCache";
 import { compactCount, plural } from "./format";
-import { branchSwitchKey, isHardFailure, runRemoteOp, stopAutoFix, useSourceControlStore } from "./useSourceControlStore";
+import { SyncArrow, syncState } from "./syncState";
+import { branchSwitchKey, isHardFailure, runSync, stopAutoFix, useSourceControlStore } from "./useSourceControlStore";
 
 export function FilesIcon({ size = 12 }: { size?: number }) {
 	return (
@@ -38,20 +39,6 @@ function BranchGlyph() {
 			<circle cx="4" cy="11" r="1.5" stroke="currentColor" strokeWidth="1.2" />
 			<circle cx="10.5" cy="4.5" r="1.5" stroke="currentColor" strokeWidth="1.2" />
 			<path d="M4 4.5v5M10.5 6c0 2.4-3 2.6-6.2 3.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-		</svg>
-	);
-}
-
-function Arrow({ up }: { up: boolean }) {
-	return (
-		<svg width={10} height={10} viewBox="0 0 10 10" fill="none" aria-hidden="true">
-			<path
-				d={up ? "M5 8.5V1.8M2 4.6 5 1.6l3 3" : "M5 1.5v6.7M2 5.4l3 3 3-3"}
-				stroke="currentColor"
-				strokeWidth="1.4"
-				strokeLinecap="round"
-				strokeLinejoin="round"
-			/>
 		</svg>
 	);
 }
@@ -125,13 +112,17 @@ export function SourceControlWidget({
 	let linked = 0;
 	for (const w of summary?.worktrees ?? []) if (!w.isMain) linked++;
 	const changes = changesPart(summary?.changed, summary?.conflicts ?? 0);
-	const upstream = summary?.upstream ?? null;
-	const unpublished = summary && branch && !upstream ? summary.unpublished : null;
-	const ahead = upstream ? summary?.ahead ?? 0 : unpublished ?? 0;
-	const behind = upstream ? summary?.behind ?? 0 : 0;
-	const showPull = behind > 0;
-	const showPush = upstream ? ahead > 0 : unpublished !== null;
-	const run = (op: "pull" | "push"): void => void runRemoteOp(checkout, op, sessionId);
+	const { upstream, ahead, behind, showPull, showPush } = syncState(summary, branch);
+	const pushLabel = upstream
+		? `push ${plural(ahead, "commit", "commits")} to ${upstream}`
+		: `publish ${branch} to origin with ${plural(ahead, "commit", "commits")}`;
+	const syncLabel = committing
+		? "Committing"
+		: showPull && showPush
+			? `Pull ${plural(behind, "commit", "commits")} from ${upstream}, then ${pushLabel}`
+			: showPull
+				? `Pull ${plural(behind, "commit", "commits")} from ${upstream}`
+				: `${pushLabel.charAt(0).toUpperCase()}${pushLabel.slice(1)}`;
 
 	const branchLabel = `${worktreeName ? `Worktree ${worktreeName}, branch` : "Branch"} ${branchText}${
 		stale ? `, changed since your last message (was ${lastUserMessageBranch})` : ""
@@ -155,38 +146,30 @@ export function SourceControlWidget({
 						<span className="repo-card-ellipsis">{branchText}</span>
 						{stale ? <span className="repo-card-stale-dot" aria-hidden="true" /> : null}
 					</button>
-					{showPull ? (
+					{showPull || showPush || committing ? (
 						<button
 							type="button"
-							className="repo-card-sync-btn is-pull"
+							className="repo-card-sync-btn"
 							disabled={busy !== null || committing}
-							onClick={() => run("pull")}
-							aria-label={`Pull ${plural(behind, "commit", "commits")} from ${upstream}`}
+							onClick={() => void runSync(checkout, { pull: showPull, push: showPush }, sessionId)}
+							aria-label={syncLabel}
 						>
-							{busy === "pull" ? <span className="repo-card-spinner" aria-hidden="true" /> : <Arrow up={false} />}
-							<span>{compactCount(behind)}</span>
-						</button>
-					) : null}
-					{showPush || committing ? (
-						<button
-							type="button"
-							className={`repo-card-sync-btn ${ahead > 0 ? "is-push" : "is-idle"}`}
-							disabled={busy !== null || committing}
-							onClick={() => run("push")}
-							aria-label={
-								committing
-									? "Committing"
-									: upstream
-										? `Push ${plural(ahead, "commit", "commits")} to ${upstream}`
-										: `Publish ${branch} to origin with ${plural(ahead, "commit", "commits")}`
-							}
-						>
-							{busy === "push" || committing ? (
-								<span className="repo-card-spinner" aria-hidden="true" />
-							) : (
-								<Arrow up />
-							)}
-							{committing && ahead === 0 ? null : <span>{compactCount(ahead)}</span>}
+							{showPull ? (
+								<span className="repo-card-sync-down">
+									{busy === "pull" ? <span className="repo-card-spinner" aria-hidden="true" /> : <SyncArrow up={false} />}
+									<span>{compactCount(behind)}</span>
+								</span>
+							) : null}
+							{showPush || committing ? (
+								<span className={ahead > 0 ? "repo-card-sync-up" : "repo-card-sync-idle"}>
+									{busy === "push" || committing ? (
+										<span className="repo-card-spinner" aria-hidden="true" />
+									) : (
+										<SyncArrow up />
+									)}
+									{committing && ahead === 0 ? null : <span>{compactCount(ahead)}</span>}
+								</span>
+							) : null}
 						</button>
 					) : null}
 				</div>
