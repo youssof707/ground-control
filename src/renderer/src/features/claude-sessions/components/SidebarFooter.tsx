@@ -44,7 +44,7 @@ export function SidebarFooter() {
 				left: 0,
 				right: 0,
 				bottom: 0,
-				background: T.bg,
+				background: T.sidebar,
 				padding: "6px 10px 10px",
 				display: "flex",
 				flexDirection: "column",

@@ -211,7 +211,7 @@ function SessionsListSidebarShell() {
 					minHeight: 0,
 					display: "flex",
 					flexDirection: "column",
-					background: T.bg,
+					background: T.sidebar,
 					// Positioning context for `SidebarFooter`, which anchors itself
 					// `position: absolute` to the bottom of this pane.
 					position: "relative",

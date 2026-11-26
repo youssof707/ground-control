@@ -84,7 +84,7 @@ function sectionLabelColor(color: WorktreeColor): string {
  */
 const SECTION_CARD: React.CSSProperties = {
 	background: "oklch(0.205 0.007 60)",
-	borderRadius: 12,
+	borderRadius: 6,
 	paddingBottom: 4,
 	overflow: "hidden",
 };
@@ -2269,7 +2269,7 @@ function DraftRowSidebar({
 								gap: 6,
 								height: 22,
 								padding: "0 9px",
-								borderRadius: 11,
+								borderRadius: 4,
 								border: `0.5px solid ${T.border}`,
 								color: T.textDim,
 								fontSize: 11.5,

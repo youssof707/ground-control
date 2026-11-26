@@ -463,7 +463,7 @@ input::placeholder {
 .gc-sidebar-row {
 	position: relative;
 	margin: 0 5px;
-	border-radius: 8px;
+	border-radius: 4px;
 	background: transparent;
 	transition: background 140ms ease;
 }
@@ -701,7 +701,7 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 .gc-bare-row {
-	border-radius: 8px;
+	border-radius: 4px;
 	background: transparent;
 	color: oklch(0.72 0.008 70);
 	transition:
