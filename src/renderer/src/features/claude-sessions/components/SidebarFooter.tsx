@@ -10,6 +10,12 @@ export function SidebarFooter() {
 	);
 
 	useEffect(() => {
+		document.title = appInfo
+			? `Ground Control v${__APP_VERSION__} · ${appInfo.env}`
+			: "Ground Control";
+	}, [appInfo]);
+
+	useEffect(() => {
 		let alive = true;
 		window.claude.getAppInfo().then((info) => {
 			if (alive) setAppInfo(info);
@@ -45,7 +51,7 @@ export function SidebarFooter() {
 				right: 0,
 				bottom: 0,
 				background: T.sidebar,
-				padding: "6px 10px 10px",
+				padding: "6px 2px 10px",
 				display: "flex",
 				flexDirection: "column",
 				gap: 6,
@@ -54,34 +60,10 @@ export function SidebarFooter() {
 			}}
 		>
 			<TerminalsCard />
-			<RateLimitMeter />
-			<div
-				style={{
-					position: "relative",
-					display: "flex",
-					alignItems: "center",
-					gap: 12,
-					minHeight: 14,
-					padding: "0 12px",
-				}}
-			>
-				<span
-					onDoubleClick={() => {
-						void window.claude.toggleDevTools();
-					}}
-					style={{
-						flexShrink: 0,
-						fontSize: 10,
-						fontFamily: T.mono,
-						color: T.textFaint,
-						letterSpacing: 0.2,
-					}}
-				>
-					v{__APP_VERSION__}
-					{appInfo ? ` · ${appInfo.env}` : ""}
-				</span>
+			<div style={{ padding: "0 12px" }}>
 				<BackgroundTasksIndicator />
 			</div>
+			<RateLimitMeter />
 		</div>
 	);
 }

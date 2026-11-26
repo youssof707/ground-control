@@ -171,7 +171,7 @@ const ROW_STYLE = {
 	width: "100%",
 	minWidth: 0,
 	height: 28,
-	padding: "0 12px",
+	padding: "0 4px",
 	border: "none",
 	cursor: "pointer",
 	textAlign: "left",
