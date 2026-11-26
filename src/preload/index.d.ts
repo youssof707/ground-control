@@ -164,6 +164,7 @@ declare global {
 			deleteWorktree: (id: string) => Promise<void>;
 			connectSourceControl: () => void;
 			autoFixGit: (request: GitFixRequest) => Promise<GitFixResult>;
+			stopAutoFixGit: (checkout: string) => Promise<void>;
 			commitStaged: (checkout: string, message: string, all: boolean) => Promise<ScmCommitResult>;
 			listGroups: () => Promise<SessionGroup[]>;
 			createGroup: (input: CreateSessionGroupInput) => Promise<SessionGroup>;
