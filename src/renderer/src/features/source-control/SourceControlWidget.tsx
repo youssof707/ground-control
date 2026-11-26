@@ -149,7 +149,7 @@ export function SourceControlWidget({
 					{showPull || showPush || committing ? (
 						<button
 							type="button"
-							className="repo-card-sync-btn"
+							className="repo-card-sync-btn is-combined"
 							disabled={busy !== null || committing}
 							onClick={() => void runSync(checkout, { pull: showPull, push: showPush }, sessionId)}
 							aria-label={syncLabel}

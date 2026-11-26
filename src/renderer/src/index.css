@@ -455,13 +455,29 @@ input::placeholder {
 
 /* One-shot wash on a sidebar row that was just restored by undo. Answers
    "where did it land?" — the row returns to its original recency slot, which
-   in a long sidebar is easily off-screen or lost among neighbours.
-
-   Reads unambiguously because sidebar rows have NO hover background (only the
-   active row is tinted), so a transient tint can't be mistaken for a pointer
-   artifact. */
+   in a long sidebar is easily off-screen or lost among neighbours. */
 .session-row-restored {
-	animation: session-row-restored 1200ms ease-out forwards;
+	animation: session-row-restored 1200ms ease-out;
+}
+
+.gc-sidebar-row {
+	position: relative;
+	margin: 0 4px;
+	border-radius: 7px;
+	background: transparent;
+	transition: background 120ms ease;
+}
+
+.gc-sidebar-row + .gc-sidebar-row {
+	margin-top: 3px;
+}
+
+.gc-sidebar-row:hover {
+	background: oklch(0.94 0.005 80 / 0.03);
+}
+
+.gc-sidebar-row[data-active="true"] {
+	background: oklch(0.94 0.005 80 / 0.07);
 }
 
 @keyframes session-row-restored {
@@ -807,29 +823,64 @@ input[type="number"]::-webkit-outer-spin-button {
 	cursor: default;
 	opacity: 0.6;
 }
-.repo-card-sync-btn.is-pull {
-	padding-right: 0;
-	color: oklch(0.80 0.09 210);
-}
-.repo-card-sync-btn.is-pull + .repo-card-sync-btn {
-	padding-left: 0;
-	margin-left: 6px;
-}
-.repo-card-sync-btn.is-push {
-	color: oklch(0.76 0.10 250);
-}
-.repo-card-sync-btn.is-idle {
+.repo-card-sync-btn.is-combined {
+	gap: 3px;
 	color: oklch(0.50 0.010 70);
 }
-.repo-card-sync-btn.is-idle:hover:not(:disabled) {
+.repo-card-sync-btn.is-combined:hover:not(:disabled) {
 	background: oklch(1 0 0 / 0.06);
-	color: oklch(0.80 0.010 70);
+}
+.repo-card-sync-down,
+.repo-card-sync-up,
+.repo-card-sync-idle {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+}
+.repo-card-sync-btn.is-pull,
+.repo-card-sync-down {
+	color: oklch(0.80 0.09 210);
+}
+.repo-card-sync-btn.is-push,
+.repo-card-sync-up {
+	color: oklch(0.76 0.10 250);
 }
 .repo-card-sync-btn.is-pull:hover:not(:disabled) {
 	background: oklch(0.80 0.09 210 / 0.14);
 }
 .repo-card-sync-btn.is-push:hover:not(:disabled) {
 	background: oklch(0.76 0.10 250 / 0.14);
+}
+.scm-sync-group {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+}
+.scm-sync-group .repo-card-sync-btn {
+	height: 26px;
+	padding: 0 8px;
+	font-size: 12px;
+}
+.scm-remote-error {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 8px 10px 8px 16px;
+	border-bottom: 0.5px solid oklch(0.70 0.18 25 / 0.3);
+	background: oklch(0.70 0.18 25 / 0.08);
+	color: oklch(0.80 0.12 25);
+	font-size: 12px;
+	white-space: pre-wrap;
+	flex-shrink: 0;
+}
+.scm-remote-error.is-fixing {
+	border-bottom-color: oklch(1 0 0 / 0.08);
+	background: transparent;
+	color: oklch(0.70 0.010 70);
+}
+.scm-remote-error > span {
+	flex: 1;
+	min-width: 0;
 }
 .repo-card-spinner {
 	width: 9px;

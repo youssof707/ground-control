@@ -21,7 +21,7 @@ import { DiffPane, type DiffView } from "./DiffPane";
 import { FileList, type FileListHandle, type FileListRows } from "./FileList";
 import type { RowPointer } from "./FileRow";
 import { ScmContextMenu, type MenuItem } from "./ScmContextMenu";
-import { formatAge, leafName, plural } from "./format";
+import { compactCount, formatAge, leafName, plural } from "./format";
 import { buildReviewPrompt } from "./reviewPrompt";
 import {
 	canReuse,
@@ -36,10 +36,12 @@ import {
 	type RowBuffer,
 } from "./rowBuffer";
 import { call, cancel, retryConnection } from "./scmClient";
+import { SyncArrow, syncState } from "./syncState";
 import {
 	commitStaged,
 	isHardFailure,
 	requestRefresh,
+	runRemoteOp,
 	useSourceControlStore,
 	type ScmEntry,
 } from "./useSourceControlStore";
@@ -236,6 +238,70 @@ function CheckoutSwitcher({
 	}));
 
 	return <CheckoutPicker label="Checkout" value={checkout} options={items} onChange={onSwitch} />;
+}
+
+function SyncButtons({ checkout, summary }: { checkout: string; summary: ScmSummary | undefined }) {
+	const busy = useSourceControlStore((s) => s.remote[checkout]?.busy ?? null);
+	const committing = useSourceControlStore((s) => (s.commits[checkout]?.busy ?? null) !== null);
+	const branch = summary?.branch ?? null;
+	const { upstream, ahead, behind, showPull, showPush } = syncState(summary, branch);
+	if (!showPull && !showPush) return null;
+	const disabled = busy !== null || committing;
+	return (
+		<span className="scm-sync-group">
+			{showPull ? (
+				<button
+					type="button"
+					className="repo-card-sync-btn is-pull"
+					disabled={disabled}
+					onClick={() => void runRemoteOp(checkout, "pull")}
+					aria-label={`Pull ${plural(behind, "commit", "commits")} from ${upstream}`}
+				>
+					{busy === "pull" ? <span className="repo-card-spinner" aria-hidden="true" /> : <SyncArrow up={false} />}
+					<span>{compactCount(behind)}</span>
+				</button>
+			) : null}
+			{showPush ? (
+				<button
+					type="button"
+					className={`repo-card-sync-btn ${ahead > 0 ? "is-push" : "is-combined"}`}
+					disabled={disabled}
+					onClick={() => void runRemoteOp(checkout, "push")}
+					aria-label={
+						upstream
+							? `Push ${plural(ahead, "commit", "commits")} to ${upstream}`
+							: `Publish ${branch} to origin with ${plural(ahead, "commit", "commits")}`
+					}
+				>
+					{busy === "push" ? <span className="repo-card-spinner" aria-hidden="true" /> : <SyncArrow up />}
+					<span>{compactCount(ahead)}</span>
+				</button>
+			) : null}
+		</span>
+	);
+}
+
+function RemoteError({ checkout }: { checkout: string }) {
+	const error = useSourceControlStore((s) => s.remote[checkout]?.error ?? null);
+	const fixing = useSourceControlStore((s) => s.remote[checkout]?.fixing ?? false);
+	const busy = useSourceControlStore((s) => s.remote[checkout]?.busy ?? null);
+	const dismiss = useSourceControlStore((s) => s.dismissRemoteError);
+	if (fixing && busy) {
+		return (
+			<div className="scm-remote-error is-fixing" role="status">
+				<span>{busy === "pull" ? "Pull failed, Claude is fixing it…" : "Push failed, Claude is fixing it…"}</span>
+			</div>
+		);
+	}
+	if (!error) return null;
+	return (
+		<div className="scm-remote-error" role="alert">
+			<span>{error}</span>
+			<button type="button" className="btn btn-ghost btn-icon" aria-label="Dismiss error" onClick={() => dismiss(checkout)}>
+				×
+			</button>
+		</div>
+	);
 }
 
 function SidebarMessage({ children }: { children: ReactNode }) {
@@ -899,6 +965,7 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 							<span className="scm-review-count">{reviewCount}</span>
 						</button>
 					) : null}
+					<SyncButtons checkout={checkout} summary={summary} />
 					<button
 						type="button"
 						className="btn btn-ghost btn-icon"
@@ -912,6 +979,7 @@ function SourceControlModal({ checkout, onClose }: { checkout: string; onClose: 
 						<CloseIcon />
 					</button>
 				</div>
+				<RemoteError checkout={checkout} />
 				<div style={{ flex: 1, minHeight: 0, display: "flex" }}>
 					<div
 						style={{

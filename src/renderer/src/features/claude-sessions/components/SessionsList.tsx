@@ -81,6 +81,14 @@ function sectionLabelColor(color: WorktreeColor): string {
  * opacity reads as a saturated blue box instead of a grey highlight. That
  * whisper-tinted grey is then laid down at 4% opacity for the lift.
  */
+const SECTION_CARD: React.CSSProperties = {
+	background: T.bg,
+	border: `0.5px solid ${T.borderSoft}`,
+	borderRadius: 10,
+	paddingBottom: 4,
+	overflow: "hidden",
+};
+
 const ROW_SELECTED_TINT = `color-mix(in oklab, ${T.text} 99%, ${T.accent} 1%)`;
 const ROW_SELECTED_BG = `color-mix(in oklab, ${ROW_SELECTED_TINT} 4%, transparent)`;
 
@@ -888,13 +896,12 @@ export function SessionsList({
 		return { kind: "top" };
 	}, [draft, sidebarRows]);
 
-	const renderDraftRow = (last: boolean) =>
+	const renderDraftRow = () =>
 		draft ? (
 			<DraftRowSidebar
 				key={draft.id}
 				draft={draft}
 				active={draft.id === activeSessionId}
-				last={last}
 				onDiscard={() => discardDraft(draft.id)}
 			/>
 		) : null;
@@ -903,14 +910,13 @@ export function SessionsList({
 	// worktree box, so the per-row cwd footer is suppressed — the bucket
 	// header already names the folder. (Group members keep their footer:
 	// a group can span folders, so its rows still need the label.)
-	const renderSessionRow = (id: string, last: boolean) => {
+	const renderSessionRow = (id: string) => {
 		const s = sessions[id];
 		const sessionPending = queue.filter((q) => q.sessionId === id);
 		return (
 			<SessionRowSidebar
 				key={id}
 				session={s}
-				last={last}
 				hideCwd
 				pending={sessionPending}
 				active={id === activeSessionId}
@@ -1010,9 +1016,16 @@ export function SessionsList({
 				}}
 			>
 				{visibleOrder.length === 0 && !draft ? null : (
-					<div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-						{draftHost.kind === "top"
-							? renderDraftRow(sidebarRows.length === 0)
+					<div
+						style={{
+							display: "flex",
+							flexDirection: "column",
+							gap: 10,
+							padding: "2px 10px 0",
+						}}
+					>
+						{draft && draftHost.kind === "top"
+							? <div style={SECTION_CARD}>{renderDraftRow()}</div>
 							: null}
 						{sidebarRows.map((row) => {
 							// Collapsed-header status counts. Computed here for
@@ -1033,22 +1046,7 @@ export function SessionsList({
 								return (
 									<div
 										key={`cwd:${row.cwd}`}
-										style={{
-											// Recessed dark box encapsulates the
-											// whole bucket (header + rows) — the
-											// neutral sibling of GroupSection's
-											// framed look. Rows render
-											// transparent, so T.bg shows through
-											// the full section.
-											background: T.bg,
-											// Top hairline only — same recipe as
-											// the header's under-rule. It sits
-											// flush on the dark fill (a section
-											// edge) rather than floating in the
-											// gap the way a bottom rule did.
-											borderTop: `1px solid ${T.borderSoft}`,
-											overflow: "hidden",
-										}}
+										style={SECTION_CARD}
 									>
 										<CwdHeaderRow
 											cwd={row.cwd}
@@ -1066,16 +1064,11 @@ export function SessionsList({
 										{!row.collapsed &&
 										draftHost.kind === "cwd" &&
 										draftHost.cwd === row.cwd
-											? renderDraftRow(row.ids.length === 0)
+											? renderDraftRow()
 											: null}
 										{row.collapsed
 											? null
-											: row.ids.map((id, i) =>
-												renderSessionRow(
-													id,
-													i === row.ids.length - 1,
-												),
-											)}
+											: row.ids.map((id) => renderSessionRow(id))}
 									</div>
 								);
 							}
@@ -1083,15 +1076,7 @@ export function SessionsList({
 								return (
 									<div
 										key={`wt:${row.worktree.id}`}
-										style={{
-											// Same recessed dark box as the cwd
-											// buckets — worktrees are the neutral
-											// sibling of GroupSection too, just
-											// keyed by worktree instead of folder.
-											background: T.bg,
-											borderTop: `1px solid ${T.borderSoft}`,
-											overflow: "hidden",
-										}}
+										style={SECTION_CARD}
 									>
 										<CwdHeaderRow
 											cwd={row.worktree.baseDir}
@@ -1113,16 +1098,11 @@ export function SessionsList({
 										{!row.collapsed &&
 										draftHost.kind === "worktree" &&
 										draftHost.id === row.worktree.id
-											? renderDraftRow(row.ids.length === 0)
+											? renderDraftRow()
 											: null}
 										{row.collapsed
 											? null
-											: row.ids.map((id, i) =>
-												renderSessionRow(
-													id,
-													i === row.ids.length - 1,
-												),
-											)}
+											: row.ids.map((id) => renderSessionRow(id))}
 									</div>
 								);
 							}
@@ -1144,14 +1124,10 @@ export function SessionsList({
 									onNewSession={(cwd) =>
 										startInGroup(group, cwd)
 									}
-									// `last={false}`: a rendered group
-									// section always has >=1 member row
-									// beneath the draft, so the draft
-									// never owns the box's final hairline.
 									draftSlot={
 										draftHost.kind === "group" &&
 										draftHost.id === group.id
-											? renderDraftRow(false)
+											? renderDraftRow()
 											: null
 									}
 									onRename={(id) =>
@@ -1309,7 +1285,6 @@ function useRowDerived(
 
 function SessionRowSidebar({
 	session,
-	last,
 	pending,
 	active,
 	inGroup = false,
@@ -1319,7 +1294,6 @@ function SessionRowSidebar({
 	onRemoveFromGroup,
 }: {
 	session: ClaudeSessionFull;
-	last: boolean;
 	pending: PermissionRequest[];
 	active: boolean;
 	/** True when the row sits under a CwdHeaderRow — the header already
@@ -1352,8 +1326,7 @@ function SessionRowSidebar({
 	// One-shot accent wash right after this row was restored by undo. The row
 	// returns to its original recency slot, which in a long sidebar is easily
 	// off-screen or lost among neighbours — navigation proves the restore
-	// worked, this shows WHERE it landed. Reads unambiguously because rows have
-	// no hover background, so a transient tint can't be a pointer artifact.
+	// worked, this shows WHERE it landed.
 	const restored = useUndoStore((s) => s.flashSessionId) === session.id;
 	const rowRef = useRef<HTMLDivElement | null>(null);
 	useEffect(() => {
@@ -1363,34 +1336,13 @@ function SessionRowSidebar({
 	return (
 		<div
 			ref={rowRef}
-			className={restored ? "session-row-restored" : undefined}
-			style={{
-				borderBottom: last ? "none" : `0.5px solid ${T.borderSoft}`,
-				// Only highlight the active row. Pending state is conveyed by the
-				// "waiting for input" StatusPill and the count badge below.
-				// The fill is a translucent color-mix, never a fixed surface
-				// token: a row can sit on the pane (T.win) or on a recessed
-				// cwd/worktree/group bucket (T.bg), and the selection has to
-				// lift *relative* to whichever is behind it. A flat
-				// T.surfaceHi over-shot inside the dark bucket and came out
-				// lighter than the pane framing it, so the highlight read as
-				// a foreign grey block floating out of its own box.
-				background: active ? ROW_SELECTED_BG : "transparent",
-				position: "relative",
-			}}
+			className={
+				restored
+					? "gc-sidebar-row session-row-restored"
+					: "gc-sidebar-row"
+			}
+			data-active={active}
 		>
-			{active ? (
-				<div
-					style={{
-						position: "absolute",
-						left: 0,
-						top: 0,
-						bottom: 0,
-						width: 3,
-						background: T.accent,
-					}}
-				/>
-			) : null}
 			<Link
 				to={`/sessions/${session.id}`}
 				style={{ textDecoration: "none", color: "inherit" }}
@@ -1596,15 +1548,7 @@ function GroupSection({
 		.find((cwd): cwd is string => !!cwd);
 	return (
 		<div
-			style={{
-				// Same recessed dark box as the cwd/worktree buckets — see
-				// the comment on those wrapping divs in the sidebar's
-				// render map. Rows render transparent, so T.bg shows
-				// through the full section.
-				background: T.bg,
-				borderTop: `1px solid ${T.borderSoft}`,
-				overflow: "hidden",
-			}}
+			style={SECTION_CARD}
 		>
 			<GroupHeaderRow
 				group={group}
@@ -1622,7 +1566,7 @@ function GroupSection({
 			{group.collapsed ? null : draftSlot}
 			{group.collapsed
 				? null
-				: ids.map((id, i) => {
+				: ids.map((id) => {
 					const s = sessions[id];
 					const sessionPending = queue.filter(
 						(q) => q.sessionId === id,
@@ -1631,7 +1575,6 @@ function GroupSection({
 						<SessionRowSidebar
 							key={id}
 							session={s}
-							last={i === ids.length - 1}
 							pending={sessionPending}
 							active={id === activeSessionId}
 							inGroup
@@ -1799,14 +1742,11 @@ function CwdHeaderRow({
 			style={{
 				display: "flex",
 				alignItems: "center",
-				borderBottom: collapsed
-					? "none"
-					: `0.5px solid ${T.borderSoft}`,
-				// 2px + the 24px button's 12px half-width puts the glyph's
-				// center 14px from the box edge — the same optical column as
+				// 6px + the 24px button's 12px half-width puts the glyph's
+				// center 18px from the box edge — the same optical column as
 				// the rows' ⋯ button (row padding 14 + RowMenuButton's
 				// marginRight -12).
-				paddingRight: 2,
+				paddingRight: 6,
 			}}
 		>
 			<button
@@ -1820,7 +1760,7 @@ function CwdHeaderRow({
 					display: "flex",
 					alignItems: "center",
 					gap: 7,
-					padding: "9px 12px",
+					padding: "10px 12px 8px",
 					// The wrapping bucket box owns the dark fill; the header
 					// just splits itself from the first member row with a
 					// hairline when expanded (GroupHeaderRow's move).
@@ -1856,9 +1796,9 @@ function CwdHeaderRow({
 				</svg>
 				<span
 					style={{
-						fontSize: 11,
+						fontSize: 10.5,
 						fontWeight: 600,
-						letterSpacing: 0.5,
+						letterSpacing: 0.7,
 						textTransform: "uppercase",
 						// Color on the name only — chevron and "+" stay
 						// T.textFaint, exactly like GroupHeaderRow.
@@ -1899,7 +1839,8 @@ function CwdHeaderRow({
 						height: 24,
 						padding: 0,
 						border: "none",
-						borderRadius: 4,
+						borderRadius: 6,
+						transition: "background 120ms ease, color 120ms ease",
 						background: "transparent",
 						color: T.textFaint,
 						cursor: "pointer",
@@ -1992,16 +1933,10 @@ function GroupHeaderRow({
 				style={{
 					display: "flex",
 					alignItems: "center",
-					// Bottom hairline appears only when expanded, splitting the
-					// header from the first member row; collapsed headers stand
-					// alone inside the bordered box.
-					borderBottom: group.collapsed
-						? "none"
-						: `0.5px solid ${T.borderSoft}`,
-					// 2px + the 24px button's 12px half-width puts the glyph's
-					// center 14px from the box edge — the same optical column
+					// 6px + the 24px button's 12px half-width puts the glyph's
+					// center 18px from the box edge — the same optical column
 					// as the rows' ⋯ button. Matches CwdHeaderRow.
-					paddingRight: 2,
+					paddingRight: 6,
 				}}
 			>
 				<button
@@ -2015,7 +1950,7 @@ function GroupHeaderRow({
 						display: "flex",
 						alignItems: "center",
 						gap: 7,
-						padding: "9px 12px",
+						padding: "10px 12px 8px",
 						border: "none",
 						background: "transparent",
 						cursor: "pointer",
@@ -2055,9 +1990,9 @@ function GroupHeaderRow({
 					    group-colored. */}
 					<span
 						style={{
-							fontSize: 11,
+							fontSize: 10.5,
 							fontWeight: 600,
-							letterSpacing: 0.5,
+							letterSpacing: 0.7,
 							textTransform: "uppercase",
 							color: sectionLabelColor(group.color),
 							overflow: "hidden",
@@ -2094,7 +2029,8 @@ function GroupHeaderRow({
 							height: 24,
 							padding: 0,
 							border: "none",
-							borderRadius: 4,
+							borderRadius: 6,
+							transition: "background 120ms ease, color 120ms ease",
 							background: "transparent",
 							color: T.textFaint,
 							cursor: "pointer",
@@ -2247,36 +2183,14 @@ function GroupContextMenu({
 function DraftRowSidebar({
 	draft,
 	active,
-	last,
 	onDiscard,
 }: {
 	draft: DraftSession;
 	active: boolean;
-	last: boolean;
 	onDiscard: () => void;
 }) {
 	return (
-		<div
-			style={{
-				borderBottom: last ? "none" : `0.5px solid ${T.borderSoft}`,
-				// Same relative lift as SessionRowSidebar — a draft row can land
-				// inside a recessed cwd/worktree/group bucket too.
-				background: active ? ROW_SELECTED_BG : "transparent",
-				position: "relative",
-			}}
-		>
-			{active ? (
-				<div
-					style={{
-						position: "absolute",
-						left: 0,
-						top: 0,
-						bottom: 0,
-						width: 3,
-						background: T.accent,
-					}}
-				/>
-			) : null}
+		<div className="gc-sidebar-row" data-active={active}>
 			<Link
 				to={`/sessions/${draft.id}`}
 				style={{ textDecoration: "none", color: "inherit" }}
@@ -2286,7 +2200,7 @@ function DraftRowSidebar({
 						display: "flex",
 						flexDirection: "column",
 						gap: 6,
-						padding: "12px 14px",
+						padding: "10px 14px",
 						minWidth: 0,
 					}}
 				>
