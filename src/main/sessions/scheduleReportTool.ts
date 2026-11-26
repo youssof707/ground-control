@@ -1,4 +1,4 @@
-import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
+import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import {
 	ScheduleStatusColorSchema,
@@ -21,37 +21,30 @@ export interface ScheduleReport {
 	line: string;
 }
 
-export function createScheduleReportServer(
+export function createReportTool(
 	ids: { scheduleId: string; sessionId: string },
 	onReport: (report: ScheduleReport) => void,
 ) {
-	return createSdkMcpServer({
-		name: REPORT_SERVER_NAME,
-		version: "1.0.0",
-		alwaysLoad: true,
-		tools: [
-			tool(
-				"report",
-				"Report this scheduled job's outcome to the Ground Control scheduler widget. Call exactly once when the job is done.",
-				{
-					color: ScheduleStatusColorSchema.describe(
-						"green = fine, yellow = degraded or could not check, red = broken",
-					),
-					line: z
-						.string()
-						.min(1)
-						.max(MAX_REPORT_LINE_LENGTH)
-						.describe("Terse status headline, about 40 characters max, shown on one line in a narrow sidebar"),
-				},
-				async ({ color, line }) => {
-					onReport({
-						...ids,
-						color,
-						line: line.trim(),
-					});
-					return { content: [{ type: "text", text: "Status recorded." }] };
-				},
+	return tool(
+		"report",
+		"Report this scheduled job's outcome to the Ground Control scheduler widget. Call exactly once when the job is done.",
+		{
+			color: ScheduleStatusColorSchema.describe(
+				"green = fine, yellow = degraded or could not check, red = broken",
 			),
-		],
-	});
+			line: z
+				.string()
+				.min(1)
+				.max(MAX_REPORT_LINE_LENGTH)
+				.describe("Terse status headline, about 40 characters max, shown on one line in a narrow sidebar"),
+		},
+		async ({ color, line }) => {
+			onReport({
+				...ids,
+				color,
+				line: line.trim(),
+			});
+			return { content: [{ type: "text" as const, text: "Status recorded." }] };
+		},
+	);
 }

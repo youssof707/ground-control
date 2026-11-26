@@ -11,9 +11,8 @@ import {
 import { app } from "electron";
 import { randomUUID } from "node:crypto";
 import {
-	createScheduleReportServer,
+	createReportTool,
 	REPORT_INSTRUCTIONS,
-	REPORT_SERVER_NAME,
 	REPORT_TOOL_NAME,
 	type ScheduleReport,
 } from "./scheduleReportTool";
@@ -1583,16 +1582,24 @@ export class SessionManager {
 		session: ClaudeSession,
 		scheduleId: string,
 	): Partial<Options> {
-		const server = createScheduleReportServer(
+		const report = createReportTool(
 			{ scheduleId, sessionId: session.id },
-			(report) => {
+			(r) => {
 				if (session.scheduleId !== scheduleId) return;
-				this.scheduleHooks.onReport?.(report);
+				this.scheduleHooks.onReport?.(r);
 			},
 		);
 		return {
-			mcpServers: { [REPORT_SERVER_NAME]: server },
-			allowedTools: [REPORT_TOOL_NAME],
+			mcpServers: {
+				[CONTROL_SERVER_NAME]: createScheduleControlServer(
+					this.scheduleControl,
+					[report],
+				),
+			},
+			allowedTools: [
+				REPORT_TOOL_NAME,
+				...(this.scheduleControl ? [LIST_SCHEDULES_TOOL_NAME] : []),
+			],
 			systemPrompt: {
 				type: "preset",
 				preset: "claude_code",

@@ -24,9 +24,7 @@ const TimeSchema = z
 export const TimingSchema = z.discriminatedUnion("type", [
 	z.object({
 		type: z.literal("once"),
-		at: z
-			.string()
-			.describe("Local date and time, e.g. 2026-11-27T09:00"),
+		at: z.string().describe("Local date and time, e.g. 2026-11-27T09:00"),
 	}),
 	z.object({
 		type: z.literal("repeat"),
@@ -176,66 +174,83 @@ async function guarded(run: () => Promise<unknown> | unknown) {
 const fields = {
 	name: z.string().describe("Short name shown in the Tasks widget"),
 	prompt: z.string().min(1).describe("What Claude is asked to do on each run"),
-	folder: z.string().min(1).describe("Absolute path of the folder the run works in"),
+	folder: z
+		.string()
+		.min(1)
+		.describe("Absolute path of the folder the run works in"),
 	model: z.string().describe("Model id or alias, e.g. sonnet or opus"),
 	timing: TimingSchema.describe("When the task runs, in local time"),
 };
 
-export function createScheduleControlServer(deps: ScheduleControlDeps) {
+const EXPLICIT_ONLY =
+	"Only use this when the user, or the scheduled task's own prompt, explicitly tells you to";
+
+type ServerTools = NonNullable<
+	Parameters<typeof createSdkMcpServer>[0]["tools"]
+>;
+
+function scheduleTools(deps: ScheduleControlDeps) {
+	return [
+		tool(
+			"list_schedules",
+			"List the user's Ground Control scheduled tasks with their timing, prompt, model, folder, next run and latest status. Use only when the work concerns Ground Control schedules.",
+			{},
+			async () => guarded(() => deps.list().map(describeSchedule)),
+		),
+		tool(
+			"create_schedule",
+			`Create a Ground Control scheduled task. It starts enabled. ${EXPLICIT_ONLY} create a Ground Control scheduled task. Never create one on your own initiative.`,
+			{
+				name: fields.name.optional(),
+				prompt: fields.prompt,
+				folder: fields.folder,
+				model: fields.model.optional(),
+				timing: fields.timing,
+			},
+			async ({ name, prompt, folder, model, timing }) =>
+				guarded(async () =>
+					describeSchedule(
+						await deps.create({
+							title: name,
+							prompt,
+							cwd: folder,
+							model,
+							kind: kindFromTiming(timing),
+						}),
+					),
+				),
+		),
+		tool(
+			"update_schedule",
+			`Edit a Ground Control scheduled task. Only the fields you pass change. ${EXPLICIT_ONLY} change a Ground Control scheduled task. Never edit one on your own initiative.`,
+			{
+				id: z.string().describe("Task id from list_schedules"),
+				name: fields.name.optional(),
+				prompt: fields.prompt.optional(),
+				folder: fields.folder.optional(),
+				model: fields.model.optional(),
+				timing: fields.timing.optional(),
+			},
+			async ({ id, ...patch }) =>
+				guarded(async () => {
+					const current = deps.get(id);
+					if (!current) throw new Error("Task not found");
+					return describeSchedule(
+						await deps.update(mergeUpdate(current, patch)),
+					);
+				}),
+		),
+	];
+}
+
+export function createScheduleControlServer(
+	deps: ScheduleControlDeps | null,
+	extraTools: ServerTools = [],
+) {
 	return createSdkMcpServer({
 		name: CONTROL_SERVER_NAME,
 		version: "1.0.0",
 		alwaysLoad: true,
-		tools: [
-			tool(
-				"list_schedules",
-				"List the user's Ground Control scheduled tasks with their timing, prompt, model, folder, next run and latest status.",
-				{},
-				async () => guarded(() => deps.list().map(describeSchedule)),
-			),
-			tool(
-				"create_schedule",
-				"Create a Ground Control scheduled task. It starts enabled.",
-				{
-					name: fields.name.optional(),
-					prompt: fields.prompt,
-					folder: fields.folder,
-					model: fields.model.optional(),
-					timing: fields.timing,
-				},
-				async ({ name, prompt, folder, model, timing }) =>
-					guarded(async () =>
-						describeSchedule(
-							await deps.create({
-								title: name,
-								prompt,
-								cwd: folder,
-								model,
-								kind: kindFromTiming(timing),
-							}),
-						),
-					),
-			),
-			tool(
-				"update_schedule",
-				"Edit a Ground Control scheduled task. Only the fields you pass change.",
-				{
-					id: z.string().describe("Task id from list_schedules"),
-					name: fields.name.optional(),
-					prompt: fields.prompt.optional(),
-					folder: fields.folder.optional(),
-					model: fields.model.optional(),
-					timing: fields.timing.optional(),
-				},
-				async ({ id, ...patch }) =>
-					guarded(async () => {
-						const current = deps.get(id);
-						if (!current) throw new Error("Task not found");
-						return describeSchedule(
-							await deps.update(mergeUpdate(current, patch)),
-						);
-					}),
-			),
-		],
+		tools: [...(deps ? scheduleTools(deps) : []), ...extraTools],
 	});
 }
