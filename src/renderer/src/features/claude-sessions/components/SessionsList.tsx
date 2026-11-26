@@ -82,11 +82,22 @@ function sectionLabelColor(color: WorktreeColor): string {
  * whisper-tinted grey is then laid down at 4% opacity for the lift.
  */
 const SECTION_CARD: React.CSSProperties = {
-	background: T.bg,
-	border: `0.5px solid ${T.borderSoft}`,
-	borderRadius: 10,
+	background: "oklch(0.205 0.007 60)",
+	borderRadius: 12,
 	paddingBottom: 4,
 	overflow: "hidden",
+	boxShadow: [
+		"inset 0 0.5px 0 oklch(1 0 0 / 0.06)",
+		"0 0 0 0.5px oklch(0 0 0 / 0.55)",
+		"0 1px 2px oklch(0 0 0 / 0.22)",
+		"0 4px 12px -6px oklch(0 0 0 / 0.35)",
+	].join(", "),
+};
+
+const HEADER_BUTTON_HOVER: React.CSSProperties = {
+	background: "oklch(0.25 0.008 60)",
+	boxShadow:
+		"inset 0 0.5px 0 oklch(1 0 0 / 0.07), 0 0 0 0.5px oklch(0 0 0 / 0.4), 0 1px 1.5px oklch(0 0 0 / 0.25)",
 };
 
 const ROW_SELECTED_TINT = `color-mix(in oklab, ${T.text} 99%, ${T.accent} 1%)`;
@@ -1760,7 +1771,7 @@ function CwdHeaderRow({
 					display: "flex",
 					alignItems: "center",
 					gap: 7,
-					padding: "10px 12px 8px",
+					padding: "11px 12px 8px",
 					// The wrapping bucket box owns the dark fill; the header
 					// just splits itself from the first member row with a
 					// hairline when expanded (GroupHeaderRow's move).
@@ -1840,7 +1851,7 @@ function CwdHeaderRow({
 						padding: 0,
 						border: "none",
 						borderRadius: 6,
-						transition: "background 120ms ease, color 120ms ease",
+						transition: "background 140ms ease, color 140ms ease, box-shadow 140ms ease",
 						background: "transparent",
 						color: T.textFaint,
 						cursor: "pointer",
@@ -1849,11 +1860,13 @@ function CwdHeaderRow({
 					// on the bucket's recessed T.bg, where a fixed surface token
 					// would flare brighter than the pane around the box.
 					onMouseEnter={(e) => {
-						e.currentTarget.style.background = ROW_SELECTED_BG;
+						e.currentTarget.style.background = String(HEADER_BUTTON_HOVER.background);
+						e.currentTarget.style.boxShadow = String(HEADER_BUTTON_HOVER.boxShadow);
 						e.currentTarget.style.color = T.text;
 					}}
 					onMouseLeave={(e) => {
 						e.currentTarget.style.background = "transparent";
+						e.currentTarget.style.boxShadow = "none";
 						e.currentTarget.style.color = T.textFaint;
 					}}
 				>
@@ -1950,7 +1963,7 @@ function GroupHeaderRow({
 						display: "flex",
 						alignItems: "center",
 						gap: 7,
-						padding: "10px 12px 8px",
+						padding: "11px 12px 8px",
 						border: "none",
 						background: "transparent",
 						cursor: "pointer",
@@ -2030,7 +2043,7 @@ function GroupHeaderRow({
 							padding: 0,
 							border: "none",
 							borderRadius: 6,
-							transition: "background 120ms ease, color 120ms ease",
+							transition: "background 140ms ease, color 140ms ease, box-shadow 140ms ease",
 							background: "transparent",
 							color: T.textFaint,
 							cursor: "pointer",
@@ -2041,11 +2054,13 @@ function GroupHeaderRow({
 						// group's own hue, so the "+" reads as the same
 						// pointer affordance in both section kinds.
 						onMouseEnter={(e) => {
-							e.currentTarget.style.background = ROW_SELECTED_BG;
+							e.currentTarget.style.background = String(HEADER_BUTTON_HOVER.background);
+							e.currentTarget.style.boxShadow = String(HEADER_BUTTON_HOVER.boxShadow);
 							e.currentTarget.style.color = T.text;
 						}}
 						onMouseLeave={(e) => {
 							e.currentTarget.style.background = "transparent";
+							e.currentTarget.style.boxShadow = "none";
 							e.currentTarget.style.color = T.textFaint;
 						}}
 					>
