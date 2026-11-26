@@ -84,7 +84,8 @@ function sectionLabelColor(color: WorktreeColor): string {
  */
 const SECTION_CARD: React.CSSProperties = {
 	background: "oklch(0.205 0.007 60)",
-	borderRadius: 6,
+	borderTop: `1px solid ${T.borderSoft}`,
+	borderBottom: `1px solid ${T.borderSoft}`,
 	paddingBottom: 4,
 	overflow: "hidden",
 };
@@ -1024,7 +1025,7 @@ export function SessionsList({
 							display: "flex",
 							flexDirection: "column",
 							gap: 10,
-							padding: "2px 10px 0",
+							padding: "2px 0 0",
 						}}
 					>
 						{draft && draftHost.kind === "top"
@@ -2269,7 +2270,7 @@ function DraftRowSidebar({
 								gap: 6,
 								height: 22,
 								padding: "0 9px",
-								borderRadius: 4,
+								borderRadius: 11,
 								border: `0.5px solid ${T.border}`,
 								color: T.textDim,
 								fontSize: 11.5,

@@ -47,7 +47,7 @@ export function BabysitBadge({ sessionId }: { sessionId: string }) {
 				display: "inline-flex",
 				alignItems: "center",
 				height: 22,
-				borderRadius: 4,
+				borderRadius: 11,
 				background: hover
 					? `color-mix(in oklab, ${T.babysit} 24%, transparent)`
 					: T.babysitSoft,
