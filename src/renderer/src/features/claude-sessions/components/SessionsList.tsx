@@ -636,7 +636,6 @@ export function SessionsList({
 			if (cascadeWorktreeId) {
 				runBackgroundTask({
 					label: `Deleting worktree ${cascadeWorktreeName}`,
-					quiet: true,
 					run: () => window.claude.deleteWorktree(cascadeWorktreeId),
 					// Only prune the local cache on success: main KEEPS the
 					// registry entry when on-disk cleanup fails so the user

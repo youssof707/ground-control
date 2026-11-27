@@ -20,14 +20,7 @@ export type BackgroundTaskStatus = "running" | "error";
 
 export interface BackgroundTask {
 	id: string;
-	/**
-	 * Short, human-readable, and VISIBLY rendered next to the spinner (e.g.
-	 * "Deleting worktree ucc-ff-change"). This repo has a hard no-tooltip
-	 * rule, so the label is the only affordance explaining what's running —
-	 * write it for a reader, not as a debug string.
-	 */
 	label: string;
-	quiet: boolean;
 	status: BackgroundTaskStatus;
 	error: string | null;
 }
@@ -67,7 +60,6 @@ let seq = 0;
  */
 export function runBackgroundTask(opts: {
 	label: string;
-	quiet?: boolean;
 	run: () => Promise<unknown>;
 	onSuccess?: () => void;
 }): void {
@@ -78,7 +70,6 @@ export function runBackgroundTask(opts: {
 			{
 				id,
 				label: opts.label,
-				quiet: opts.quiet ?? false,
 				status: "running",
 				error: null,
 			},

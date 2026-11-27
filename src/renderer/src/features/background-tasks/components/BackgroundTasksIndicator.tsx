@@ -32,13 +32,6 @@ export function BackgroundTasksIndicator() {
 
 	if (tasks.length === 0) return null;
 
-	const visible = running.filter((t) => !t.quiet);
-	const visibleLabel =
-		visible.length === 0
-			? null
-			: visible.length === 1
-				? visible[0].label
-				: `${visible.length} tasks running`;
 	const statusLabel = running.map((t) => t.label).join(", ");
 
 	return (
@@ -59,24 +52,6 @@ export function BackgroundTasksIndicator() {
 					onDismiss={dismiss}
 					onDismissAll={dismissAll}
 				/>
-			) : null}
-
-			{visibleLabel ? (
-				<span
-					aria-hidden
-					style={{
-						minWidth: 0,
-						overflow: "hidden",
-						textOverflow: "ellipsis",
-						whiteSpace: "nowrap",
-						fontSize: 10,
-						fontFamily: T.mono,
-						color: T.textMute,
-						letterSpacing: 0.2,
-					}}
-				>
-					{visibleLabel}
-				</span>
 			) : null}
 
 			{errors.length > 0 ? (
