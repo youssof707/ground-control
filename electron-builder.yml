@@ -13,13 +13,17 @@ files:
   - "!electron.vite.config.{js,ts,mjs,cjs}"
   - "!{tsconfig,tsconfig.node,tsconfig.web}.json"
   - "!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}"
+  - "!node_modules/node-pty/prebuilds/{win32-*,darwin-x64}/**"
+  - "!node_modules/@kutalia/whisper-node-addon/dist/{mac-x64,win32-*}/**"
 mac:
   target:
     - target: dmg
       arch:
         - arm64
   category: public.app-category.productivity
-  identity: null
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  notarize: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
@@ -27,4 +31,5 @@ mac:
       Ground Control uses the microphone for on-device voice dictation.
       Audio never leaves your Mac.
 dmg:
+  sign: true
   artifactName: ${name}-${version}-${arch}.${ext}

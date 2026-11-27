@@ -1,6 +1,6 @@
 import { FeaturePanel } from "./components/FeaturePanel";
 import { Footer } from "./components/Footer";
-import { GitHubButton } from "./components/GitHubButton";
+import { DownloadButton, GitHubButton } from "./components/GitHubButton";
 import { glows } from "./components/Glow";
 import { Hero } from "./components/Hero";
 import { Nav } from "./components/Nav";
@@ -206,7 +206,10 @@ export function App() {
 						<h2 className="text-[26px] font-semibold tracking-tight text-balance text-gc-text md:text-3xl lg:text-[34px]">
 							That's the app.
 						</h2>
-						<GitHubButton />
+						<div className="flex flex-wrap items-center justify-center gap-3">
+							<DownloadButton />
+							<GitHubButton variant="secondary" />
+						</div>
 					</div>
 				</section>
 			</main>

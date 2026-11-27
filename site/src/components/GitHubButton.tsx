@@ -10,12 +10,31 @@ export function GitHubMark({ size = 18 }: { size?: number }) {
 	);
 }
 
-export function GitHubButton({ size = "lg" }: { size?: "lg" | "sm" }) {
+export const DOWNLOAD_URL = `${GITHUB_URL}/releases/latest/download/ground-control-arm64.dmg`;
+
+export function DownloadButton() {
+	return (
+		<a
+			href={DOWNLOAD_URL}
+			className="group inline-flex h-12 items-center gap-2 rounded-[14px] bg-gc-text px-5 text-[15px] font-semibold text-gc-accent-ink transition-colors hover:bg-gc-accent"
+		>
+			<svg width={18} height={18} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+				<path d="M11.18 8.5c-.02-1.6 1.31-2.37 1.37-2.41-.75-1.09-1.91-1.24-2.32-1.26-.99-.1-1.93.58-2.43.58-.5 0-1.27-.57-2.09-.55-1.08.02-2.07.62-2.62 1.59-1.12 1.94-.29 4.81.8 6.38.53.77 1.17 1.63 2 1.6.8-.03 1.11-.52 2.08-.52.97 0 1.24.52 2.09.5.86-.01 1.41-.78 1.94-1.55.61-.89.86-1.75.88-1.8-.02-.01-1.68-.65-1.7-2.56ZM9.58 3.79c.44-.54.74-1.28.66-2.03-.64.03-1.41.43-1.87.96-.41.47-.77 1.23-.67 1.96.71.05 1.44-.36 1.88-.89Z" />
+			</svg>
+			Download for Mac
+		</a>
+	);
+}
+
+export function GitHubButton({ size = "lg", variant = "primary" }: { size?: "lg" | "sm"; variant?: "primary" | "secondary" }) {
 	return (
 		<a
 			href={GITHUB_URL}
 			className={cx(
-				"group inline-flex items-center gap-2 bg-gc-text font-semibold text-gc-accent-ink transition-colors hover:bg-gc-accent",
+				"group inline-flex items-center gap-2 font-semibold transition-colors",
+				variant === "primary"
+					? "bg-gc-text text-gc-accent-ink hover:bg-gc-accent"
+					: "border border-white/15 text-gc-text hover:bg-white/5",
 				size === "lg" ? "h-12 rounded-[14px] px-5 text-[15px]" : "rounded-xl px-4 py-2 text-[14px]",
 			)}
 		>

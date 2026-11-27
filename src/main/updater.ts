@@ -1,29 +1,11 @@
 import { app, net } from "electron";
 import { is } from "@electron-toolkit/utils";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import { createWriteStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { broadcast } from "./windows";
-
-/**
- * Simple GitHub-Releases-based updater for the unsigned macOS build.
- *
- * Why we roll our own instead of electron-updater:
- *   - The app is unsigned (`identity: null` in electron-builder.yml). Squirrel.Mac
- *     refuses to swap in an update whose signature can't be validated, so the
- *     built-in autoUpdater path is a non-starter here.
- *   - We only ship one artifact (arm64 .dmg) and only need to handle three
- *     users. So a small "download the dmg the release workflow published,
- *     mount it, cp -R the new bundle over the old, relaunch" script is
- *     plenty.
- *
- * Quarantine trick: files downloaded via Electron's `net` module (i.e. NOT via
- * a browser or a shell that goes through LaunchServices) do not receive the
- * `com.apple.quarantine` xattr. So the user's manual `xattr -dr com.apple.quarantine`
- * step goes away entirely — we just download, mount, copy.
- */
 
 const GH_OWNER = "youssof707";
 const GH_REPO = "ground-control";
@@ -135,7 +117,9 @@ export async function checkForUpdate(): Promise<UpdateCheckResult> {
 		}
 		const release = (await res.json()) as GhRelease;
 		const latestVersion = release.tag_name.replace(/^v/, "");
-		const dmg = release.assets.find((a) => a.name.endsWith("-arm64.dmg"));
+		const dmg =
+			release.assets.find((a) => a.name === `ground-control-${latestVersion}-arm64.dmg`) ??
+			release.assets.find((a) => a.name.endsWith("-arm64.dmg"));
 		const available = compareVersions(latestVersion, currentVersion) > 0;
 		return {
 			available,
@@ -263,6 +247,44 @@ async function findAppInMount(mountpoint: string): Promise<string> {
 	const appName = entries.find((n) => n.endsWith(".app"));
 	if (!appName) throw new Error(`No .app found in ${mountpoint}`);
 	return join(mountpoint, appName);
+}
+
+function codesignDetails(appPath: string): Promise<string> {
+	return new Promise((resolvePromise, rejectPromise) => {
+		execFile("/usr/bin/codesign", ["-dv", appPath], (err, _stdout, stderr) => {
+			if (err) rejectPromise(new Error(`codesign -dv failed: ${stderr || err.message}`));
+			else resolvePromise(stderr);
+		});
+	});
+}
+
+function teamIdentifier(details: string): string | null {
+	const match = /^TeamIdentifier=(.+)$/m.exec(details);
+	const id = match?.[1]?.trim();
+	return id && id !== "not set" ? id : null;
+}
+
+async function verifyUpdateSignature(newAppPath: string, runningAppPath: string): Promise<void> {
+	const runningTeam = await codesignDetails(runningAppPath)
+		.then(teamIdentifier)
+		.catch(() => null);
+	if (!runningTeam) return;
+	await new Promise<void>((resolvePromise, rejectPromise) => {
+		execFile(
+			"/usr/bin/codesign",
+			["--verify", "--deep", "--strict", newAppPath],
+			(err, _stdout, stderr) => {
+				if (err) rejectPromise(new Error(`Update signature is invalid: ${stderr || err.message}`));
+				else resolvePromise();
+			},
+		);
+	});
+	const newTeam = teamIdentifier(await codesignDetails(newAppPath));
+	if (newTeam !== runningTeam) {
+		throw new Error(
+			`Update is signed by ${newTeam ?? "nobody"}, expected ${runningTeam}. Refusing to install.`,
+		);
+	}
 }
 
 /**
@@ -434,6 +456,15 @@ export async function downloadAndInstall(downloadUrl: string): Promise<void> {
 	broadcast("updater:status", { phase: "mounting" });
 	const mountpoint = await mountDmg(dmgPath);
 	const newAppPath = await findAppInMount(mountpoint);
+	try {
+		await verifyUpdateSignature(newAppPath, installedAppPath);
+	} catch (err) {
+		await new Promise<void>((done) =>
+			execFile("/usr/bin/hdiutil", ["detach", mountpoint, "-quiet", "-force"], () => done()),
+		);
+		await fs.rm(dmgPath, { force: true });
+		throw err;
+	}
 
 	// Log the attempted transition to the persistent log before the bash
 	// script takes over. If the swap somehow crashes before writing its
