@@ -118,10 +118,31 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 			if (!s.cwd || s.cwd === draftCwd || seen.has(s.cwd)) continue;
 			seen.add(s.cwd);
 			out.push(s.cwd);
-			if (out.length === 5) break;
 		}
 		return out;
 	}, [sessions, draftCwd]);
+
+	const [bodyHeight, setBodyHeight] = useState<number | null>(null);
+	const [bodyEl, setBodyEl] = useState<HTMLDivElement | null>(null);
+	useEffect(() => {
+		if (!bodyEl) return;
+		const observer = new ResizeObserver(() =>
+			setBodyHeight(bodyEl.clientHeight),
+		);
+		observer.observe(bodyEl);
+		setBodyHeight(bodyEl.clientHeight);
+		return () => observer.disconnect();
+	}, [bodyEl]);
+	const visibleFolders = useMemo(() => {
+		if (bodyHeight === null) return recentFolders.slice(0, 7);
+		const available =
+			bodyHeight - BODY_PADDING_Y - RECENT_HEADER_HEIGHT;
+		const fit = Math.max(
+			0,
+			Math.floor(available / (RECENT_ROW_HEIGHT + RECENT_ROW_GAP)),
+		);
+		return recentFolders.slice(0, fit);
+	}, [recentFolders, bodyHeight]);
 
 	// Reprobe git-repo status when the draft's cwd changes. Gates the
 	// "Add worktree" button — we hide it entirely for non-git folders
@@ -451,18 +472,20 @@ export function DraftSessionChat({ draftId }: { draftId: string }) {
 
 			<div style={{ flex: 1, minHeight: 0, position: "relative" }}>
 				<div
+					ref={setBodyEl}
 					style={{
 						height: "100%",
-						overflow: "auto",
+						overflow: "hidden",
 						padding: "28px 32px 14px",
+						boxSizing: "border-box",
 						display: "flex",
 						alignItems: "center",
 						justifyContent: "center",
 					}}
 				>
-					{recentFolders.length > 0 ? (
+					{visibleFolders.length > 0 ? (
 						<RecentFolders
-							folders={recentFolders}
+							folders={visibleFolders}
 							disabled={sending}
 							onPick={applyFolder}
 						/>
@@ -556,6 +579,11 @@ function DraftPill() {
 	);
 }
 
+const BODY_PADDING_Y = 42;
+const RECENT_ROW_HEIGHT = 30;
+const RECENT_ROW_GAP = 4;
+const RECENT_HEADER_HEIGHT = 22;
+
 function folderName(path: string): string {
 	const trimmed = path.replace(/\/+$/, "");
 	const idx = trimmed.lastIndexOf("/");
@@ -576,7 +604,7 @@ function RecentFolders({
 			style={{
 				display: "flex",
 				flexDirection: "column",
-				gap: 4,
+				gap: RECENT_ROW_GAP,
 				width: "100%",
 				maxWidth: 420,
 			}}
@@ -586,7 +614,10 @@ function RecentFolders({
 					fontSize: 11,
 					fontWeight: 500,
 					color: T.textFaint,
-					padding: "0 10px 4px",
+					height: RECENT_HEADER_HEIGHT - RECENT_ROW_GAP,
+					lineHeight: `${RECENT_HEADER_HEIGHT - RECENT_ROW_GAP}px`,
+					padding: "0 10px",
+					flexShrink: 0,
 				}}
 			>
 				Recent folders
@@ -628,7 +659,9 @@ function RecentFolderButton({
 				alignItems: "center",
 				width: "100%",
 				minWidth: 0,
-				padding: "7px 10px",
+				height: RECENT_ROW_HEIGHT,
+				flexShrink: 0,
+				padding: "0 10px",
 				borderRadius: 6,
 				background: hover && !disabled ? T.surfaceLow : "transparent",
 				cursor: disabled ? "default" : "pointer",
