@@ -15,6 +15,12 @@ import { scheduleLabel } from "./SchedulesPanel";
 
 const NOW_TICK_MS = 30_000;
 
+const TASK_COLOR_RANK: Record<ScheduleStatusColor, number> = {
+	green: 1,
+	yellow: 2,
+	red: 3,
+};
+
 type DotColor = ScheduleStatusColor | "gray";
 
 export const DOT: Record<DotColor, { fill: string; soft: string }> = {
@@ -99,6 +105,25 @@ export function SchedulerWidget({
 				.sort((a, b) => a.createdAt - b.createdAt),
 		[schedules, unreadByScheduleId, activeScheduleId, runningScheduleIds],
 	);
+
+	const menuBarTaskColor = useMemo(() => {
+		let worst: ScheduleStatusColor | null = null;
+		for (const s of rows) {
+			if (runningScheduleIds.has(s.id)) continue;
+			const color = s.status?.color;
+			if (!color) continue;
+			if (worst === null || TASK_COLOR_RANK[color] > TASK_COLOR_RANK[worst]) {
+				worst = color;
+			}
+		}
+		return worst;
+	}, [rows, runningScheduleIds]);
+
+	useEffect(() => {
+		window.claude?.setMenuBarTaskColor(menuBarTaskColor);
+	}, [menuBarTaskColor]);
+
+	useEffect(() => () => window.claude?.setMenuBarTaskColor(null), []);
 
 	const openSchedule = (schedule: Schedule) => {
 		const target = scheduleSessionTarget(schedule, sessions);

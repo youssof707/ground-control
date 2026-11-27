@@ -127,6 +127,7 @@ declare global {
 				data: string;
 			}) => Promise<void>;
 			setUnreadCount: (count: number) => void;
+			setMenuBarTaskColor: (color: "green" | "yellow" | "red" | null) => void;
 			listReadState: () => Promise<ReadStateFile>;
 			markRead: (sessionId: string, ts?: number) => Promise<void>;
 			markUnread: (sessionId: string) => Promise<void>;

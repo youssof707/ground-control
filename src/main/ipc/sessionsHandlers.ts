@@ -12,7 +12,12 @@ import { PermissionBroker } from "../sessions/PermissionBroker";
 import { Babysitter } from "../sessions/Babysitter";
 import { DeleteHookRunner } from "../sessions/DeleteHookRunner";
 import { KeepAwake } from "../sessions/KeepAwake";
-import { setSessionBusy } from "../menuBarStatus";
+import {
+	setScheduledSessionCheck,
+	setSessionBusy,
+	setTaskColor,
+} from "../menuBarStatus";
+import { ScheduleStatusColorSchema } from "../../shared/schemas/schedules";
 import { UsageLimitResumer } from "../sessions/UsageLimitResumer";
 import { ScheduleRunner } from "../sessions/ScheduleRunner";
 import * as scheduleStatus from "../sessions/scheduleStatus";
@@ -173,6 +178,10 @@ export function registerSessionsHandlers(): SessionManager {
 			},
 		},
 	);
+	setScheduledSessionCheck((sessionId) => {
+		const ownerId = manager?.getSidequestParentId(sessionId) ?? sessionId;
+		return Boolean(manager?.getSession(ownerId)?.scheduleId);
+	});
 	const deleteHooks = new DeleteHookRunner(manager);
 
 	const isSessionBusy = (id: string): boolean => {
@@ -457,6 +466,18 @@ export function registerSessionsHandlers(): SessionManager {
 	);
 	ipcMain.on("notifications:setUnreadCount", (_e, count: number) => {
 		notifications.setUnreadCount(typeof count === "number" ? count : 0);
+	});
+	const taskColorSenders = new Set<number>();
+	ipcMain.on("menuBar:setTaskColor", (e, color: unknown) => {
+		const parsed = ScheduleStatusColorSchema.safeParse(color);
+		const senderId = e.sender.id;
+		setTaskColor(senderId, parsed.success ? parsed.data : null);
+		if (taskColorSenders.has(senderId)) return;
+		taskColorSenders.add(senderId);
+		e.sender.once("destroyed", () => {
+			taskColorSenders.delete(senderId);
+			setTaskColor(senderId, null);
+		});
 	});
 	ipcMain.handle(
 		"dialog:pickFolder",

@@ -7,6 +7,7 @@ import type {
 } from "../../shared/claude-sessions/types";
 import { NotificationManager } from "../ipc/notifications";
 import * as windows from "../windows";
+import { setPendingInputSessions } from "../menuBarStatus";
 
 type Resolver = (result: PermissionResult) => void;
 
@@ -209,5 +210,8 @@ export class PermissionBroker {
 
 	private syncBadge() {
 		this.notifications.setPendingCount(this.pending.size);
+		setPendingInputSessions(
+			[...this.pending.values()].map((e) => e.request.sessionId),
+		);
 	}
 }

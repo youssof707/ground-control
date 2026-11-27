@@ -32,6 +32,11 @@ status yet), so opening it from the widget (which marks it read) never makes the
 once you navigate away it falls back to the normal rule, so a read always-show-off row hides.
 A schedule with a running session always has a row, and its status dot becomes a spinner
 while it runs. The widget is always expanded (it has no collapse).
+The macOS menu bar dot (`src/main/menuBarStatus.ts`) draws a ring from exactly these rows: the
+worst status color among visible rows that have a status and aren't running (red over yellow
+over green), and no ring when none do. The widget sends it over `menuBar:setTaskColor`. The
+inner dot is session state: green while any session works, yellow while one waits on input,
+white otherwise. Scheduled sessions (and their sidequests) never count toward the inner dot.
 Whenever a new status replaces a green one with yellow or red (a report or a settled run,
 in `scheduleStatus.ts`), `alwaysShowStatus` is turned on automatically so the regression
 stays visible; it is never turned off automatically.

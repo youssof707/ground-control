@@ -99,6 +99,8 @@ const claude = {
 		ipcRenderer.invoke("shell:copyImage", payload),
 	setUnreadCount: (count: number) =>
 		ipcRenderer.send("notifications:setUnreadCount", count),
+	setMenuBarTaskColor: (color: "green" | "yellow" | "red" | null) =>
+		ipcRenderer.send("menuBar:setTaskColor", color),
 	listReadState: () => ipcRenderer.invoke("read:list"),
 	markRead: (sessionId: string, ts?: number) =>
 		ipcRenderer.invoke("read:mark", { sessionId, ts }),
