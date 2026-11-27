@@ -90,7 +90,6 @@ export function WorktreesModal({
 		setDeleting(wt.id, true);
 		runBackgroundTask({
 			label: `Deleting worktree ${wt.displayName}`,
-			quiet: true,
 			run: () =>
 				window.claude.deleteWorktree(wt.id).catch((err: unknown) => {
 					setDeleting(wt.id, false);

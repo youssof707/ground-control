@@ -58,10 +58,13 @@ export function RateLimitMeter() {
 				userSelect: "none",
 				letterSpacing: 0.2,
 				fontVariantNumeric: "tabular-nums",
-				display: "inline-flex",
+				display: "flex",
 				alignItems: "center",
 				gap: 6,
 				padding: "0 12px",
+				flex: "0 1 auto",
+				minWidth: 0,
+				overflow: "hidden",
 			}}
 		>
 			{isClose ? (
@@ -91,6 +94,10 @@ export function RateLimitMeter() {
 					color: "inherit",
 					textDecoration: "none",
 					cursor: "pointer",
+					minWidth: 0,
+					overflow: "hidden",
+					textOverflow: "ellipsis",
+					whiteSpace: "nowrap",
 				}}
 				onMouseEnter={(e) => {
 					e.currentTarget.style.color = T.textMute;

@@ -60,10 +60,27 @@ export function SidebarFooter() {
 			}}
 		>
 			<TerminalsCard />
-			<div style={{ padding: "0 12px" }}>
-				<BackgroundTasksIndicator />
+			<div
+				style={{
+					height: 14,
+					display: "flex",
+					alignItems: "center",
+					gap: 8,
+				}}
+			>
+				<RateLimitMeter />
+				<div
+					style={{
+						flexShrink: 0,
+						marginLeft: "auto",
+						display: "flex",
+						justifyContent: "flex-end",
+						paddingRight: 12,
+					}}
+				>
+					<BackgroundTasksIndicator />
+				</div>
 			</div>
-			<RateLimitMeter />
 		</div>
 	);
 }
