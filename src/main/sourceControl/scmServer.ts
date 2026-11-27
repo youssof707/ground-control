@@ -36,7 +36,7 @@ export interface ScmServerDeps {
 	) => Promise<ScmDiffContent>;
 	apply: (action: ScmAction, target: ApplyTarget) => Promise<void>;
 	branches: (checkout: string, signal: AbortSignal) => Promise<ScmBranchList>;
-	switchBranch: (checkout: string, branch: string, remote: boolean) => Promise<void>;
+	switchBranch: (checkout: string, branch: string, remote: boolean, create?: boolean) => Promise<void>;
 	remote: (checkout: string, op: ScmRemoteOp, signal: AbortSignal) => Promise<void>;
 	watchHead: (checkout: string, signal: AbortSignal) => Promise<void>;
 	cap: number;
@@ -159,7 +159,8 @@ function isRequest(value: unknown): value is ScmRequest {
 				typeof msg.checkout === "string" &&
 				msg.checkout.startsWith("/") &&
 				typeof msg.branch === "string" &&
-				typeof msg.remote === "boolean"
+				typeof msg.remote === "boolean" &&
+				(msg.create === undefined || typeof msg.create === "boolean")
 			);
 		case "remote":
 			return (
@@ -491,7 +492,7 @@ export class ScmServer {
 		const { id } = message;
 		const release = await this.writes.acquire(new AbortController().signal);
 		try {
-			await this.deps.switchBranch(message.checkout, message.branch, message.remote);
+			await this.deps.switchBranch(message.checkout, message.branch, message.remote, message.create === true);
 			this.reply(conn, { t: "switch", id, ok: true });
 		} catch (err) {
 			this.reply(conn, { t: "switch", id, ok: false, reason: failureOf(err), message: messageOf(err) });

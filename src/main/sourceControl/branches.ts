@@ -96,15 +96,21 @@ export async function listBranches(checkout: string, signal: AbortSignal | undef
 	return { current, worktreeName: info.worktreeName, branches, fetchedAt: Date.now() };
 }
 
-export function switchArgs(branch: string, remote: boolean): string[] {
+export function switchArgs(branch: string, remote: boolean, create = false): string[] {
 	if (!branch || branch.startsWith("-") || /[\0\n]/.test(branch)) {
 		throw new RepoError("failed", `Invalid branch name: ${branch}`);
 	}
+	if (create) return ["switch", "--no-track", "-c", branch];
 	return remote ? ["switch", "--track", branch] : ["switch", "--no-guess", branch];
 }
 
-export async function switchBranch(checkout: string, branch: string, remote: boolean): Promise<void> {
-	const result = await runGit({ cwd: checkout, args: switchArgs(branch, remote), timeoutMs: 10 * 60_000 });
+export async function switchBranch(
+	checkout: string,
+	branch: string,
+	remote: boolean,
+	create = false,
+): Promise<void> {
+	const result = await runGit({ cwd: checkout, args: switchArgs(branch, remote, create), timeoutMs: 10 * 60_000 });
 	if (result.code !== 0) {
 		throw new RepoError(isNotARepo(result.stderr) ? "not-a-repo" : "failed", result.stderr.trim() || "git switch failed");
 	}
