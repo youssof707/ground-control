@@ -10,6 +10,7 @@ import { clearStatus } from "../sessions/scheduleStatus";
 import {
 	createSchedule,
 	pushSchedules as push,
+	removeSchedule,
 	updateSchedule,
 } from "../sessions/scheduleMutations";
 
@@ -76,9 +77,7 @@ export function registerSchedulesHandlers(runner: ScheduleRunner): void {
 		clearStatus(id),
 	);
 
-	ipcMain.handle("schedules:remove", async (_e, id: string) => {
-		runner.remove(id);
-		await schedulesStore.remove(id);
-		push();
-	});
+	ipcMain.handle("schedules:remove", (_e, id: string) =>
+		removeSchedule(runner, id),
+	);
 }
