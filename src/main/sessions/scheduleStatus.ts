@@ -1,6 +1,11 @@
 import * as schedulesStore from "../core/store/schedules";
 import { broadcast } from "../windows";
 import type { ScheduleReport } from "./scheduleReportTool";
+import type {
+	Schedule,
+	ScheduleStatusColor,
+} from "../../shared/schemas/schedules";
+import { playChime } from "./chime";
 
 export type ScheduledRunOutcome = "ok" | "failed" | "stopped";
 
@@ -21,12 +26,32 @@ const alwaysShowPatch = (scheduleId: string, nextColor: ScheduleReport["color"])
 		? { alwaysShowStatus: true }
 		: {};
 
+function shouldChime(
+	before: Schedule | undefined,
+	color: ScheduleStatusColor,
+	sessionId: string,
+): boolean {
+	if (!before) return false;
+	const wanted =
+		color === "yellow"
+			? before.chimeOnYellow
+			: color === "red"
+				? before.chimeOnRed
+				: false;
+	if (!wanted) return false;
+	const prev = before.status;
+	return !prev || prev.color !== color || prev.sessionId !== sessionId;
+}
+
 export async function report(r: ScheduleReport): Promise<void> {
+	const before = schedulesStore.get(r.scheduleId);
 	const updated = await schedulesStore.update(r.scheduleId, {
 		...alwaysShowPatch(r.scheduleId, r.color),
 		status: { color: r.color, line: r.line, at: Date.now(), sessionId: r.sessionId },
 	});
-	if (updated) push();
+	if (!updated) return;
+	if (shouldChime(before, r.color, r.sessionId)) playChime();
+	push();
 }
 
 export async function settle(
@@ -41,7 +66,9 @@ export async function settle(
 		...alwaysShowPatch(scheduleId, settled.color),
 		status: { ...settled, at: Date.now(), sessionId },
 	});
-	if (updated) push();
+	if (!updated) return;
+	if (shouldChime(current, settled.color, sessionId)) playChime();
+	push();
 }
 
 export async function clearStatus(scheduleId: string): Promise<void> {

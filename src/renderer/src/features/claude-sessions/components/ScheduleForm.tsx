@@ -45,6 +45,8 @@ export interface ScheduleDraft {
 	babysit: BabysitDraft;
 	model: string | undefined;
 	alwaysShowStatus: boolean;
+	chimeOnYellow: boolean;
+	chimeOnRed: boolean;
 }
 
 export function draftFromSchedule(s?: Schedule): ScheduleDraft {
@@ -63,6 +65,8 @@ export function draftFromSchedule(s?: Schedule): ScheduleDraft {
 			babysit: draftFromConfig(defaultBabysit),
 			model: useSettingsStore.getState().defaultModel,
 			alwaysShowStatus: false,
+			chimeOnYellow: false,
+			chimeOnRed: false,
 		};
 	}
 	const kind = s.kind;
@@ -92,6 +96,8 @@ export function draftFromSchedule(s?: Schedule): ScheduleDraft {
 		babysit: draftFromConfig(s.babysit ?? defaultBabysit),
 		model: s.model,
 		alwaysShowStatus: s.alwaysShowStatus ?? false,
+		chimeOnYellow: s.chimeOnYellow ?? false,
+		chimeOnRed: s.chimeOnRed ?? false,
 	};
 }
 
@@ -148,9 +154,19 @@ export function validateDraft(
 			babysit: configFromDraft(d.babysit),
 			model: d.model,
 			alwaysShowStatus: d.alwaysShowStatus,
+			chimeOnYellow: d.chimeOnYellow,
+			chimeOnRed: d.chimeOnRed,
 		},
 	};
 }
+
+const chimeOptionStyle: React.CSSProperties = {
+	display: "flex",
+	alignItems: "center",
+	gap: 6,
+	fontSize: 12.5,
+	color: T.textDim,
+};
 
 const fieldLabelStyle: React.CSSProperties = {
 	fontSize: 11,
@@ -368,6 +384,35 @@ export function ScheduleFormFields({
 					<span style={{ fontSize: 11, color: T.textFaint }}>
 						When off, the sidebar only shows this task while it's unread
 						or open.
+					</span>
+				</div>
+			</div>
+
+			<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+				<span style={fieldLabelStyle}>Chime</span>
+				<div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+					<span style={chimeOptionStyle}>
+						<Switch
+							checked={value.chimeOnYellow}
+							onChange={(chimeOnYellow) =>
+								onChange({ ...value, chimeOnYellow })
+							}
+							label="Chime on yellow"
+							disabled={disabled}
+						/>
+						On yellow
+					</span>
+					<span style={chimeOptionStyle}>
+						<Switch
+							checked={value.chimeOnRed}
+							onChange={(chimeOnRed) => onChange({ ...value, chimeOnRed })}
+							label="Chime on red"
+							disabled={disabled}
+						/>
+						On red
+					</span>
+					<span style={{ fontSize: 11, color: T.textFaint }}>
+						Plays a sound when the status turns this color.
 					</span>
 				</div>
 			</div>

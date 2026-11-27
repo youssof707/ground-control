@@ -119,6 +119,8 @@ export function describeSchedule(s: Schedule) {
 		nextRun: s.nextFireAt ? localIso(s.nextFireAt) : null,
 		lastRun: s.lastFiredAt ? localIso(s.lastFiredAt) : null,
 		status: s.status ? { color: s.status.color, line: s.status.line } : null,
+		chimeOnYellow: s.chimeOnYellow ?? false,
+		chimeOnRed: s.chimeOnRed ?? false,
 	};
 }
 
@@ -128,6 +130,8 @@ export interface SchedulePatch {
 	folder?: string;
 	model?: string;
 	timing?: Timing;
+	chimeOnYellow?: boolean;
+	chimeOnRed?: boolean;
 }
 
 export function mergeUpdate(
@@ -141,6 +145,8 @@ export function mergeUpdate(
 		cwd: patch.folder ?? current.cwd,
 		model: patch.model ?? current.model,
 		kind: patch.timing ? kindFromTiming(patch.timing) : current.kind,
+		chimeOnYellow: patch.chimeOnYellow ?? current.chimeOnYellow,
+		chimeOnRed: patch.chimeOnRed ?? current.chimeOnRed,
 	};
 }
 
@@ -182,6 +188,12 @@ const fields = {
 		.describe("Absolute path of the folder the run works in"),
 	model: z.string().describe("Model id or alias, e.g. sonnet or opus"),
 	timing: TimingSchema.describe("When the task runs, in local time"),
+	chimeOnYellow: z
+		.boolean()
+		.describe("Play a sound when the task's status turns yellow"),
+	chimeOnRed: z
+		.boolean()
+		.describe("Play a sound when the task's status turns red"),
 };
 
 const idField = z.string().describe("Task id from list_schedules");
@@ -210,8 +222,10 @@ function scheduleTools(deps: ScheduleControlDeps) {
 				folder: fields.folder,
 				model: fields.model.optional(),
 				timing: fields.timing,
+				chimeOnYellow: fields.chimeOnYellow.optional(),
+				chimeOnRed: fields.chimeOnRed.optional(),
 			},
-			async ({ name, prompt, folder, model, timing }) =>
+			async ({ name, prompt, folder, model, timing, chimeOnYellow, chimeOnRed }) =>
 				guarded(async () =>
 					describeSchedule(
 						await deps.create({
@@ -220,6 +234,8 @@ function scheduleTools(deps: ScheduleControlDeps) {
 							cwd: folder,
 							model,
 							kind: kindFromTiming(timing),
+							chimeOnYellow,
+							chimeOnRed,
 						}),
 					),
 				),
@@ -234,6 +250,8 @@ function scheduleTools(deps: ScheduleControlDeps) {
 				folder: fields.folder.optional(),
 				model: fields.model.optional(),
 				timing: fields.timing.optional(),
+				chimeOnYellow: fields.chimeOnYellow.optional(),
+				chimeOnRed: fields.chimeOnRed.optional(),
 			},
 			async ({ id, ...patch }) =>
 				guarded(async () => {

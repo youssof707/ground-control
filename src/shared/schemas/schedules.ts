@@ -81,6 +81,8 @@ export const ScheduleSchema = z.object({
 	babysit: BabysitConfigSchema.optional().catch(undefined),
 	enabled: z.boolean().catch(true),
 	alwaysShowStatus: z.boolean().optional().catch(undefined),
+	chimeOnYellow: z.boolean().optional().catch(undefined),
+	chimeOnRed: z.boolean().optional().catch(undefined),
 	createdAt: z.number(),
 	nextFireAt: z.number().optional(),
 	lastFiredAt: z.number().optional(),
@@ -105,6 +107,8 @@ export const CreateScheduleInputSchema = z.object({
 	kind: ScheduleKindSchema,
 	babysit: BabysitConfigSchema.optional(),
 	alwaysShowStatus: z.boolean().optional(),
+	chimeOnYellow: z.boolean().optional(),
+	chimeOnRed: z.boolean().optional(),
 });
 export type CreateScheduleInput = z.infer<typeof CreateScheduleInputSchema>;
 

@@ -43,6 +43,12 @@ Whenever a new status replaces a green one with yellow or red (a report or a set
 in `scheduleStatus.ts`), `alwaysShowStatus` is turned on automatically so the regression
 stays visible; it is never turned off automatically.
 
+Each schedule has two chime switches in its form, `chimeOnYellow` and `chimeOnRed`, both off by
+default. When a new status (a report or a settled run, in `scheduleStatus.ts`) is yellow or red
+and that color's switch is on, Ground Control plays `/System/Library/Sounds/Submarine.aiff` via
+`afplay` (`src/main/sessions/chime.ts`). It chimes when the color changes or the status comes
+from a new run; a repeat report of the same color in the same session stays silent.
+
 A scheduled session's header replaces the worktree row with `ScheduleHeaderStrip`, which spans
 the full header width; the Source Control widget sits below it, beside the title row.
 The strip shows
@@ -65,7 +71,8 @@ Every session, scheduled runs included, gets an in-process MCP server named `gro
 `update_schedule`, `delete_schedule` and `run_schedule_now`. Listing is pre-allowed. The others
 go through the usual permission prompt. Claude can set a task's name, prompt, folder, model and
 timing (`once` local ISO time, `repeat` minutes/hours, `daily` HH:MM, `weekly` weekday names +
-HH:MM). It cannot see or change babysit settings, enabled, or Always show. New tasks copy the
+HH:MM). It can also turn the yellow and red chimes on or off (`chimeOnYellow`, `chimeOnRed`), and
+listing shows them. It cannot see or change babysit settings, enabled, or Always show. New tasks copy the
 app's default babysit config, like the form does. `delete_schedule` does what the card's Delete
 does (`removeSchedule` in `scheduleMutations.ts`): the task goes away and its last session stays.
 `run_schedule_now` does what Run now does (`ScheduleRunner.runNow`): it prunes the previous
