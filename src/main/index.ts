@@ -28,6 +28,7 @@ import type { SessionManager } from "./sessions/SessionManager";
 import { cancelAllWakes } from "./sessions/wakeScheduler";
 import { flushActivityLog } from "./activityLog";
 import * as windows from "./windows";
+import { initMenuBarStatus } from "./menuBarStatus";
 import { attachContextMenu } from "./contextMenu";
 import { initialBounds, trackWindowBounds } from "./windowBounds";
 
@@ -297,6 +298,11 @@ app.whenReady().then(async () => {
 	sessionManager = registerSessionsHandlers();
 
 	createWindow();
+
+	initMenuBarStatus(() => {
+		app.focus({ steal: true });
+		if (!windows.showAndFocusAny()) createWindow();
+	});
 
 	console.log("[ccw] ANTHROPIC_API_KEY set:", !!process.env.ANTHROPIC_API_KEY);
 	const { Notification } = await import("electron");

@@ -12,6 +12,7 @@ import { PermissionBroker } from "../sessions/PermissionBroker";
 import { Babysitter } from "../sessions/Babysitter";
 import { DeleteHookRunner } from "../sessions/DeleteHookRunner";
 import { KeepAwake } from "../sessions/KeepAwake";
+import { setSessionBusy } from "../menuBarStatus";
 import { UsageLimitResumer } from "../sessions/UsageLimitResumer";
 import { ScheduleRunner } from "../sessions/ScheduleRunner";
 import * as scheduleStatus from "../sessions/scheduleStatus";
@@ -157,7 +158,10 @@ export function registerSessionsHandlers(): SessionManager {
 				babysitter.set(sessionId, defaultBabysit);
 			}
 		},
-		keepAwake.setBusy,
+		(runtimeId, busy) => {
+			keepAwake.setBusy(runtimeId, busy);
+			setSessionBusy(runtimeId, busy);
+		},
 		resumer.onChange,
 		{
 			onReport: (report) => {

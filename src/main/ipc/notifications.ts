@@ -1,6 +1,7 @@
 import { Notification, app } from "electron";
 import type { PermissionRequest } from "../../shared/claude-sessions/types";
 import * as windows from "../windows";
+import { setPendingInputCount } from "../menuBarStatus";
 
 export class NotificationManager {
 	private warnedNoSupport = false;
@@ -58,6 +59,7 @@ export class NotificationManager {
 
 	setPendingCount(count: number) {
 		this.pendingCount = count;
+		setPendingInputCount(count);
 		this.applyBadge();
 	}
 
