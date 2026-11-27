@@ -221,13 +221,6 @@ export function TerminalsCard() {
 	);
 }
 
-function groupDot(group: TerminalGroup): "gray" | "green" | "red" {
-	const colors = group.terminals.map((t) => TERMINAL_DOT[t.status]);
-	if (colors.includes("red")) return "red";
-	if (colors.includes("green")) return "green";
-	return "gray";
-}
-
 function keepOrder(groups: TerminalGroup[], order: string[]): TerminalGroup[] {
 	const rank = (group: TerminalGroup) => {
 		const index = order.indexOf(group.id);
@@ -293,11 +286,14 @@ function TerminalRow({
 						display: "inline-flex",
 						alignItems: "center",
 						justifyContent: "center",
-						width: 14,
+						gap: 3,
+						minWidth: 14,
 						flexShrink: 0,
 					}}
 				>
-					<StatusDot color={groupDot(group)} />
+					{group.terminals.map((terminal) => (
+						<StatusDot key={terminal.id} color={TERMINAL_DOT[terminal.status]} />
+					))}
 				</span>
 				<span
 					style={{
@@ -309,19 +305,6 @@ function TerminalRow({
 				>
 					{label}
 				</span>
-				{group.terminals.length > 1 ? (
-					<span
-						style={{
-							marginLeft: -3,
-							color: T.textFaint,
-							fontSize: 10.5,
-							fontFamily: T.mono,
-							flexShrink: 0,
-						}}
-					>
-						×{group.terminals.length}
-					</span>
-				) : null}
 				<span style={{ ...ELLIPSIS, flex: 1 }}>{groupLastLine(group)}</span>
 			</button>
 			{!kill.confirming && canStart ? (
