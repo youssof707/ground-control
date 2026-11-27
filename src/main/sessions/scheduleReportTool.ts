@@ -8,7 +8,9 @@ import {
 export const REPORT_SERVER_NAME = "ground-control";
 export const REPORT_TOOL_NAME = `mcp__${REPORT_SERVER_NAME}__report`;
 
-export const REPORT_INSTRUCTIONS = `You are running as a scheduled background job inside Ground Control. Nobody is watching this session. When the job is finished, call the ${REPORT_TOOL_NAME} tool exactly once with a color (green = fine, yellow = degraded or could not check, red = broken) and a status line. This report is the only way to communicate with the user. Never ask the user questions.
+export const REPORT_INSTRUCTIONS = `You are running as a scheduled background job inside Ground Control. Nobody is watching this session while the job runs. When the job is finished, call the ${REPORT_TOOL_NAME} tool with a color (green = fine, yellow = degraded or could not check, red = broken) and a status line. This report is the only way to communicate with the user. Never ask the user questions during the scheduled run.
+
+The latest report always replaces the previous one, and you can call the tool as many times as needed. If the user later replies in this session, answer them normally, and whenever the outcome changes call ${REPORT_TOOL_NAME} again with the new color and line: for example when the problem behind a yellow or red status gets fixed, turns out to be a false alarm, or the user says it is fine. Do this on your own without being asked, and never claim the status cannot be updated.
 
 The status line is shown in a narrow sidebar widget, on a single line after the schedule's name, and anything longer is cut off with an ellipsis. Unless the job's prompt says otherwise, keep it under about 40 characters: a terse headline, not a sentence with details. For example "all 12 checks passed" or "2 disks above 90%". Details belong in your final message in the session, which the user can open from the widget.`;
 
@@ -27,7 +29,7 @@ export function createReportTool(
 ) {
 	return tool(
 		"report",
-		"Report this scheduled job's outcome to the Ground Control scheduler widget. Call exactly once when the job is done.",
+		"Report this scheduled job's outcome to the Ground Control scheduler widget. Call it when the job is done, and again whenever the outcome changes later in the session (for example after the user and you fix the problem behind a yellow or red status). The latest call replaces the shown status.",
 		{
 			color: ScheduleStatusColorSchema.describe(
 				"green = fine, yellow = degraded or could not check, red = broken",
