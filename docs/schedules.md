@@ -17,8 +17,10 @@ to a scheduled session never detaches it from its schedule.
 Every scheduled session gets an in-process MCP tool, `mcp__ground-control__report`
 (`src/main/sessions/scheduleReportTool.ts`), mounted on the same `ground-control` server as
 the schedule tools below and pre-allowed so the Babysitter never sees it,
-plus a system-prompt append telling Claude to call it once when done with
-`{ color: green|yellow|red, line }`. The latest call becomes `schedule.status`. This
+plus a system-prompt append telling Claude to call it when done with
+`{ color: green|yellow|red, line }`, and to call it again on its own whenever the outcome
+changes later in the session (e.g. the user replies and the problem behind a yellow or red
+status gets fixed). The latest call becomes `schedule.status`. This
 stoplight status is the only channel from a scheduled agent to Ground Control: there is
 no alert, Inbox card, badge, or macOS notification for schedules. A run that ends
 without calling it settles as green `nothing to report`;
