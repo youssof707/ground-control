@@ -72,6 +72,15 @@ export async function createSchedule(
 	return schedule;
 }
 
+export async function removeSchedule(
+	runner: ScheduleRunner,
+	id: string,
+): Promise<void> {
+	runner.remove(id);
+	await schedulesStore.remove(id);
+	pushSchedules();
+}
+
 export async function updateSchedule(
 	runner: ScheduleRunner,
 	raw: UpdateScheduleInput,

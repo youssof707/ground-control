@@ -22,7 +22,11 @@ import { UsageLimitResumer } from "../sessions/UsageLimitResumer";
 import { ScheduleRunner } from "../sessions/ScheduleRunner";
 import * as scheduleStatus from "../sessions/scheduleStatus";
 import { directoryExists } from "../sessions/fsUtils";
-import { createSchedule, updateSchedule } from "../sessions/scheduleMutations";
+import {
+	createSchedule,
+	removeSchedule,
+	updateSchedule,
+} from "../sessions/scheduleMutations";
 import * as rateLimitTracker from "../sessions/RateLimitTracker";
 import { reconcileWakes, requestAuthorization } from "../sessions/wakeScheduler";
 import { NotificationManager } from "./notifications";
@@ -231,6 +235,8 @@ export function registerSessionsHandlers(): SessionManager {
 				babysit: appSettings.get().defaultBabysit,
 			}),
 		update: (input) => updateSchedule(runner, input),
+		remove: (id) => removeSchedule(runner, id),
+		runNow: (id) => runner.runNow(id),
 	});
 	powerMonitor.on("resume", runner.reconcile);
 	app.on("will-quit", () => runner.dispose());

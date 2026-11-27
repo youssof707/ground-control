@@ -61,11 +61,16 @@ yellow `stopped`.
 ## Claude tools
 
 Every session, scheduled runs included, gets an in-process MCP server named `ground-control`
-(`src/main/sessions/scheduleControlTool.ts`), with `list_schedules`, `create_schedule` and
-`update_schedule`. Listing is pre-allowed. Create and update go through the usual permission
-prompt. Claude can set a task's name, prompt, folder, model and timing (`once` local ISO time,
-`repeat` minutes/hours, `daily` HH:MM, `weekly` weekday names + HH:MM). It cannot see or change
-babysit settings, enabled, or Always show, and it cannot delete or run tasks. New tasks copy the
-app's default babysit config, like the form does. The create and update tool descriptions tell
-Claude to use them only when the user or the task's own prompt explicitly asks. The UI and
-the tools share validation in `src/main/sessions/scheduleMutations.ts`.
+(`src/main/sessions/scheduleControlTool.ts`), with `list_schedules`, `create_schedule`,
+`update_schedule`, `delete_schedule` and `run_schedule_now`. Listing is pre-allowed. The others
+go through the usual permission prompt. Claude can set a task's name, prompt, folder, model and
+timing (`once` local ISO time, `repeat` minutes/hours, `daily` HH:MM, `weekly` weekday names +
+HH:MM). It cannot see or change babysit settings, enabled, or Always show. New tasks copy the
+app's default babysit config, like the form does. `delete_schedule` does what the card's Delete
+does (`removeSchedule` in `scheduleMutations.ts`): the task goes away and its last session stays.
+`run_schedule_now` does what Run now does (`ScheduleRunner.runNow`): it prunes the previous
+session and starts a new one, and fails with "This task is already running" while a run is in
+progress, so a scheduled session cannot re-run its own task. Unlike the button, it never
+navigates the UI. Every tool except listing tells Claude to use it only when the user or the
+task's own prompt explicitly asks. The UI and the tools share validation and mutations in
+`src/main/sessions/scheduleMutations.ts`.

@@ -149,6 +149,8 @@ export interface ScheduleControlDeps {
 	get: (id: string) => Schedule | undefined;
 	create: (input: CreateScheduleInput) => Promise<Schedule>;
 	update: (input: UpdateScheduleInput) => Promise<Schedule>;
+	remove: (id: string) => Promise<void>;
+	runNow: (id: string) => Promise<unknown>;
 }
 
 const json = (value: unknown) => ({
@@ -181,6 +183,8 @@ const fields = {
 	model: z.string().describe("Model id or alias, e.g. sonnet or opus"),
 	timing: TimingSchema.describe("When the task runs, in local time"),
 };
+
+const idField = z.string().describe("Task id from list_schedules");
 
 const EXPLICIT_ONLY =
 	"Only use this when the user, or the scheduled task's own prompt, explicitly tells you to";
@@ -224,7 +228,7 @@ function scheduleTools(deps: ScheduleControlDeps) {
 			"update_schedule",
 			`Edit a Ground Control scheduled task. Only the fields you pass change. ${EXPLICIT_ONLY} change a Ground Control scheduled task. Never edit one on your own initiative.`,
 			{
-				id: z.string().describe("Task id from list_schedules"),
+				id: idField,
 				name: fields.name.optional(),
 				prompt: fields.prompt.optional(),
 				folder: fields.folder.optional(),
@@ -238,6 +242,30 @@ function scheduleTools(deps: ScheduleControlDeps) {
 					return describeSchedule(
 						await deps.update(mergeUpdate(current, patch)),
 					);
+				}),
+		),
+		tool(
+			"delete_schedule",
+			`Delete a Ground Control scheduled task permanently. Its past session is kept. ${EXPLICIT_ONLY} delete a Ground Control scheduled task. Never delete one on your own initiative.`,
+			{ id: idField },
+			async ({ id }) =>
+				guarded(async () => {
+					const current = deps.get(id);
+					if (!current) throw new Error("Task not found");
+					await deps.remove(id);
+					return { deleted: describeSchedule(current) };
+				}),
+		),
+		tool(
+			"run_schedule_now",
+			`Run a Ground Control scheduled task right away, the same as clicking Run now. This replaces the task's previous session with a new one. ${EXPLICIT_ONLY} run a Ground Control scheduled task now. Never run one on your own initiative.`,
+			{ id: idField },
+			async ({ id }) =>
+				guarded(async () => {
+					await deps.runNow(id);
+					const current = deps.get(id);
+					if (!current) throw new Error("Task not found");
+					return { started: describeSchedule(current) };
 				}),
 		),
 	];
