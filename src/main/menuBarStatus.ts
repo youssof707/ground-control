@@ -10,9 +10,9 @@ const RING_OUTER = 17.5;
 const RING_INNER = 12;
 
 const WHITE: Rgb = [255, 255, 255];
-const GREEN: Rgb = [94, 205, 134];
-const YELLOW: Rgb = [240, 200, 60];
-const RED: Rgb = [235, 87, 87];
+const GREEN: Rgb = [86, 166, 118];
+const YELLOW: Rgb = [204, 160, 82];
+const RED: Rgb = [198, 92, 82];
 
 const SESSION_COLORS: Record<SessionLight, Rgb> = {
 	idle: WHITE,
