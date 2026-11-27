@@ -48,6 +48,23 @@ function CheckIcon() {
 	);
 }
 
+function PlusIcon() {
+	return (
+		<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+			<path d="M6 2.5v7M2.5 6h7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+		</svg>
+	);
+}
+
+function newBranchName(query: string, branches: readonly ScmBranch[]): string | null {
+	const name = query.trim();
+	if (!name || /\s/.test(name) || name.startsWith("-")) return null;
+	const taken = branches.some(
+		(b) => b.name === name || (b.remote !== null && b.name.slice(b.remote.length + 1) === name),
+	);
+	return taken ? null : name;
+}
+
 export function BranchModalHost() {
 	const target = useSourceControlStore((s) => s.branchModal);
 	const close = useSourceControlStore((s) => s.closeBranches);
@@ -89,11 +106,15 @@ function BranchModal({ target, onClose }: { target: BranchModalTarget; onClose: 
 	const index = useMemo(() => indexBranches(list?.branches ?? [], current), [list, current]);
 	const matches = useMemo(() => searchBranches(index, deferredQuery, RESULT_LIMIT), [index, deferredQuery]);
 	const items = matches.items;
+	const createName = useMemo(() => newBranchName(deferredQuery, list?.branches ?? []), [deferredQuery, list]);
+	const offset = createName ? 1 : 0;
+	const rowCount = items.length + offset;
+	const firstRow = createName && items.length > 0 ? 1 : 0;
 
 	useEffect(() => {
-		setActive(0);
+		setActive(firstRow);
 		listRef.current?.scrollTo({ top: 0 });
-	}, [deferredQuery]);
+	}, [deferredQuery, firstRow]);
 
 	useEffect(() => {
 		listRef.current
@@ -125,20 +146,20 @@ function BranchModal({ target, onClose }: { target: BranchModalTarget; onClose: 
 	}, [onClose]);
 
 	const choose = useCallback(
-		(branch: ScmBranch | undefined) => {
+		(branch: ScmBranch | undefined, create = false) => {
 			if (!branch || switching) return;
-			if (!branch.remote && branch.name === current) {
+			if (!create && !branch.remote && branch.name === current) {
 				onClose();
 				return;
 			}
 			setError(null);
 			setSwitching(branch.name);
-			void call<"switch">({ t: "switch", checkout, branch: branch.name, remote: branch.remote !== null })
+			void call<"switch">({ t: "switch", checkout, branch: branch.name, remote: branch.remote !== null, create })
 				.promise.then(async (reply) => {
 					requestRefresh(checkout, true);
 					if (!reply.ok) {
 						setSwitching(null);
-						setError(reply.message || "Couldn't switch branches.");
+						setError(reply.message || (create ? "Couldn't create the branch." : "Couldn't switch branches."));
 						return;
 					}
 					const local = branch.remote ? branch.name.slice(branch.remote.length + 1) : branch.name;
@@ -151,11 +172,20 @@ function BranchModal({ target, onClose }: { target: BranchModalTarget; onClose: 
 		[checkout, current, onClose, sessionId, switching],
 	);
 
+	const create = useCallback(() => {
+		if (createName) choose({ name: createName, remote: null, date: 0, worktree: null }, true);
+	}, [choose, createName]);
+
+	const chooseRow = (row: number): void => {
+		if (createName && row === 0) create();
+		else choose(items[row - offset]?.branch);
+	};
+
 	const previous =
 		lastUserMessageBranch && sessionBranch && lastUserMessageBranch !== sessionBranch ? lastUserMessageBranch : null;
 
 	const onInputKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
-		const last = items.length - 1;
+		const last = rowCount - 1;
 		if (last < 0) return;
 		const moves: Record<string, number> = {
 			ArrowDown: Math.min(last, active + 1),
@@ -168,7 +198,7 @@ function BranchModal({ target, onClose }: { target: BranchModalTarget; onClose: 
 			setActive(moves[e.key]);
 		} else if (e.key === "Enter" && !e.nativeEvent.isComposing) {
 			e.preventDefault();
-			choose(items[active]?.branch);
+			chooseRow(active);
 		}
 	};
 
@@ -201,11 +231,39 @@ function BranchModal({ target, onClose }: { target: BranchModalTarget; onClose: 
 				</button>
 			</div>
 		);
-	} else if (items.length === 0) {
+	} else if (rowCount === 0) {
 		body = <div className="branch-empty">{query.trim() ? "No matching branches" : "No branches"}</div>;
 	} else {
 		const now = Date.now();
-		body = items.map((item, i) => {
+		const createRow = createName ? (
+			<div
+				key="create"
+				id={`${baseId}-0`}
+				data-index={0}
+				role="option"
+				aria-selected={active === 0}
+				aria-busy={switching === createName || undefined}
+				className="branch-row"
+				onMouseMove={() => {
+					if (active !== 0) setActive(0);
+				}}
+				onMouseDown={(e) => e.preventDefault()}
+				onClick={create}
+			>
+				<span className="branch-row-check">
+					<PlusIcon />
+				</span>
+				<span className="branch-row-name">
+					<span className="branch-row-remote">Create </span>
+					{createName}
+				</span>
+				<span className="branch-row-age">
+					{switching === createName ? <span className="asyncy-btn-spinner" aria-label="Creating" /> : null}
+				</span>
+			</div>
+		) : null;
+		const rows = items.map((item, index) => {
+			const i = index + offset;
 			const branch = item.branch;
 			const isCurrent = !branch.remote && branch.name === current;
 			const prefix = branch.remote ? `${branch.remote}/` : "";
@@ -246,6 +304,12 @@ function BranchModal({ target, onClose }: { target: BranchModalTarget; onClose: 
 				</div>
 			);
 		});
+		body = (
+			<>
+				{createRow}
+				{rows}
+			</>
+		);
 	}
 
 	return (
@@ -284,14 +348,14 @@ function BranchModal({ target, onClose }: { target: BranchModalTarget; onClose: 
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
 						onKeyDown={onInputKeyDown}
-						placeholder="Switch to branch…"
+						placeholder="Switch to or create branch…"
 						spellCheck={false}
 						autoCorrect="off"
 						autoCapitalize="off"
 						role="combobox"
 						aria-expanded="true"
 						aria-controls={`${baseId}-list`}
-						aria-activedescendant={items.length > 0 ? `${baseId}-${active}` : undefined}
+						aria-activedescendant={rowCount > 0 ? `${baseId}-${active}` : undefined}
 						aria-label="Search branches"
 					/>
 					{loading && list ? <span className="asyncy-btn-spinner" aria-label="Refreshing branches" /> : null}
@@ -323,7 +387,9 @@ function BranchModal({ target, onClose }: { target: BranchModalTarget; onClose: 
 				</div>
 				<div className="branch-foot" aria-live="polite">
 					<span>{status}</span>
-					<span style={{ color: T.textFaint }}>↵ switch · esc close</span>
+					<span style={{ color: T.textFaint }}>
+						{createName && active === 0 ? "↵ create" : "↵ switch"} · esc close
+					</span>
 				</div>
 			</div>
 		</div>

@@ -83,6 +83,13 @@ describe("branches", () => {
 		await expect(switchBranch(repo, "nope", false)).rejects.toThrow();
 	});
 
+	it("creates a new branch from HEAD and refuses existing names", async () => {
+		await switchBranch(repo, "brand-new", false, true);
+		expect(git(repo, "branch", "--show-current").trim()).toBe("brand-new");
+		await expect(switchBranch(repo, "recent", false, true)).rejects.toThrow(/recent/);
+		expect(switchArgs("brand-new", false, true)).toEqual(["switch", "--no-track", "-c", "brand-new"]);
+	});
+
 	it("rejects option-like names and parses refs defensively", () => {
 		expect(() => switchArgs("--orphan", false)).toThrow();
 		expect(worktreeNameOf("/r/.git", "/r/.git")).toBeNull();

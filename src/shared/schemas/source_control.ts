@@ -121,7 +121,7 @@ export type ScmRequest =
 		unstaged: ScmPick;
 	}
 	| { t: "branches"; id: number; checkout: string }
-	| { t: "switch"; id: number; checkout: string; branch: string; remote: boolean }
+	| { t: "switch"; id: number; checkout: string; branch: string; remote: boolean; create?: boolean }
 	| { t: "remote"; id: number; checkout: string; op: ScmRemoteOp }
 	| { t: "watchHead"; id: number; checkout: string }
 	| { t: "cancel"; id: number };
