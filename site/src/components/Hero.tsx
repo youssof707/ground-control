@@ -1,5 +1,5 @@
 import { MockCanvas } from "./MockCanvas";
-import { GitHubButton } from "./GitHubButton";
+import { DownloadButton, GitHubButton } from "./GitHubButton";
 import { AppShellMock } from "../mocks/AppShellMock";
 
 const chips = [
@@ -28,8 +28,9 @@ export function Hero() {
 					<p className="mt-4 max-w-[480px] text-[18px] leading-relaxed text-pretty text-gc-text-dim">
 						A desktop app for running many Claude Code sessions side by side.
 					</p>
-					<div className="mt-8">
-						<GitHubButton />
+					<div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+						<DownloadButton />
+						<GitHubButton variant="secondary" />
 					</div>
 				</div>
 				<div className="mx-auto mt-16 max-w-[68rem] rounded-[26px] border border-white/10 bg-white/[0.03] p-2 backdrop-blur-xl sm:p-3 lg:mt-20">
